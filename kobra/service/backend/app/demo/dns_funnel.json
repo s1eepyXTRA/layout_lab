@@ -1,0 +1,60 @@
+{
+ "id": "dns_funnel",
+ "name": "Воронка интернет-магазина DNS",
+ "description": "Синтетическая воронка сайта и приложения DNS по дням, платформам и источникам трафика.",
+ "mainDttm": "date",
+ "columns": [
+  {
+   "key": "date",
+   "label": "Дата",
+   "type": "date"
+  },
+  {
+   "key": "platform",
+   "label": "Платформа",
+   "type": "string"
+  },
+  {
+   "key": "source",
+   "label": "Источник трафика",
+   "type": "string"
+  },
+  {
+   "key": "stage",
+   "label": "Этап воронки",
+   "type": "string"
+  },
+  {
+   "key": "stage_order",
+   "label": "Порядок этапа",
+   "type": "number"
+  },
+  {
+   "key": "users",
+   "label": "Пользователи",
+   "type": "number"
+  }
+ ],
+ "metrics": [
+  {
+   "key": "users",
+   "label": "Пользователи",
+   "expr": {
+    "type": "simple",
+    "agg": "SUM",
+    "col": "users"
+   },
+   "format": "smart"
+  },
+  {
+   "key": "lines",
+   "label": "Строк",
+   "expr": {
+    "type": "simple",
+    "agg": "COUNT",
+    "col": "*"
+   },
+   "format": "int"
+  }
+ ]
+}

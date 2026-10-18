@@ -1,0 +1,243 @@
+{
+ "id": "dns_sales",
+ "name": "Продажи DNS",
+ "description": "Синтетические продажи сети DNS: строки заказов с января 2024 по август 2026 года.",
+ "mainDttm": "date",
+ "columns": [
+  {
+   "key": "date",
+   "label": "Дата заказа",
+   "type": "date"
+  },
+  {
+   "key": "order_id",
+   "label": "Номер заказа",
+   "type": "string"
+  },
+  {
+   "key": "district",
+   "label": "Федеральный округ",
+   "type": "string"
+  },
+  {
+   "key": "city",
+   "label": "Город",
+   "type": "string"
+  },
+  {
+   "key": "store",
+   "label": "Магазин",
+   "type": "string"
+  },
+  {
+   "key": "store_format",
+   "label": "Формат точки",
+   "type": "string"
+  },
+  {
+   "key": "channel",
+   "label": "Канал продаж",
+   "type": "string"
+  },
+  {
+   "key": "delivery",
+   "label": "Способ получения",
+   "type": "string"
+  },
+  {
+   "key": "payment",
+   "label": "Способ оплаты",
+   "type": "string"
+  },
+  {
+   "key": "customer_type",
+   "label": "Тип клиента",
+   "type": "string"
+  },
+  {
+   "key": "age_group",
+   "label": "Возраст клиента",
+   "type": "string"
+  },
+  {
+   "key": "category",
+   "label": "Категория",
+   "type": "string"
+  },
+  {
+   "key": "subcategory",
+   "label": "Подкатегория",
+   "type": "string"
+  },
+  {
+   "key": "brand",
+   "label": "Бренд",
+   "type": "string"
+  },
+  {
+   "key": "product",
+   "label": "Товар",
+   "type": "string"
+  },
+  {
+   "key": "own_brand",
+   "label": "Собственная марка",
+   "type": "string"
+  },
+  {
+   "key": "qty",
+   "label": "Количество, шт.",
+   "type": "number"
+  },
+  {
+   "key": "price",
+   "label": "Цена, ₽",
+   "type": "number"
+  },
+  {
+   "key": "gross",
+   "label": "Сумма без скидки, ₽",
+   "type": "number"
+  },
+  {
+   "key": "discount",
+   "label": "Скидка, ₽",
+   "type": "number"
+  },
+  {
+   "key": "revenue",
+   "label": "Выручка, ₽",
+   "type": "number"
+  },
+  {
+   "key": "cost",
+   "label": "Себестоимость, ₽",
+   "type": "number"
+  },
+  {
+   "key": "margin",
+   "label": "Маржа, ₽",
+   "type": "number"
+  }
+ ],
+ "metrics": [
+  {
+   "key": "revenue",
+   "label": "Выручка",
+   "expr": {
+    "type": "simple",
+    "agg": "SUM",
+    "col": "revenue"
+   },
+   "format": "rub_smart"
+  },
+  {
+   "key": "margin",
+   "label": "Маржа",
+   "expr": {
+    "type": "simple",
+    "agg": "SUM",
+    "col": "margin"
+   },
+   "format": "rub_smart"
+  },
+  {
+   "key": "margin_pct",
+   "label": "Маржинальность",
+   "expr": {
+    "type": "ratio",
+    "num": {
+     "agg": "SUM",
+     "col": "margin"
+    },
+    "den": {
+     "agg": "SUM",
+     "col": "revenue"
+    }
+   },
+   "format": "pct"
+  },
+  {
+   "key": "orders",
+   "label": "Заказы",
+   "expr": {
+    "type": "simple",
+    "agg": "COUNT_DISTINCT",
+    "col": "order_id"
+   },
+   "format": "int"
+  },
+  {
+   "key": "avg_check",
+   "label": "Средний чек",
+   "expr": {
+    "type": "ratio",
+    "num": {
+     "agg": "SUM",
+     "col": "revenue"
+    },
+    "den": {
+     "agg": "COUNT_DISTINCT",
+     "col": "order_id"
+    }
+   },
+   "format": "rub"
+  },
+  {
+   "key": "qty",
+   "label": "Продано, шт.",
+   "expr": {
+    "type": "simple",
+    "agg": "SUM",
+    "col": "qty"
+   },
+   "format": "int"
+  },
+  {
+   "key": "discount",
+   "label": "Скидки",
+   "expr": {
+    "type": "simple",
+    "agg": "SUM",
+    "col": "discount"
+   },
+   "format": "rub_smart"
+  },
+  {
+   "key": "discount_pct",
+   "label": "Доля скидки",
+   "expr": {
+    "type": "ratio",
+    "num": {
+     "agg": "SUM",
+     "col": "discount"
+    },
+    "den": {
+     "agg": "SUM",
+     "col": "gross"
+    }
+   },
+   "format": "pct"
+  },
+  {
+   "key": "avg_price",
+   "label": "Средняя цена",
+   "expr": {
+    "type": "simple",
+    "agg": "AVG",
+    "col": "price"
+   },
+   "format": "rub"
+  },
+  {
+   "key": "lines",
+   "label": "Строк заказов",
+   "expr": {
+    "type": "simple",
+    "agg": "COUNT",
+    "col": "*"
+   },
+   "format": "int"
+  }
+ ]
+}
