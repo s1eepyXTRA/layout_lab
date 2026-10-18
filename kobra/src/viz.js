@@ -663,10 +663,16 @@ VIZ.big_number_trend = {
       { key: 'show_trend', type: 'check', label: 'Показывать линию тренда', def: true },
       { key: 'trend_zero', type: 'check', label: 'Шкала тренда от нуля' },
       { key: 'invert', type: 'check', label: 'Снижение — это хорошо (зелёный цвет)' },
-      { key: 'skip_partial', type: 'check', label: 'Не учитывать неполный последний период' },
+      { key: 'skip_partial', type: 'check', label: 'Не учитывать неполный последний период', def: true },
     ] },
   ],
-  defaults: ds => ({ metric: firstMetric(ds), time_col: ds.mainDttm, x_grain: 'month', value_mode: 'last', compare_lag: 1, show_trend: true, y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [], subheader: '' }),
+  // skip_partial по умолчанию включён: данные почти всегда обрываются на середине
+  // текущего месяца, и тогда KPI сравнивает незакрытый месяц с полным предыдущим и
+  // показывает ложный обвал («−49,5 % к сен»). Отброшенный период не прячется —
+  // подпись под числом всегда называет месяц, за который взято число. Демо-дашборд
+  // это не меняет: dns_* заканчиваются 31.08.2026, последний месяц у них полный,
+  // а единственный недельный KPI («Оплаченные заказы онлайн») и так ставил галочку сам.
+  defaults: ds => ({ metric: firstMetric(ds), time_col: ds.mainDttm, x_grain: 'month', value_mode: 'last', compare_lag: 1, show_trend: true, skip_partial: true, y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [], subheader: '' }),
   render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.metric) return vizMsg(root, 'Выберите метрику');

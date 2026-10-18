@@ -60,7 +60,10 @@ function renderDatasetPage(main, id) {
         return h('tr', null,
           h('td', { class: 'muted' }, c.key),
           h('td', null, editable ? h('input', { class: 'input', value: c.label || '', style: { height: '30px' }, onchange: e => { c.label = e.target.value.trim() || c.key; persistDs(d); } }) : (c.label || c.key)),
-          h('td', null, h('span', { class: 'pill' }, TYPE_GROUP[c.type])),
+          // У набора-схемы тип можно поправить на месте: угадывание по названию иногда врёт
+          h('td', null, isSchemaDs(d)
+            ? selectEl(SCHEMA_COL_TYPES, c.type, v => changeSchemaColType(d.id, c.key, v), { style: { height: '30px' }, 'aria-label': `Тип колонки «${c.label || c.key}»` })
+            : h('span', { class: 'pill' }, TYPE_GROUP[c.type])),
           h('td', null, c.type === 'date' ? (editable ? h('input', { type: 'radio', name: 'maindt', checked: d.mainDttm === c.key, 'aria-label': 'Основная дата', onchange: () => { d.mainDttm = c.key; persistDs(d); toast('Основная дата изменена'); } }) : (d.mainDttm === c.key ? '✓' : '')) : ''),
           h('td', { class: 'muted' }, sv == null ? '—' : c.type === 'date' ? fmtDate(sv) : c.type === 'number' ? fmtNum(sv, 'dec2').replace(/,00$/, '') : String(sv).slice(0, 60)));
       }))));
