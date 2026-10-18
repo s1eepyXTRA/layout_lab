@@ -94,6 +94,7 @@ async function loadUploaded() {
   const ids = Object.keys(STATE.datasets || {});
   for (const id of ids) {
     const meta = STATE.datasets[id];
+    if (meta.kind === 'schema') { DS[id] = Object.assign({}, meta, { rows: generateSchemaRows(meta.schema) }); continue; }
     const rows = await idb.get('rows:' + id);
     DS[id] = Object.assign({}, meta, { rows: rows || [], missingRows: !rows });
   }
@@ -147,6 +148,9 @@ function renderShell() {
   themeBtn._paint = paintTheme;
   const settingsBtn = h('button', { class: 'iconbtn-bar', title: 'Настройки', 'aria-label': 'Настройки' }, ic('settings'));
   settingsBtn.addEventListener('click', () => openMenu(settingsBtn, [
+    { label: 'Экспорт в файл…', icon: 'download', onClick: () => openExportDialog() },
+    { label: 'Импорт из файла…', icon: 'upload', onClick: openImportDialog },
+    '-',
     { label: 'Вернуть демо-дашборд', icon: 'reset', onClick: restoreDemo },
     { label: 'Сбросить всё к начальному состоянию', icon: 'trash', danger: true, onClick: resetAll },
   ]));
@@ -221,6 +225,7 @@ function renderDashboardList(main) {
   const list = Object.values(STATE.dashboards).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('h1', null, 'Дашборды'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
+    h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
     h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый дашборд')));
   const grid = h('div', { class: 'dash-grid' });
   list.forEach(d => {
@@ -231,6 +236,7 @@ function renderDashboardList(main) {
       openMenu(more, [
         { label: 'Открыть', icon: 'eye', onClick: () => go('#/d/' + d.id) },
         { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(d.id) },
+        { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(d.id) },
         '-',
         { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteDashboard(d.id) },
       ]);

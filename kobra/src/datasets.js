@@ -10,6 +10,7 @@ function renderDatasetList(main) {
   main.appendChild(page);
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('h1', null, 'Данные'), h('p', null, 'Встроенные демо-наборы DNS и ваши файлы. Загруженные данные хранятся только в этом браузере.')),
+    h('button', { class: 'btn', onclick: () => openSchemaDialog() }, ic('schema'), 'Описать набор'),
     h('button', { class: 'btn primary', onclick: openUpload }, ic('upload'), 'Загрузить CSV или Excel')));
   const list = Object.values(DS).sort((a, b) => (b.builtin ? 1 : 0) - (a.builtin ? 1 : 0) || a.name.localeCompare(b.name, 'ru'));
   const usage = id => Object.values(STATE.charts).filter(c => c.datasetId === id).length;
@@ -17,7 +18,9 @@ function renderDatasetList(main) {
     h('thead', null, h('tr', null, h('th', null, 'Набор данных'), h('th', null, 'Источник'), h('th', null, 'Строк'), h('th', null, 'Колонок'), h('th', null, 'Графиков'), h('th'))),
     h('tbody', null, list.map(d => h('tr', { class: 'click', onclick: () => go('#/data/' + d.id) },
       h('td', null, h('span', { class: 'vt' }, ic('db'), h('b', { style: { fontWeight: 500 } }, d.name))),
-      h('td', null, d.builtin ? h('span', { class: 'pill pri' }, 'Демо DNS') : h('span', { class: 'pill' }, d.fileName || 'Файл')),
+      h('td', null, d.builtin ? h('span', { class: 'pill pri' }, 'Демо DNS')
+        : isSchemaDs(d) ? h('span', { class: 'pill acc' }, 'Схема, данные вымышленные')
+          : h('span', { class: 'pill' }, d.fileName || 'Файл')),
       h('td', null, fmtNum(d.rows.length, 'int')),
       h('td', null, d.columns.length),
       h('td', null, usage(d.id) || h('span', { class: 'muted' }, '—')),
@@ -34,9 +37,14 @@ function renderDatasetPage(main, id) {
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('a', { href: '#/data', style: { fontSize: '13px', textDecoration: 'none' } }, '← Все наборы'), h('div', { style: { marginTop: '8px' } }, nameEl),
       h('p', null, d.description || `Загружен из файла ${d.fileName || ''}. ${fmtNum(d.rows.length, 'int')} ${plural(d.rows.length, 'строка', 'строки', 'строк')}.`)),
+    isSchemaDs(d) ? h('button', { class: 'btn', onclick: () => openSchemaDialog(d.id) }, ic('schema'), 'Изменить схему') : null,
     h('button', { class: 'btn primary', onclick: () => newChartDialog({ datasetId: d.id }) }, ic('plus'), 'Создать график'),
     editable ? h('button', { class: 'btn danger', onclick: () => deleteDataset(d) }, ic('trash'), 'Удалить набор') : null));
-  if (d.missingRows) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } }, 'Строки этого набора не найдены в хранилище браузера. Загрузите файл заново.'));
+  if (d.missingRows) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
+    d.fromTemplate ? 'Набор приехал из шаблона без данных. Загрузите файл с такими же колонками — графики оживут сами.'
+      : 'Строки этого набора не найдены в хранилище браузера. Загрузите файл заново.'));
+  if (isSchemaDs(d)) page.appendChild(h('div', { class: 'edit-banner fake-banner', style: { borderRadius: '8px', marginBottom: '16px' } }, ic('schema'),
+    `${fmtNum(d.rows.length, 'int')} ${plural(d.rows.length, 'строка', 'строки', 'строк')} придумано по схеме: цифры правдоподобные, но ненастоящие. Период — ${fmtDate(parseIsoDate(d.schema.dateFrom))} — ${fmtDate(parseIsoDate(d.schema.dateTo))}.`));
 
   // Колонки
   const colsWrap = h('div', { class: 'tbl-wrap', style: { marginBottom: '28px' } });

@@ -71,6 +71,8 @@ const ICONS = {
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
+  download: '<path d="M12 4v10.5M8 11l4 4 4-4"/><path d="M4 18.5h16"/>',
+  schema: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9.5 9.5V19.5"/><path d="M12.5 13h5" stroke-dasharray="2 2"/>',
   eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   reset: '<path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/>',
   cobra: '<path d="M12 2.5c-3.3 0-6 2.6-6 6.3 0 2.4 1.2 4 2.6 5.2.8.7 1.1 1.4 1.1 2.4V21h4.6v-4.6c0-1 .3-1.7 1.1-2.4 1.4-1.2 2.6-2.8 2.6-5.2 0-3.7-2.7-6.3-6-6.3z" fill="currentColor" stroke="none"/><circle cx="10" cy="8" r=".9" fill="var(--bar)" stroke="none"/><circle cx="14" cy="8" r=".9" fill="var(--bar)" stroke="none"/><path d="M12 12.2v1.4m-.9.8l.9-.8.9.8" stroke="var(--bar)" stroke-width="1"/>',
@@ -263,6 +265,31 @@ function lsSet(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); return true; }
   catch (e) { toast('Не удалось сохранить в браузере: хранилище переполнено или отключено.', true); return false; }
 }
+/* Скачивание файла: единственный способ вынести что-то из браузера */
+function downloadFile(name, text, mime = 'application/json') {
+  try {
+    const url = URL.createObjectURL(new Blob([text], { type: mime + ';charset=utf-8' }));
+    const a = h('a', { href: url, download: name });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return true;
+  } catch (e) {
+    console.error(e);
+    toast('Не удалось сохранить файл: ' + e.message, true);
+    return false;
+  }
+}
+function readTextFile(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result));
+    fr.onerror = () => rej(new Error('файл не читается'));
+    fr.readAsText(file, 'utf-8');
+  });
+}
+
 // IndexedDB для загруженных наборов данных (они могут быть большими)
 const idb = (() => {
   let dbp = null;

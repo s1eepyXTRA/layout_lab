@@ -184,6 +184,7 @@ function renderDashboard(main, id, q) {
       { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
       { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
       { label: 'Свойства дашборда', icon: 'settings', onClick: openProps },
+      { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(id) },
       !editing ? '-' : null,
       !editing ? { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(id) } : null,
       !editing ? { label: 'Удалить дашборд', icon: 'trash', danger: true, onClick: () => deleteDashboard(id) } : null,
@@ -602,6 +603,10 @@ function renderDashboard(main, id, q) {
     disposeCells();
     clear(dmain);
     if (editing) dmain.appendChild(h('div', { class: 'edit-banner' }, ic('edit'), 'Режим редактирования. Изменения появятся у всех после нажатия «Сохранить».'));
+    const fakeNames = [...new Set(D.tabs.flatMap(t => t.items.map(i => i.chartId && (STATE.charts[i.chartId] || {}).datasetId))
+      .filter(x => isSchemaDs(DS[x])).map(x => DS[x].name))];
+    if (fakeNames.length) dmain.appendChild(h('div', { class: 'edit-banner fake-banner' }, ic('schema'),
+      `Это макет: ${fakeNames.length > 1 ? 'наборы' : 'набор'} ${fakeNames.map(n => '«' + n + '»').join(', ')} ${plural(fakeNames.length, 'содержит', 'содержат', 'содержат')} вымышленные данные.`));
     dmain.appendChild(paintHead());
     const tabs = paintTabs();
     if (tabs) dmain.appendChild(tabs);

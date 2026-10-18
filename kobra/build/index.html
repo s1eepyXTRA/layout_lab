@@ -244,6 +244,8 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .comp .grow span { font-size: 12px; color: var(--ink-3); }
 .comp.used { opacity: .6; }
 .edit-banner { background: var(--accent-soft); color: var(--ink); padding: 8px 24px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.edit-banner.fake-banner { background: var(--primary-soft); color: var(--ink); }
+.edit-banner svg { flex: none; }
 
 /* ---------- Исследование (Explore) ---------- */
 .explore { display: grid; grid-template-columns: 250px 330px 1fr; height: 100%; min-height: 0; }
@@ -1148,6 +1150,8 @@ const ICONS = {
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
+  download: '<path d="M12 4v10.5M8 11l4 4 4-4"/><path d="M4 18.5h16"/>',
+  schema: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9.5 9.5V19.5"/><path d="M12.5 13h5" stroke-dasharray="2 2"/>',
   eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   reset: '<path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/>',
   cobra: '<path d="M12 2.5c-3.3 0-6 2.6-6 6.3 0 2.4 1.2 4 2.6 5.2.8.7 1.1 1.4 1.1 2.4V21h4.6v-4.6c0-1 .3-1.7 1.1-2.4 1.4-1.2 2.6-2.8 2.6-5.2 0-3.7-2.7-6.3-6-6.3z" fill="currentColor" stroke="none"/><circle cx="10" cy="8" r=".9" fill="var(--bar)" stroke="none"/><circle cx="14" cy="8" r=".9" fill="var(--bar)" stroke="none"/><path d="M12 12.2v1.4m-.9.8l.9-.8.9.8" stroke="var(--bar)" stroke-width="1"/>',
@@ -1340,6 +1344,31 @@ function lsSet(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); return true; }
   catch (e) { toast('Не удалось сохранить в браузере: хранилище переполнено или отключено.', true); return false; }
 }
+/* Скачивание файла: единственный способ вынести что-то из браузера */
+function downloadFile(name, text, mime = 'application/json') {
+  try {
+    const url = URL.createObjectURL(new Blob([text], { type: mime + ';charset=utf-8' }));
+    const a = h('a', { href: url, download: name });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return true;
+  } catch (e) {
+    console.error(e);
+    toast('Не удалось сохранить файл: ' + e.message, true);
+    return false;
+  }
+}
+function readTextFile(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result));
+    fr.onerror = () => rej(new Error('файл не читается'));
+    fr.readAsText(file, 'utf-8');
+  });
+}
+
 // IndexedDB для загруженных наборов данных (они могут быть большими)
 const idb = (() => {
   let dbp = null;
@@ -2549,6 +2578,7 @@ async function loadUploaded() {
   const ids = Object.keys(STATE.datasets || {});
   for (const id of ids) {
     const meta = STATE.datasets[id];
+    if (meta.kind === 'schema') { DS[id] = Object.assign({}, meta, { rows: generateSchemaRows(meta.schema) }); continue; }
     const rows = await idb.get('rows:' + id);
     DS[id] = Object.assign({}, meta, { rows: rows || [], missingRows: !rows });
   }
@@ -2602,6 +2632,9 @@ function renderShell() {
   themeBtn._paint = paintTheme;
   const settingsBtn = h('button', { class: 'iconbtn-bar', title: 'Настройки', 'aria-label': 'Настройки' }, ic('settings'));
   settingsBtn.addEventListener('click', () => openMenu(settingsBtn, [
+    { label: 'Экспорт в файл…', icon: 'download', onClick: () => openExportDialog() },
+    { label: 'Импорт из файла…', icon: 'upload', onClick: openImportDialog },
+    '-',
     { label: 'Вернуть демо-дашборд', icon: 'reset', onClick: restoreDemo },
     { label: 'Сбросить всё к начальному состоянию', icon: 'trash', danger: true, onClick: resetAll },
   ]));
@@ -2676,6 +2709,7 @@ function renderDashboardList(main) {
   const list = Object.values(STATE.dashboards).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('h1', null, 'Дашборды'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
+    h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
     h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый дашборд')));
   const grid = h('div', { class: 'dash-grid' });
   list.forEach(d => {
@@ -2686,6 +2720,7 @@ function renderDashboardList(main) {
       openMenu(more, [
         { label: 'Открыть', icon: 'eye', onClick: () => go('#/d/' + d.id) },
         { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(d.id) },
+        { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(d.id) },
         '-',
         { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteDashboard(d.id) },
       ]);
@@ -3024,6 +3059,7 @@ function renderDashboard(main, id, q) {
       { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
       { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
       { label: 'Свойства дашборда', icon: 'settings', onClick: openProps },
+      { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(id) },
       !editing ? '-' : null,
       !editing ? { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(id) } : null,
       !editing ? { label: 'Удалить дашборд', icon: 'trash', danger: true, onClick: () => deleteDashboard(id) } : null,
@@ -3442,6 +3478,10 @@ function renderDashboard(main, id, q) {
     disposeCells();
     clear(dmain);
     if (editing) dmain.appendChild(h('div', { class: 'edit-banner' }, ic('edit'), 'Режим редактирования. Изменения появятся у всех после нажатия «Сохранить».'));
+    const fakeNames = [...new Set(D.tabs.flatMap(t => t.items.map(i => i.chartId && (STATE.charts[i.chartId] || {}).datasetId))
+      .filter(x => isSchemaDs(DS[x])).map(x => DS[x].name))];
+    if (fakeNames.length) dmain.appendChild(h('div', { class: 'edit-banner fake-banner' }, ic('schema'),
+      `Это макет: ${fakeNames.length > 1 ? 'наборы' : 'набор'} ${fakeNames.map(n => '«' + n + '»').join(', ')} ${plural(fakeNames.length, 'содержит', 'содержат', 'содержат')} вымышленные данные.`));
     dmain.appendChild(paintHead());
     const tabs = paintTabs();
     if (tabs) dmain.appendChild(tabs);
@@ -3965,6 +4005,7 @@ function renderDatasetList(main) {
   main.appendChild(page);
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('h1', null, 'Данные'), h('p', null, 'Встроенные демо-наборы DNS и ваши файлы. Загруженные данные хранятся только в этом браузере.')),
+    h('button', { class: 'btn', onclick: () => openSchemaDialog() }, ic('schema'), 'Описать набор'),
     h('button', { class: 'btn primary', onclick: openUpload }, ic('upload'), 'Загрузить CSV или Excel')));
   const list = Object.values(DS).sort((a, b) => (b.builtin ? 1 : 0) - (a.builtin ? 1 : 0) || a.name.localeCompare(b.name, 'ru'));
   const usage = id => Object.values(STATE.charts).filter(c => c.datasetId === id).length;
@@ -3972,7 +4013,9 @@ function renderDatasetList(main) {
     h('thead', null, h('tr', null, h('th', null, 'Набор данных'), h('th', null, 'Источник'), h('th', null, 'Строк'), h('th', null, 'Колонок'), h('th', null, 'Графиков'), h('th'))),
     h('tbody', null, list.map(d => h('tr', { class: 'click', onclick: () => go('#/data/' + d.id) },
       h('td', null, h('span', { class: 'vt' }, ic('db'), h('b', { style: { fontWeight: 500 } }, d.name))),
-      h('td', null, d.builtin ? h('span', { class: 'pill pri' }, 'Демо DNS') : h('span', { class: 'pill' }, d.fileName || 'Файл')),
+      h('td', null, d.builtin ? h('span', { class: 'pill pri' }, 'Демо DNS')
+        : isSchemaDs(d) ? h('span', { class: 'pill acc' }, 'Схема, данные вымышленные')
+          : h('span', { class: 'pill' }, d.fileName || 'Файл')),
       h('td', null, fmtNum(d.rows.length, 'int')),
       h('td', null, d.columns.length),
       h('td', null, usage(d.id) || h('span', { class: 'muted' }, '—')),
@@ -3989,9 +4032,14 @@ function renderDatasetPage(main, id) {
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('a', { href: '#/data', style: { fontSize: '13px', textDecoration: 'none' } }, '← Все наборы'), h('div', { style: { marginTop: '8px' } }, nameEl),
       h('p', null, d.description || `Загружен из файла ${d.fileName || ''}. ${fmtNum(d.rows.length, 'int')} ${plural(d.rows.length, 'строка', 'строки', 'строк')}.`)),
+    isSchemaDs(d) ? h('button', { class: 'btn', onclick: () => openSchemaDialog(d.id) }, ic('schema'), 'Изменить схему') : null,
     h('button', { class: 'btn primary', onclick: () => newChartDialog({ datasetId: d.id }) }, ic('plus'), 'Создать график'),
     editable ? h('button', { class: 'btn danger', onclick: () => deleteDataset(d) }, ic('trash'), 'Удалить набор') : null));
-  if (d.missingRows) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } }, 'Строки этого набора не найдены в хранилище браузера. Загрузите файл заново.'));
+  if (d.missingRows) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
+    d.fromTemplate ? 'Набор приехал из шаблона без данных. Загрузите файл с такими же колонками — графики оживут сами.'
+      : 'Строки этого набора не найдены в хранилище браузера. Загрузите файл заново.'));
+  if (isSchemaDs(d)) page.appendChild(h('div', { class: 'edit-banner fake-banner', style: { borderRadius: '8px', marginBottom: '16px' } }, ic('schema'),
+    `${fmtNum(d.rows.length, 'int')} ${plural(d.rows.length, 'строка', 'строки', 'строк')} придумано по схеме: цифры правдоподобные, но ненастоящие. Период — ${fmtDate(parseIsoDate(d.schema.dateFrom))} — ${fmtDate(parseIsoDate(d.schema.dateTo))}.`));
 
   // Колонки
   const colsWrap = h('div', { class: 'tbl-wrap', style: { marginBottom: '28px' } });
@@ -4283,6 +4331,580 @@ async function saveUploaded(name, fileName, cols, data) {
   DS[id] = Object.assign({}, meta, { rows });
   saveState();
   return id;
+}
+
+/* ============================================================
+   Кобра · наборы-схемы
+   Набор, у которого есть только описание колонок: строки Кобра
+   придумывает сама и каждый раз одни и те же (детерминированный seed).
+   Нужны для шаблонов и ТЗ, когда данных ещё нет на руках.
+   ============================================================ */
+const SCHEMA_ROWS_DEF = 3000;
+const SCHEMA_ROWS_MAX = 50000;
+const SCHEMA_SEASON = [.86, .82, .92, .88, .9, .92, .9, 1, 1.02, 1.05, 1.2, 1.5];
+const SCHEMA_NOTE = 'Вымышленные данные: набор создан по описанию колонок, чтобы показать макет. Для отчётности не годится.';
+
+/* Подсказки по названию колонки: тип и правдоподобные значения */
+const SCHEMA_HINTS = [
+  { re: /(^|[^а-я])дата|дате|день|сутки|месяц|период|^date|_date|time/i, type: 'date' },
+  { re: /процент|доля|конверсия|маржинальность|%/i, type: 'number', min: 0, max: 100, decimals: 1 },
+  { re: /выручка|сумма|оборот|revenue|amount|стоимость|бюджет|расход|затрат|маржа|прибыль|cost|price|цена|чек|руб/i, type: 'number', min: 500, max: 250000 },
+  { re: /количество|кол-во|qty|штук|^шт|заказ|сделк|звонк|заявк|визит|клик|показ|пользовател|посещен|count|число/i, type: 'number', min: 1, max: 60 },
+  { re: /город|city/i, type: 'string', values: ['Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань', 'Краснодар', 'Воронеж'] },
+  { re: /регион|округ|област|край|филиал|подразделен|region|территор/i, type: 'string', values: ['Центральный', 'Северо-Западный', 'Приволжский', 'Сибирский', 'Уральский', 'Южный'] },
+  { re: /категор|группа товар|направлен|продукт|товар|услуг|category|product/i, type: 'string', values: ['Категория А', 'Категория Б', 'Категория В', 'Категория Г', 'Категория Д'] },
+  { re: /канал|источник|трафик|channel|source|utm/i, type: 'string', values: ['Онлайн', 'Розница', 'Партнёры', 'Телефон', 'Рассылка'] },
+  { re: /статус|этап|стади|состояни|status|stage/i, type: 'string', values: ['Новый', 'В работе', 'Согласован', 'Завершён', 'Отменён'] },
+  { re: /менеджер|сотрудник|ответственн|продавец|оператор|manager|owner/i, type: 'string', values: ['Иванов И.', 'Петрова А.', 'Сидоров П.', 'Кузнецова М.', 'Новиков Д.', 'Морозова Е.'] },
+  { re: /клиент|контрагент|заказчик|компани|customer|client|account/i, type: 'string', values: ['ООО «Вектор»', 'ООО «Аметист»', 'АО «Прогресс»', 'ИП Семёнов', 'ООО «Горизонт»', 'АО «Квант»'] },
+  { re: /сегмент|тип|вид|формат|segment|kind/i, type: 'string', values: ['Крупный', 'Средний', 'Малый'] },
+  { re: /платформ|устройств|platform|device|os/i, type: 'string', values: ['Сайт', 'Приложение iOS', 'Приложение Android'] },
+  { re: /магазин|точк|склад|офис|store|shop/i, type: 'string', values: ['Точка №1', 'Точка №2', 'Точка №3', 'Точка №4', 'Точка №5'] },
+  { re: /id$|номер|код|артикул|guid|uuid/i, type: 'string', ids: true },
+];
+
+function guessSchemaCol(label) {
+  const hit = SCHEMA_HINTS.find(hr => hr.re.test(String(label || '')));
+  if (!hit) return { type: 'string', values: null };
+  const out = { type: hit.type };
+  if (hit.min != null) { out.min = hit.min; out.max = hit.max; out.decimals = hit.decimals || 0; }
+  if (hit.values) out.values = hit.values.slice();
+  if (hit.ids) out.ids = true;
+  return out;
+}
+
+/* Значения по умолчанию для строковой колонки без подсказки: «Подпись 1…5» */
+function schemaFallbackValues(label) {
+  const base = String(label || 'Значение').trim().replace(/\s+/g, ' ').slice(0, 24) || 'Значение';
+  return [1, 2, 3, 4, 5].map(i => `${base} ${i}`);
+}
+
+function hashUnit(s) {
+  let hv = 2166136261;
+  for (let i = 0; i < s.length; i++) { hv ^= s.charCodeAt(i); hv = Math.imul(hv, 16777619); }
+  return ((hv >>> 0) % 10000) / 10000;
+}
+
+function normalizeSchema(sc) {
+  const s = clone(sc || {});
+  s.seed = s.seed || 1;
+  s.rowCount = Math.max(1, Math.min(+s.rowCount || SCHEMA_ROWS_DEF, SCHEMA_ROWS_MAX));
+  s.columns = (s.columns || []).filter(c => c && c.key);
+  if (!parseIsoDate(s.dateFrom) || !parseIsoDate(s.dateTo) || parseIsoDate(s.dateFrom) >= parseIsoDate(s.dateTo)) {
+    const to = truncTime(Date.now(), 'day');
+    s.dateFrom = isoDate(shiftTime(to, 'month', -23));
+    s.dateTo = isoDate(to);
+  }
+  return s;
+}
+
+/* Период по умолчанию для нового набора: 24 месяца до сегодня.
+   Даты фиксируются в схеме при создании — иначе строки менялись бы каждый день. */
+function defaultSchemaPeriod() {
+  const to = truncTime(Date.now(), 'day');
+  return { dateFrom: isoDate(shiftTime(to, 'month', -23)), dateTo: isoDate(to) };
+}
+
+function generateSchemaRows(schema) {
+  const s = normalizeSchema(schema);
+  const rnd = mulberry32(s.seed);
+  const from = parseIsoDate(s.dateFrom), to = parseIsoDate(s.dateTo);
+  const span = Math.max(to - from, DAY);
+  const dateCols = s.columns.filter(c => c.type === 'date');
+  const strCols = s.columns.filter(c => c.type === 'string');
+  const numCols = s.columns.filter(c => c.type === 'number');
+  // Первые значения в списке популярнее остальных — так столбики и секторы выглядят живее
+  const pools = {};
+  strCols.forEach(c => {
+    const vals = (c.values && c.values.length ? c.values : schemaFallbackValues(c.label));
+    pools[c.key] = vals.map((v, i) => ({ v, w: 1 / Math.pow(i + 1, 0.75) }));
+  });
+  const rows = new Array(s.rowCount);
+  for (let i = 0; i < s.rowCount; i++) {
+    const r = {};
+    // Сдвигаем даты к концу периода: свежих записей чуть больше
+    const ms = truncTime(from + Math.pow(rnd(), 0.85) * span, 'day');
+    dateCols.forEach(c => { r[c.key] = ms; });
+    let catMul = 1;
+    strCols.forEach((c, ci) => {
+      if (c.ids) { r[c.key] = String(100000 + Math.floor(rnd() * 899999)); return; }
+      const v = pickWeighted(rnd, pools[c.key]).v;
+      r[c.key] = v;
+      if (ci === 0) catMul = 0.55 + 1.5 * hashUnit(String(v)); // у каждой категории свой масштаб
+    });
+    const growth = 1 + 0.35 * ((ms - from) / span);
+    const season = SCHEMA_SEASON[new Date(ms).getUTCMonth()];
+    numCols.forEach(c => {
+      const lo = c.min != null ? +c.min : 1, hi = c.max != null ? +c.max : 1000;
+      const pct = lo >= 0 && hi <= 100 && (c.decimals || 0) > 0; // проценты не растим и не сезоним
+      // Длинный хвост: большинство значений у нижней границы, в максимум упирается около 1 % строк
+      const mul = pct ? 1 : (catMul * growth * season) / 2.2;
+      const u = Math.min(1, Math.pow(rnd(), 1.8) * mul);
+      const v = lo + (hi - lo) * u;
+      r[c.key] = c.decimals ? +v.toFixed(c.decimals) : Math.round(v);
+    });
+    rows[i] = r;
+  }
+  return rows;
+}
+
+/* Метрики: количество строк плюс сумма по каждому числу. Свои метрики сохраняем. */
+function schemaMetrics(columns, prev) {
+  const keep = (prev || []).filter(m => {
+    if (m.key === 'count' || m.key.startsWith('sum_') || m.key.startsWith('avg_')) return false;
+    const used = JSON.stringify(m.expr).match(/"col":"([^"]+)"/g) || [];
+    return used.every(u => u.slice(7, -1) === '*' || columns.some(c => c.key === u.slice(7, -1)));
+  });
+  const out = [{ key: 'count', label: 'Количество строк', expr: { type: 'simple', agg: 'COUNT', col: '*' }, format: 'int' }];
+  columns.filter(c => c.type === 'number').forEach(c => {
+    // Проценты складывать бессмысленно — для них среднее; деньги показываем рублями
+    const isPct = /процент|доля|конверсия|%/i.test(c.label);
+    const agg = isPct ? 'AVG' : 'SUM';
+    const format = isPct ? 'dec1' : /₽|руб/i.test(c.label) ? 'rub_smart' : 'smart';
+    out.push({
+      key: (isPct ? 'avg_' : 'sum_') + c.key, label: (isPct ? 'Среднее: ' : 'Сумма: ') + c.label,
+      expr: { type: 'simple', agg, col: c.key }, format,
+    });
+  });
+  return out.concat(keep);
+}
+
+function saveSchemaDataset({ id, name, schema }) {
+  const sc = normalizeSchema(schema);
+  const columns = sc.columns.map(c => ({ key: c.key, label: c.label || c.key, type: c.type }));
+  const prev = id && DS[id] ? DS[id].metrics : null;
+  const mainDttm = (columns.find(c => c.type === 'date') || {}).key || null;
+  const dsId = id || uid('ds_');
+  const meta = {
+    id: dsId, name: name || 'Набор по схеме', kind: 'schema', schema: sc, columns,
+    metrics: schemaMetrics(columns, prev), mainDttm, description: SCHEMA_NOTE,
+    created: (STATE.datasets[dsId] || {}).created || Date.now(),
+  };
+  STATE.datasets[dsId] = meta;
+  DS[dsId] = Object.assign({}, meta, { rows: generateSchemaRows(sc) });
+  saveState();
+  return dsId;
+}
+
+const isSchemaDs = d => !!(d && d.kind === 'schema');
+
+/* ---------- Диалог описания набора ---------- */
+// Хвост вроде «, ₽» или «, шт.» — это часть названия колонки, а не отдельная колонка
+const UNIT_TAIL = /^(₽|руб\.?|р\.|%|шт\.?|ед\.?|чел\.?|кг|т|л|м2|м²|мин|сек|дн\.?|тыс\.?|млн|млрд|\$|€|usd|eur)$/i;
+function parseColumnNames(text, mergeUnits) {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  const lines = raw.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  let parts;
+  if (lines.length > 1) parts = lines;                  // по одной колонке в строке
+  else if (/\t/.test(raw)) parts = raw.split('\t');     // шапка, вставленная из Excel
+  else if (/;/.test(raw)) parts = raw.split(';');
+  else parts = raw.split(/[,|]/);
+  parts = parts.map(x => x.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+  if (mergeUnits) {
+    const merged = [];
+    parts.forEach(p => {
+      if (merged.length && UNIT_TAIL.test(p)) merged[merged.length - 1] += ', ' + p;
+      else merged.push(p);
+    });
+    parts = merged;
+  }
+  return parts.slice(0, 40);
+}
+
+function openSchemaDialog(existingId) {
+  const existing = existingId ? DS[existingId] : null;
+  let name = existing ? existing.name : '';
+  let cols = existing ? clone(normalizeSchema(existing.schema).columns) : [];
+  let rowCount = existing ? normalizeSchema(existing.schema).rowCount : SCHEMA_ROWS_DEF;
+  const per = existing ? normalizeSchema(existing.schema) : defaultSchemaPeriod();
+  let dateFrom = per.dateFrom, dateTo = per.dateTo;
+  const keysUsed = new Set(cols.map(c => c.key));
+
+  const addColumns = labels => {
+    labels.forEach(label => {
+      const g = guessSchemaCol(label);
+      cols.push(Object.assign({ key: slugKey(label, cols.length, keysUsed), label }, g));
+    });
+  };
+
+  const body = h('div');
+  const paste = h('textarea', {
+    class: 'textarea', rows: 2, placeholder: 'Дата заказа, Филиал, Категория, Выручка, Количество',
+    'aria-label': 'Названия колонок',
+  });
+  const paint = () => {
+    clear(body);
+    body.appendChild(field('Название набора', h('input', {
+      class: 'input', value: name, placeholder: 'Например: Продажи филиалов (макет)',
+      oninput: e => { name = e.target.value; },
+    })));
+    body.appendChild(h('div', { class: 'field' },
+      h('div', { class: 'lbl' }, 'Колонки'),
+      h('div', { class: 'hint', style: { marginBottom: '6px' } }, 'Вставьте шапку из Excel или перечислите названия через запятую — тип Кобра угадает по названию.'),
+      paste,
+      h('div', { style: { display: 'flex', gap: '8px', marginTop: '8px' } },
+        h('button', {
+          class: 'btn sm', type: 'button', onclick: () => {
+            const names = parseColumnNames(paste.value, true);
+            if (!names.length) { toast('Не нашёл названий колонок', true); return; }
+            addColumns(names);
+            paste.value = '';
+            paint();
+          },
+        }, ic('plus'), 'Добавить колонки'),
+        cols.length ? h('button', { class: 'btn sm', type: 'button', onclick: () => { cols = []; keysUsed.clear(); paint(); } }, ic('trash'), 'Очистить') : null)));
+
+    if (cols.length) {
+      const tbl = h('table', { class: 'list' },
+        h('thead', null, h('tr', null, h('th', null, 'Подпись'), h('th', null, 'Тип'), h('th', null, 'Значения или диапазон'), h('th'))),
+        h('tbody', null, cols.map((c, i) => h('tr', null,
+          h('td', null, h('input', {
+            class: 'input', value: c.label, style: { height: '30px', minWidth: '140px' },
+            'aria-label': 'Подпись колонки', oninput: e => { c.label = e.target.value; },
+          })),
+          h('td', null, selectEl([['string', 'Текст'], ['number', 'Число'], ['date', 'Дата']], c.type, v => {
+            c.type = v;
+            if (v === 'number' && c.min == null) { c.min = 1; c.max = 1000; c.decimals = 0; }
+            if (v === 'string' && !c.values) c.values = null;
+            paint();
+          }, { 'aria-label': 'Тип колонки' })),
+          h('td', null,
+            c.type === 'string' ? h('input', {
+              class: 'input', style: { height: '30px', minWidth: '240px' },
+              value: (c.values || []).join(', '), placeholder: schemaFallbackValues(c.label).join(', '),
+              'aria-label': 'Значения через запятую',
+              oninput: e => { const v = parseColumnNames(e.target.value); c.values = v.length ? v : null; },
+            })
+              : c.type === 'number' ? h('div', { class: 'row2' },
+                h('input', { class: 'input', type: 'number', style: { height: '30px' }, value: c.min ?? 1, 'aria-label': 'Минимум', oninput: e => { c.min = e.target.value === '' ? 0 : +e.target.value; } }),
+                h('input', { class: 'input', type: 'number', style: { height: '30px' }, value: c.max ?? 1000, 'aria-label': 'Максимум', oninput: e => { c.max = e.target.value === '' ? 1 : +e.target.value; } }))
+                : h('span', { class: 'muted', style: { fontSize: '12.5px' } }, 'Период задаётся ниже')),
+          h('td', { class: 'act' }, iconBtn('trash', 'Убрать колонку', () => { cols.splice(i, 1); paint(); }, 'sm'))))));
+      body.appendChild(h('div', { class: 'tbl-wrap', style: { marginBottom: '14px' } }, tbl));
+    } else {
+      body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px' } }, 'Пока ни одной колонки. Для дашборда обычно хватает одной даты, одного-двух текстовых разрезов и одного числа.'));
+    }
+
+    body.appendChild(h('div', { class: 'row2' },
+      field('Строк', h('input', {
+        class: 'input', type: 'number', min: 1, max: SCHEMA_ROWS_MAX, value: rowCount,
+        oninput: e => { rowCount = +e.target.value || SCHEMA_ROWS_DEF; },
+      }), `Не больше ${fmtNum(SCHEMA_ROWS_MAX, 'int')}`),
+      h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Период для дат'),
+        h('div', { class: 'row2' },
+          h('input', { class: 'input', type: 'date', value: dateFrom, 'aria-label': 'Начало периода', onchange: e => { dateFrom = e.target.value; } }),
+          h('input', { class: 'input', type: 'date', value: dateTo, 'aria-label': 'Конец периода', onchange: e => { dateTo = e.target.value; } })))));
+    body.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '4px 0 0' } }, SCHEMA_NOTE));
+  };
+  paint();
+
+  openModal({
+    title: existing ? 'Изменить схему набора' : 'Описать набор данных', wide: 'x', body,
+    foot: close => [
+      h('span', { class: 'grow muted', style: { fontSize: '12.5px' } }, 'Цифры придумываются по описанию и не меняются при перезагрузке.'),
+      h('button', { class: 'btn', onclick: close }, 'Отмена'),
+      h('button', {
+        class: 'btn primary', onclick: () => {
+          if (!cols.length) { toast('Добавьте хотя бы одну колонку', true); return; }
+          if (!cols.some(c => c.type === 'number')) toast('В наборе нет числовых колонок — графики смогут считать только количество строк');
+          const schema = { seed: existing ? normalizeSchema(existing.schema).seed : (Date.now() % 100000) + 1, rowCount, dateFrom, dateTo, columns: cols };
+          const id = saveSchemaDataset({ id: existingId || null, name: name.trim(), schema });
+          close();
+          toast(existing ? 'Схема обновлена, строки пересчитаны' : 'Набор по схеме создан');
+          go('#/data/' + id);
+        },
+      }, existing ? 'Сохранить схему' : 'Создать набор')],
+  });
+}
+
+/* ============================================================
+   Кобра · обмен файлами
+   Прототип живёт в одном браузере, поэтому шаблон, дашборд и данные
+   передаются файлом .kobra.json: «шаблон» — только структура,
+   «проект» — вместе со строками данных.
+   ============================================================ */
+const KOBRA_FILE_V = 1;
+const LS_AUTHOR = 'kobra.author';
+
+/* ---------- Сборка файла ---------- */
+function collectRefs(dashIds, includeLoose) {
+  const dashboards = {}, charts = {}, dsIds = new Set();
+  dashIds.forEach(id => {
+    const d = STATE.dashboards[id];
+    if (!d) return;
+    dashboards[id] = clone(d);
+    d.tabs.forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) charts[i.chartId] = clone(STATE.charts[i.chartId]); }));
+    (d.filters || []).forEach(f => { if (f.datasetId) dsIds.add(f.datasetId); });
+  });
+  if (includeLoose) {
+    const used = new Set();
+    Object.values(STATE.dashboards).forEach(d => d.tabs.forEach(t => t.items.forEach(i => i.chartId && used.add(i.chartId))));
+    Object.values(STATE.charts).forEach(c => { if (!used.has(c.id)) charts[c.id] = clone(c); });
+  }
+  Object.values(charts).forEach(c => dsIds.add(c.datasetId));
+  return { dashboards, charts, dsIds: [...dsIds] };
+}
+
+/* Схема по колонкам готового набора: типы берём настоящие, значения и
+   диапазоны придумываем по названиям — из реальных данных не подглядываем. */
+function schemaFromColumns(columns, rowCount) {
+  return Object.assign({ seed: 7, rowCount: rowCount || SCHEMA_ROWS_DEF, columns: columns.map(c => {
+    const g = guessSchemaCol(c.label || c.key);
+    const col = { key: c.key, label: c.label || c.key, type: c.type };
+    if (c.type === 'number') { col.min = g.min != null ? g.min : 1; col.max = g.max != null ? g.max : 1000; col.decimals = g.decimals || 0; }
+    if (c.type === 'string') { col.values = g.values || null; if (g.ids) col.ids = true; }
+    return col;
+  }) }, defaultSchemaPeriod());
+}
+
+function datasetForExport(d, withData, fakeData) {
+  if (d.builtin) return { id: d.id, name: d.name, builtin: true };
+  if (isSchemaDs(d)) return { id: d.id, name: d.name, kind: 'schema', schema: d.schema, columns: clone(d.columns), metrics: clone(d.metrics), mainDttm: d.mainDttm, description: d.description || '' };
+  const base = { id: d.id, name: d.name, kind: 'upload', fileName: d.fileName || '', columns: clone(d.columns), metrics: clone(d.metrics), mainDttm: d.mainDttm, description: d.description || '' };
+  if (withData) return Object.assign(base, { rows: d.rows });
+  if (fakeData) return Object.assign(base, { kind: 'schema', fromUpload: true, schema: schemaFromColumns(d.columns, Math.min(d.rows.length || SCHEMA_ROWS_DEF, SCHEMA_ROWS_MAX)), description: SCHEMA_NOTE });
+  return Object.assign(base, { noRows: true });
+}
+
+function buildExport({ dashIds, includeLoose, withData, fakeData, author, note }) {
+  const { dashboards, charts, dsIds } = collectRefs(dashIds, includeLoose);
+  const datasets = [], dsMetrics = {};
+  dsIds.forEach(id => {
+    const d = DS[id];
+    if (!d) return;
+    datasets.push(datasetForExport(d, withData, fakeData));
+    if (d.builtin && (STATE.dsMetrics[id] || []).length) dsMetrics[id] = clone(STATE.dsMetrics[id]);
+  });
+  return {
+    kobra: KOBRA_FILE_V, app: 'Кобра', kind: withData ? 'project' : 'template',
+    exportedAt: new Date().toISOString(), author: author || '', note: note || '',
+    dashboards, charts, datasets, dsMetrics,
+  };
+}
+
+function exportFileName(dashIds, withData) {
+  const first = dashIds.length === 1 ? STATE.dashboards[dashIds[0]] : null;
+  const slug = first ? slugKey(first.title, 0, new Set()) : (withData ? 'proekt' : 'shablon');
+  return `kobra-${slug}-${isoDate(Date.now())}.kobra.json`;
+}
+
+/* ---------- Диалог экспорта ---------- */
+function openExportDialog(presetDashId) {
+  const all = Object.values(STATE.dashboards).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  const picked = new Set(presetDashId && STATE.dashboards[presetDashId] ? [presetDashId] : all.map(d => d.id));
+  let withData = false, fakeData = true, includeLoose = false;
+  let author = lsGet(LS_AUTHOR) || '';
+  let note = '';
+  const body = h('div');
+  const size = h('div', { class: 'muted', style: { fontSize: '12.5px' } });
+
+  const recount = () => {
+    if (!picked.size && !includeLoose) { size.textContent = 'Не выбрано ни одного дашборда.'; return; }
+    try {
+      const json = JSON.stringify(buildExport({ dashIds: [...picked], includeLoose, withData, fakeData, author, note }));
+      const kb = new Blob([json]).size / 1024;
+      const { charts, dsIds } = collectRefs([...picked], includeLoose);
+      size.textContent = `В файле: ${picked.size} ${plural(picked.size, 'дашборд', 'дашборда', 'дашбордов')}, `
+        + `${Object.keys(charts).length} ${plural(Object.keys(charts).length, 'график', 'графика', 'графиков')}, `
+        + `${dsIds.length} ${plural(dsIds.length, 'набор', 'набора', 'наборов')} данных. Размер — `
+        + (kb > 1024 ? (kb / 1024).toFixed(1) + ' МБ' : Math.max(1, Math.round(kb)) + ' КБ') + '.';
+    } catch (e) { size.textContent = 'Не удалось оценить размер: ' + e.message; }
+  };
+
+  const paint = () => {
+    clear(body);
+    body.appendChild(h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Что вкладываем'),
+      h('div', { class: 'seg' },
+        h('button', { class: withData ? '' : 'on', onclick: () => { withData = false; paint(); } }, 'Шаблон — без данных'),
+        h('button', { class: withData ? 'on' : '', onclick: () => { withData = true; paint(); } }, 'Проект — с данными')),
+      h('div', { class: 'hint' }, withData
+        ? 'Строки загруженных наборов попадут в файл. Не отправляйте его по открытым каналам, если данные чувствительные.'
+        : 'Только структура: дашборды, графики, метрики и описания наборов. Строки загруженных файлов не вкладываются.')));
+    if (!withData) body.appendChild(checkbox('Подставить вымышленные данные, чтобы графики не были пустыми', fakeData, v => { fakeData = v; recount(); }));
+
+    const list = h('div', { style: { display: 'grid', gap: '4px', marginTop: '4px' } });
+    all.forEach(d => list.appendChild(checkbox(d.title, picked.has(d.id), v => { v ? picked.add(d.id) : picked.delete(d.id); recount(); })));
+    body.appendChild(h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Дашборды'),
+      all.length ? list : h('p', { class: 'muted', style: { fontSize: '13px', margin: 0 } }, 'Дашбордов пока нет.')));
+    body.appendChild(checkbox('Добавить графики, которых нет ни на одном дашборде', includeLoose, v => { includeLoose = v; recount(); }));
+
+    body.appendChild(h('div', { class: 'row2', style: { marginTop: '12px' } },
+      field('Автор', h('input', { class: 'input', value: author, placeholder: 'Кто отправляет', oninput: e => { author = e.target.value; } })),
+      field('Комментарий', h('input', { class: 'input', value: note, placeholder: 'Например: макет на согласование', oninput: e => { note = e.target.value; } }))));
+    body.appendChild(size);
+    recount();
+  };
+  paint();
+
+  openModal({
+    title: 'Экспорт в файл', wide: true, body,
+    foot: close => [
+      h('button', { class: 'btn', onclick: close }, 'Отмена'),
+      h('button', {
+        class: 'btn primary', onclick: () => {
+          const dashIds = [...picked];
+          if (!dashIds.length && !includeLoose) { toast('Выберите хотя бы один дашборд', true); return; }
+          const payload = buildExport({ dashIds, includeLoose, withData, fakeData, author, note });
+          if (author.trim()) lsSet(LS_AUTHOR, author.trim());
+          if (downloadFile(exportFileName(dashIds, withData), JSON.stringify(payload, null, 1))) {
+            close();
+            toast(withData ? 'Проект сохранён в файл' : 'Шаблон сохранён в файл');
+          }
+        },
+      }, ic('download'), 'Скачать файл')],
+  });
+}
+
+/* ---------- Импорт ---------- */
+function validatePayload(p) {
+  if (!p || typeof p !== 'object') throw new Error('это не файл Кобры');
+  if (p.kobra !== KOBRA_FILE_V) throw new Error(p.kobra ? `версия файла ${p.kobra} не поддерживается` : 'в файле нет пометки Кобры');
+  if (!p.dashboards || !p.charts) throw new Error('в файле нет дашбордов и графиков');
+  return p;
+}
+
+async function importPayload(p, mode) {
+  const dsMap = {}, chMap = {};
+  // Наборы данных
+  for (const d of p.datasets || []) {
+    if (d.builtin) {
+      dsMap[d.id] = d.id;
+      const extra = (p.dsMetrics || {})[d.id] || [];
+      if (extra.length && DS[d.id]) {
+        const have = new Set((STATE.dsMetrics[d.id] || []).map(m => m.key));
+        STATE.dsMetrics[d.id] = [...(STATE.dsMetrics[d.id] || []), ...extra.filter(m => !have.has(m.key))];
+      }
+      continue;
+    }
+    const collide = !!STATE.datasets[d.id];
+    const id = (mode === 'copy' && collide) ? uid('ds_') : d.id;
+    dsMap[d.id] = id;
+    const meta = {
+      id, name: d.name, kind: d.kind === 'schema' ? 'schema' : 'upload', fileName: d.fileName || '',
+      columns: clone(d.columns || []), metrics: clone(d.metrics || []), mainDttm: d.mainDttm || null,
+      description: d.description || '', created: Date.now(),
+    };
+    if (d.kind === 'schema') {
+      meta.schema = normalizeSchema(d.schema);
+      STATE.datasets[id] = meta;
+      DS[id] = Object.assign({}, meta, { rows: generateSchemaRows(meta.schema) });
+    } else if (Array.isArray(d.rows)) {
+      await idb.set('rows:' + id, d.rows);
+      STATE.datasets[id] = meta;
+      DS[id] = Object.assign({}, meta, { rows: d.rows });
+    } else {
+      meta.fromTemplate = true;
+      STATE.datasets[id] = meta;
+      DS[id] = Object.assign({}, meta, { rows: [], missingRows: true });
+    }
+  }
+  // Графики
+  Object.values(p.charts).forEach(c => {
+    const collide = !!STATE.charts[c.id];
+    const id = (mode === 'copy' && collide) ? uid('c_') : c.id;
+    chMap[c.id] = id;
+    STATE.charts[id] = Object.assign(clone(c), { id, datasetId: dsMap[c.datasetId] || c.datasetId, updated: Date.now() });
+  });
+  // Дашборды
+  const newDashIds = [];
+  Object.values(p.dashboards).forEach(d => {
+    const collide = !!STATE.dashboards[d.id];
+    const id = (mode === 'copy' && collide) ? uid('d_') : d.id;
+    const nd = clone(d);
+    nd.id = id;
+    nd.updated = Date.now();
+    if (mode === 'copy' && collide) nd.title = d.title + ' (импорт)';
+    nd.tabs.forEach(t => t.items.forEach(i => { if (i.chartId) i.chartId = chMap[i.chartId] || i.chartId; }));
+    nd.filters = (nd.filters || []).map(f => Object.assign({}, f, { datasetId: dsMap[f.datasetId] || f.datasetId }));
+    STATE.dashboards[id] = nd;
+    newDashIds.push(id);
+  });
+  saveState();
+  return newDashIds;
+}
+
+function openImportDialog() {
+  const input = h('input', { type: 'file', accept: '.json,.kobra.json,application/json', style: { display: 'none' } });
+  const status = h('div', { class: 'muted', style: { marginTop: '12px', fontSize: '13px' } });
+  const drop = h('div', {
+    class: 'upload-drop', tabindex: 0, role: 'button', onclick: () => input.click(),
+    onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') input.click(); },
+  }, ic('upload'), h('b', null, 'Перетащите файл .kobra.json или нажмите, чтобы выбрать'),
+    h('span', null, 'Файл, который Кобра сохранила через «Экспорт в файл».'));
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) handle(e.dataTransfer.files[0]); });
+  input.addEventListener('change', () => { if (input.files[0]) handle(input.files[0]); });
+  const md = openModal({ title: 'Импорт из файла', body: h('div', null, drop, input, status) });
+
+  async function handle(file) {
+    status.textContent = `Читаю «${file.name}»…`;
+    try {
+      const p = validatePayload(JSON.parse(await readTextFile(file)));
+      md.close();
+      openImportPreview(file, p);
+    } catch (e) {
+      status.textContent = '';
+      toast('Не удалось прочитать файл: ' + e.message, true);
+    }
+  }
+}
+
+function openImportPreview(file, p) {
+  const dashes = Object.values(p.dashboards), charts = Object.values(p.charts), dsList = p.datasets || [];
+  const collisions = dashes.filter(d => STATE.dashboards[d.id]).length + charts.filter(c => STATE.charts[c.id]).length;
+  let mode = 'copy';
+  const withRows = dsList.filter(d => Array.isArray(d.rows)).length;
+  const fake = dsList.filter(d => d.kind === 'schema').length;
+  const noRows = dsList.filter(d => d.noRows).length;
+  const body = h('div');
+  const paint = () => {
+    clear(body);
+    body.appendChild(h('table', { class: 'list' }, h('tbody', null, [
+      ['Файл', file.name],
+      ['Вид', p.kind === 'project' ? 'Проект со строками данных' : 'Шаблон без данных'],
+      ['Сохранён', p.exportedAt ? fmtDate(Date.parse(p.exportedAt)) : '—'],
+      p.author ? ['Автор', p.author] : null,
+      p.note ? ['Комментарий', p.note] : null,
+      ['Дашборды', dashes.map(d => d.title).join(', ') || '—'],
+      ['Графики', String(charts.length)],
+      ['Наборы данных', `${dsList.length}` + (withRows ? `, со строками — ${withRows}` : '') + (fake ? `, по схеме — ${fake}` : '') + (noRows ? `, без строк — ${noRows}` : '')],
+    ].filter(Boolean).map(([k, v]) => h('tr', null, h('td', { class: 'muted', style: { width: '150px' } }, k), h('td', null, v))))));
+    if (noRows) body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px' } }, 'Для наборов без строк графики будут пустыми, пока вы не загрузите файл с такими же колонками.'));
+    if (collisions) {
+      body.appendChild(h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Совпадения с тем, что уже есть'),
+        h('div', { class: 'hint', style: { marginBottom: '6px' } }, `Совпали по идентификатору: ${collisions}. Выберите, что делать.`),
+        h('div', { class: 'seg' },
+          h('button', { class: mode === 'copy' ? 'on' : '', onclick: () => { mode = 'copy'; paint(); } }, 'Добавить копией'),
+          h('button', { class: mode === 'replace' ? 'on' : '', onclick: () => { mode = 'replace'; paint(); } }, 'Заменить мои версии')),
+        h('div', { class: 'hint' }, mode === 'copy'
+          ? 'Ничего не потеряется: совпавшее приедет рядом, с пометкой «импорт».'
+          : 'Мои дашборды и графики с теми же идентификаторами будут перезаписаны версией из файла.')));
+    }
+  };
+  paint();
+
+  openModal({
+    title: 'Что в файле', wide: true, body,
+    foot: close => [
+      h('button', { class: 'btn', onclick: close }, 'Отмена'),
+      h('button', {
+        class: 'btn primary', onclick: async e => {
+          e.target.disabled = true;
+          try {
+            const ids = await importPayload(p, mode);
+            close();
+            toast('Импортировано');
+            if (ids.length) go('#/d/' + ids[0]); else go('#/charts');
+          } catch (err) {
+            console.error(err);
+            toast('Не удалось импортировать: ' + err.message, true);
+            e.target.disabled = false;
+          }
+        },
+      }, 'Импортировать')],
+  });
 }
 
 boot().catch(e => { console.error(e); const s = document.querySelector('.loading span'); if (s) s.textContent = 'Ошибка запуска: ' + e.message; });

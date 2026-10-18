@@ -237,6 +237,8 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .comp .grow span { font-size: 12px; color: var(--ink-3); }
 .comp.used { opacity: .6; }
 .edit-banner { background: var(--accent-soft); color: var(--ink); padding: 8px 24px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.edit-banner.fake-banner { background: var(--primary-soft); color: var(--ink); }
+.edit-banner svg { flex: none; }
 
 /* ---------- Исследование (Explore) ---------- */
 .explore { display: grid; grid-template-columns: 250px 330px 1fr; height: 100%; min-height: 0; }

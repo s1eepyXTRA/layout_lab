@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "kobra",
+      "runtimeExecutable": "py",
+      "runtimeArgs": ["-m", "http.server", "8777", "--directory", "kobra/build"],
+      "port": 8777
+    }
+  ]
+}
