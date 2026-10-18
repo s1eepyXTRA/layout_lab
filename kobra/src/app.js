@@ -249,8 +249,13 @@ function renderDashboardList(main) {
   grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый дашборд'));
   page.appendChild(grid);
 }
+// Пустые дашборды, созданные кнопкой «Новый дашборд»: если с такого ушли,
+// ничего не добавив, запись убирается, чтобы в списке не оставался мусор.
+// Набор не сохраняется — после перезагрузки дашборд просто остаётся как раньше.
+const freshDashboards = new Set();
 function createDashboard() {
   const id = uid('d_');
+  freshDashboards.add(id);
   STATE.dashboards[id] = { id, title: 'Новый дашборд', updated: Date.now(), crossFilter: true, scheme: null, tabs: [{ id: uid('t'), title: 'Вкладка 1', items: [] }], filters: [] };
   saveState();
   go('#/d/' + id + '?edit=1');
