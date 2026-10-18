@@ -44,6 +44,7 @@ function renderDashboard(main, id, q) {
   const editing = q.edit === '1';
   const D = editing ? clone(saved) : saved; // черновик в режиме правки
   const original = JSON.stringify(saved);
+  let draftHandled = false; // судьбу черновика решили сами: «Сохранить» или «Отменить»
   if (!D.tabs.length) D.tabs.push({ id: uid('t'), title: 'Вкладка 1', items: [] });
   let tabId = tabMemory[id] && D.tabs.some(t => t.id === tabMemory[id]) ? tabMemory[id] : D.tabs[0].id;
   let cross = crossMemory[id] || (crossMemory[id] = []);
@@ -202,6 +203,8 @@ function renderDashboard(main, id, q) {
     return head;
   }
   function saveEdit() {
+    draftHandled = true;
+    freshDashboards.delete(id);
     D.updated = Date.now();
     D.title = (D.title || '').trim() || 'Без названия';
     STATE.dashboards[id] = D;
@@ -211,6 +214,7 @@ function renderDashboard(main, id, q) {
   }
   async function cancelEdit() {
     if (JSON.stringify(D) !== original && !(await confirmDialog('Отменить изменения', 'Несохранённые изменения дашборда пропадут.', 'Отменить изменения'))) return;
+    draftHandled = true;
     go('#/d/' + id);
   }
   function openProps() {
@@ -552,7 +556,7 @@ function renderDashboard(main, id, q) {
       };
       search.addEventListener('input', paintList);
       body.append(
-        h('button', { class: 'btn primary', style: { width: '100%', marginBottom: '12px' }, onclick: () => { stash(); newChartDialog({ back: id }); } }, ic('plus'), 'Новый график'),
+        h('button', { class: 'btn primary', style: { width: '100%', marginBottom: '12px' }, onclick: () => newChartDialog({ back: id }) }, ic('plus'), 'Новый график'),
         search, list);
       paintList();
     } else {
@@ -565,15 +569,14 @@ function renderDashboard(main, id, q) {
         h('p', { class: 'muted', style: { fontSize: '12.5px', marginTop: '14px' } }, 'Перетаскивайте элементы за заголовок или значок ', h('span', { class: 'kbd' }, '⋮⋮'), ', размер меняйте за правый нижний угол. Текст редактируется двойным щелчком.'));
     }
   }
-  // Сохраняем черновик перед уходом на создание графика
+  // Черновик в STATE: зовётся из функции очистки, когда со страницы уходят
   function stash() {
     if (!editing) return;
     STATE.dashboards[id] = D; D.updated = Date.now(); saveState();
   }
-  function leaveTo(hash) {
-    if (editing && JSON.stringify(D) !== original) { stash(); toast('Изменения дашборда сохранены'); }
-    go(hash);
-  }
+  // Переходы внутрь приложения ничем не отличаются от ссылок в шапке:
+  // черновик сохранит функция очистки, её зовёт route() при любом переходе.
+  function leaveTo(hash) { go(hash); }
 
   /* ---------- Модалки ---------- */
   function fullscreenChart(chart) {
@@ -617,7 +620,23 @@ function renderDashboard(main, id, q) {
   function paintAll() { paintFilterBar(); paintBody(); }
   paintAll();
 
-  return () => { disposeCells(); if (editing && JSON.stringify(D) !== original && !location.hash.includes('/d/' + id)) { /* изменения уже в stash, если нужно */ } };
+  return () => {
+    disposeCells();
+    if (!editing) return;
+    // Единственное место, где черновик успевает уцелеть: ссылки в шапке, логотип
+    // и кнопка «назад» идут прямо в route(), а та зовёт только эту функцию.
+    // Спрашивать здесь уже поздно — переход состоялся, — поэтому сохраняем молча
+    // и говорим тостом, как это делал уход в конструктор графика.
+    // «Отменить» и «Сохранить» ставят draftHandled сами, так что откат работает.
+    if (!draftHandled && JSON.stringify(D) !== original) { stash(); toast('Изменения дашборда сохранены'); }
+    // Пустой «Новый дашборд», с которого ушли, не оставляем в списке. Проверяем
+    // именно запись в STATE: если человек успел дать название или завести фильтр,
+    // работа уже есть — такой дашборд остаётся.
+    const cur = STATE.dashboards[id];
+    if (freshDashboards.has(id) && cur && cur.title === 'Новый дашборд' && !cur.filters.length && !cur.tabs.some(t => t.items.length)) {
+      freshDashboards.delete(id); delete STATE.dashboards[id]; saveState();
+    }
+  };
 }
 
 /* ---------- Markdown ---------- */
