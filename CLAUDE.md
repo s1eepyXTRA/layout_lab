@@ -33,7 +33,7 @@ for f in src/*.js; do node --check "$f"; done   # единственная до�
 ## Сборка и порядок файлов
 
 `build.py` склеивает `src/styles.css` + `src/*.js` в порядке `ORDER`:
-`data → engine → ui → viz → app → dashboard → explore → datasets → schema → share`. Порядок важен —
+`data → engine → ui → viz → app → dashboard → explore → datasets → schema → share → spec`. Порядок важен —
 это и есть вся система зависимостей: верхнеуровневые `const` видят только то, что объявлено раньше
 (объявления функций поднимаются, поэтому вызывать функцию из более позднего файла можно).
 Новый файл в `src/` не подхватится, пока его не добавят в `ORDER`.
@@ -134,6 +134,23 @@ ECharts, marked и DOMPurify подключаются в `<head>`; SheetJS и Pa
 ссылки (`item.chartId`, `chart.datasetId`, `filter.datasetId`), в режиме `replace` перезаписывает
 совпавшее по идентификатору. Загруженный набор, приехавший без строк, помечается `fromTemplate` —
 его страница просит загрузить файл с такими же колонками.
+
+### Спецификация (`spec.js`)
+
+Превращает согласованный макет в ТЗ. У графика есть необязательный блок `spec`
+(`{question, source, refresh, priority, comment}` — поля перечислены в `SPEC_FIELDS`, пустые не
+хранятся, см. `normalizeSpec`): правится кнопкой «ТЗ» в шапке конструктора (`openSpecEditor`), виден
+в списке графиков, на расчёты не влияет и уезжает в `.kobra.json` вместе с графиком — отдельного кода
+в `share.js` для этого не нужно.
+
+`buildSpecMd(dash, {author, note})` собирает Markdown по дашборду (или по его черновику в режиме
+правки — поэтому принимает и объект, и id), `openSpecDialog` — диалог из меню дашборда со
+скачиванием через `downloadFile`. Главное в генераторе: параметры графика печатаются **обходом
+декларативной схемы** `VIZ[type].controls` (секции с `tab: 'data'`, плюс из `view` только то, что
+отличается от `defaults(ds)`), а подписи и формулы берутся из движка — `exprText`, `metricLabel`,
+`metricFormat`, `colLabel`, `describeTimeRange`, `AGGS`, `TIME_GRAINS`, `NUMBER_FORMATS`. Поэтому в
+ТЗ те же слова и цифры, что на экране, а новый тип графика описывает себя сам: ничего, кроме
+`controls`, добавлять не надо. Новый тип контрола — ветка в `specControlLine`.
 
 ### UI-слой (`ui.js`)
 

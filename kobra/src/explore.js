@@ -75,7 +75,8 @@ function openMetricEditor(ds, metric, onSave) {
 }
 function exprText(ds, e) {
   const part = x => x.agg === 'COUNT' && (x.col === '*' || !x.col) ? 'COUNT(*)' : `${x.agg}(${colLabel(ds, x.col)})`;
-  return e.type === 'ratio' ? `${part(e.num)} / ${part(e.den)}` : part(e);
+  if (e.type !== 'ratio') return part(e);
+  return `${part(e.num)} / ${part(e.den)}` + (e.mult && e.mult !== 1 ? ` × ${e.mult}` : '');
 }
 
 function openFilterEditorAdhoc(ds, filter, onSave) {
@@ -299,6 +300,11 @@ function renderExplore(main, parts, q) {
     const name = h('input', { class: 'name', value: chart.name, 'aria-label': 'Название графика', oninput: e => { chart.name = e.target.value; } });
     const headBtns = [];
     if (back) headBtns.push(h('button', { class: 'btn ghost', onclick: () => leave('#/d/' + back) }, ic('back'), 'К дашборду'));
+    const nSpec = specFilledCount(chart);
+    headBtns.push(h('button', { class: 'btn', title: 'Бизнес-вопрос, источник данных, периодичность — попадут в выгрузку ТЗ', onclick: () => openSpecEditor(chart, spec => {
+      if (spec) chart.spec = spec; else delete chart.spec;
+      paintMain(); drawPreview();
+    }) }, ic('text'), 'ТЗ', nSpec ? h('span', { class: 'pill pri', style: { marginLeft: '2px' } }, nSpec + '/' + SPEC_FIELDS.length) : null));
     headBtns.push(h('button', { class: 'btn primary', onclick: openSave }, ic('check'), 'Сохранить'));
     colMain.appendChild(h('div', { class: 'x-head' }, name, ...headBtns));
     previewRoot = h('div', { class: 'viz-root' });
