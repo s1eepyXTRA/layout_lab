@@ -75,6 +75,7 @@ const ICONS = {
   schema: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9.5 9.5V19.5"/><path d="M12.5 13h5" stroke-dasharray="2 2"/>',
   eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   reset: '<path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/>',
+  wand: '<path d="M4 20L13.5 10.5"/><path d="M17 3l.9 2.1L20 6l-2.1.9L17 9l-.9-2.1L14 6l2.1-.9zM7.5 4l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6L5.2 6.3l1.6-.7zM19 14.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z"/>',
   cobra: '<path d="M12 2.5c-3.3 0-6 2.6-6 6.3 0 2.4 1.2 4 2.6 5.2.8.7 1.1 1.4 1.1 2.4V21h4.6v-4.6c0-1 .3-1.7 1.1-2.4 1.4-1.2 2.6-2.8 2.6-5.2 0-3.7-2.7-6.3-6-6.3z" fill="currentColor" stroke="none"/><circle cx="10" cy="8" r=".9" fill="var(--bar)" stroke="none"/><circle cx="14" cy="8" r=".9" fill="var(--bar)" stroke="none"/><path d="M12 12.2v1.4m-.9.8l.9-.8.9.8" stroke="var(--bar)" stroke-width="1"/>',
   // Иконки визуализаций
   v_line: '<path d="M3 20h18"/><path d="M4 16l5-6 4 3 7-8"/>',

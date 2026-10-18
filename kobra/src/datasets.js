@@ -38,7 +38,8 @@ function renderDatasetPage(main, id) {
     h('div', { class: 'grow' }, h('a', { href: '#/data', style: { fontSize: '13px', textDecoration: 'none' } }, '← Все наборы'), h('div', { style: { marginTop: '8px' } }, nameEl),
       h('p', null, d.description || `Загружен из файла ${d.fileName || ''}. ${fmtNum(d.rows.length, 'int')} ${plural(d.rows.length, 'строка', 'строки', 'строк')}.`)),
     isSchemaDs(d) ? h('button', { class: 'btn', onclick: () => openSchemaDialog(d.id) }, ic('schema'), 'Изменить схему') : null,
-    h('button', { class: 'btn primary', onclick: () => newChartDialog({ datasetId: d.id }) }, ic('plus'), 'Создать график'),
+    h('button', { class: 'btn', onclick: () => newChartDialog({ datasetId: d.id }) }, ic('plus'), 'Создать график'),
+    h('button', { class: 'btn primary', onclick: () => openAutoDashDialog(d.id) }, ic('wand'), 'Собрать черновик дашборда'),
     editable ? h('button', { class: 'btn danger', onclick: () => deleteDataset(d) }, ic('trash'), 'Удалить набор') : null));
   if (d.missingRows) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
     d.fromTemplate ? 'Набор приехал из шаблона без данных. Загрузите файл с такими же колонками — графики оживут сами.'
