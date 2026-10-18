@@ -296,7 +296,7 @@ function renderChartList(main) {
     clear(wrap);
     if (!list.length) { wrap.appendChild(h('div', { class: 'empty' }, h('b', null, Object.keys(STATE.charts).length ? 'Ничего не найдено' : 'Графиков пока нет'), 'Создайте первый график из набора данных.', h('br'), h('button', { class: 'btn primary', onclick: () => newChartDialog() }, ic('plus'), 'Новый график'))); return; }
     wrap.appendChild(h('table', { class: 'list' },
-      h('thead', null, h('tr', null, h('th', null, 'Название'), h('th', null, 'Тип'), h('th', null, 'Набор данных'), h('th', null, 'На дашбордах'), h('th', null, 'Изменён'), h('th'))),
+      h('thead', null, h('tr', null, h('th', null, 'Название'), h('th', null, 'Тип'), h('th', null, 'Набор данных'), h('th', null, 'ТЗ'), h('th', null, 'На дашбордах'), h('th', null, 'Изменён'), h('th'))),
       h('tbody', null, list.map(c => {
         const used = chartUsage(c.id);
         const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с графиком' }, ic('dots'));
@@ -305,10 +305,16 @@ function renderChartList(main) {
           { label: 'Дублировать', icon: 'copy', onClick: () => { const n = clone(c); n.id = uid('c_'); n.name += ' (копия)'; n.updated = Date.now(); STATE.charts[n.id] = n; saveState(); paint(); } },
           '-', { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteChart(c.id).then(ok => ok && paint()) },
         ]); });
+        const nSpec = specFilledCount(c);
+        const question = specValue(c, 'question');
         return h('tr', { class: 'click', onclick: () => go('#/explore/' + c.id) },
-          h('td', null, h('b', { style: { fontWeight: 500 } }, c.name)),
+          h('td', null, h('b', { style: { fontWeight: 500 } }, c.name),
+            question ? h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '2px' } }, question) : null),
           h('td', null, h('span', { class: 'vt' }, ic(VIZ[c.viz].icon), VIZ[c.viz].label)),
           h('td', null, (DS[c.datasetId] || {}).name || h('span', { class: 'pill acc' }, 'нет данных')),
+          h('td', null, nSpec
+            ? h('span', { class: 'pill pri', title: SPEC_FIELDS.filter(f => specValue(c, f.key)).map(f => f.label + ': ' + (f.key === 'priority' ? specPriorityLabel(specValue(c, f.key)) : specValue(c, f.key))).join('\n') }, nSpec + '/' + SPEC_FIELDS.length)
+            : h('span', { class: 'muted' }, '—')),
           h('td', null, used.length ? used.map(d => h('a', { href: '#/d/' + d.id, onclick: e => e.stopPropagation(), style: { marginRight: '8px' } }, d.title)) : h('span', { class: 'muted' }, '—')),
           h('td', { class: 'muted' }, fmtWhen(c.updated)),
           h('td', { class: 'act' }, more));
