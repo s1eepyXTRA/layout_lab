@@ -9,12 +9,14 @@ const SCHEMA_ROWS_MAX = 50000;
 const SCHEMA_SEASON = [.86, .82, .92, .88, .9, .92, .9, 1, 1.02, 1.05, 1.2, 1.5];
 const SCHEMA_NOTE = 'Вымышленные данные: набор создан по описанию колонок, чтобы показать макет. Для отчётности не годится.';
 
-/* Подсказки по названию колонки: тип и правдоподобные значения */
+/* Подсказки по названию колонки: тип и правдоподобные значения.
+   Порядок важен: внутри одного прохода побеждает первая совпавшая подсказка
+   (см. guessSchemaCol — сначала по первому слову названия, потом по названию целиком). */
 const SCHEMA_HINTS = [
   { re: /(^|[^а-я])дата|дате|день|сутки|месяц|период|^date|_date|time/i, type: 'date' },
   { re: /процент|доля|конверсия|маржинальность|%/i, type: 'number', min: 0, max: 100, decimals: 1 },
-  { re: /выручка|сумма|оборот|revenue|amount|стоимость|бюджет|расход|затрат|маржа|прибыль|cost|price|цена|чек|руб/i, type: 'number', min: 500, max: 250000 },
-  { re: /количество|кол-во|qty|штук|^шт|заказ|сделк|звонк|заявк|визит|клик|показ|пользовател|посещен|count|число/i, type: 'number', min: 1, max: 60 },
+  { re: /выручка|сумма|оборот|продаж|revenue|amount|стоимость|бюджет|расход|затрат|маржа|прибыль|cost|price|цена|чек|руб|₽|\$|€/i, type: 'number', min: 500, max: 250000 },
+  { re: /количество|кол-во|qty|штук|^шт|заказ|сдел|звонк|заявк|визит|клик|показ|пользовател|посещен|срок|count|число/i, type: 'number', min: 1, max: 60 },
   { re: /город|city/i, type: 'string', values: ['Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань', 'Краснодар', 'Воронеж'] },
   { re: /регион|округ|област|край|филиал|подразделен|region|территор/i, type: 'string', values: ['Центральный', 'Северо-Западный', 'Приволжский', 'Сибирский', 'Уральский', 'Южный'] },
   { re: /категор|группа товар|направлен|продукт|товар|услуг|category|product/i, type: 'string', values: ['Категория А', 'Категория Б', 'Категория В', 'Категория Г', 'Категория Д'] },
@@ -28,8 +30,21 @@ const SCHEMA_HINTS = [
   { re: /id$|номер|код|артикул|guid|uuid/i, type: 'string', ids: true },
 ];
 
+/* Первое слово названия: «Статус сделки» → «статус», «Выручка, ₽» → «выручка».
+   Хвост после запятой — единицы и уточнения, смысл колонки задаёт первое слово. */
+function schemaHeadWord(label) {
+  const head = String(label || '').split(',')[0].trim().split(/\s+/)[0] || '';
+  return head.replace(/^[^\p{L}\p{N}_]+|[^\p{L}\p{N}_]+$/gu, '');
+}
+
+/* Подсказку ищем сначала по первому слову названия и только потом по названию
+   целиком: иначе широкое правило обгоняет точное — «Статус сделки» попадал бы
+   в количества по «сделк», а «Номер заказа» — по «заказ», и у набора появлялась
+   бессмысленная метрика «Сумма: Статус сделки». */
 function guessSchemaCol(label) {
-  const hit = SCHEMA_HINTS.find(hr => hr.re.test(String(label || '')));
+  const full = String(label || '');
+  const head = schemaHeadWord(full);
+  const hit = (head && SCHEMA_HINTS.find(hr => hr.re.test(head))) || SCHEMA_HINTS.find(hr => hr.re.test(full));
   if (!hit) return { type: 'string', values: null };
   const out = { type: hit.type };
   if (hit.min != null) { out.min = hit.min; out.max = hit.max; out.decimals = hit.decimals || 0; }
@@ -56,18 +71,19 @@ function normalizeSchema(sc) {
   s.rowCount = Math.max(1, Math.min(+s.rowCount || SCHEMA_ROWS_DEF, SCHEMA_ROWS_MAX));
   s.columns = (s.columns || []).filter(c => c && c.key);
   if (!parseIsoDate(s.dateFrom) || !parseIsoDate(s.dateTo) || parseIsoDate(s.dateFrom) >= parseIsoDate(s.dateTo)) {
-    const to = truncTime(Date.now(), 'day');
-    s.dateFrom = isoDate(shiftTime(to, 'month', -23));
-    s.dateTo = isoDate(to);
+    Object.assign(s, defaultSchemaPeriod());
   }
   return s;
 }
 
-/* Период по умолчанию для нового набора: 24 месяца до сегодня.
+/* Период по умолчанию для нового набора: 24 полных месяца, последний из них —
+   прошлый, а не текущий. Если данные обрываются на середине месяца, последняя
+   точка на любом графике по месяцам выглядит обвалом, а KPI с трендом честно
+   пишет «−49 % к прошлому месяцу» — макет читается как отчёт о катастрофе.
    Даты фиксируются в схеме при создании — иначе строки менялись бы каждый день. */
 function defaultSchemaPeriod() {
-  const to = truncTime(Date.now(), 'day');
-  return { dateFrom: isoDate(shiftTime(to, 'month', -23)), dateTo: isoDate(to) };
+  const to = truncTime(Date.now(), 'month') - DAY; // последний день прошлого месяца
+  return { dateFrom: isoDate(truncTime(shiftTime(to, 'month', -23), 'month')), dateTo: isoDate(to) };
 }
 
 function generateSchemaRows(schema) {
@@ -88,7 +104,12 @@ function generateSchemaRows(schema) {
   for (let i = 0; i < s.rowCount; i++) {
     const r = {};
     // Сдвигаем даты к концу периода: свежих записей чуть больше
-    const ms = truncTime(from + Math.pow(rnd(), 0.85) * span, 'day');
+    let ms = truncTime(from + Math.pow(rnd(), 0.85) * span, 'day');
+    // Первые две строки ставим ровно на границы периода: набор должен покрывать
+    // тот период, который написан на его странице. Иначе данные обрываются за день-два
+    // до конца последнего месяца, и графики считают этот месяц незакрытым.
+    if (i === 0) ms = from;
+    else if (i === 1) ms = truncTime(to, 'day');
     dateCols.forEach(c => { r[c.key] = ms; });
     let catMul = 1;
     strCols.forEach((c, ci) => {
@@ -152,6 +173,33 @@ function saveSchemaDataset({ id, name, schema }) {
 }
 
 const isSchemaDs = d => !!(d && d.kind === 'schema');
+
+const SCHEMA_COL_TYPES = [['string', 'Текст'], ['number', 'Число'], ['date', 'Дата']];
+
+/* Смена типа колонки прямо на странице набора. Тип угадан по названию и иногда
+   угадан неверно («Статус сделки» легко принять за количество), а чинить это
+   через «Изменить схему» догадается не каждый. Для набора-схемы это недорого:
+   строки и метрики всё равно пересчитываются генератором при каждом сохранении. */
+function changeSchemaColType(dsId, key, type) {
+  const d = DS[dsId];
+  if (!d || !isSchemaDs(d)) return;
+  const sc = normalizeSchema(d.schema);
+  const col = sc.columns.find(c => c.key === key);
+  if (!col || col.type === type) return;
+  const g = guessSchemaCol(col.label || col.key);
+  const same = g.type === type; // подсказка по названию подходит только для того же типа
+  col.type = type;
+  delete col.values; delete col.ids; delete col.min; delete col.max; delete col.decimals;
+  if (type === 'number') {
+    col.min = same && g.min != null ? g.min : 1;
+    col.max = same && g.max != null ? g.max : 1000;
+    col.decimals = same ? (g.decimals || 0) : 0;
+  }
+  if (type === 'string' && same) { if (g.values) col.values = g.values; if (g.ids) col.ids = true; }
+  saveSchemaDataset({ id: d.id, name: d.name, schema: sc });
+  toast(`Колонка «${col.label || col.key}» теперь «${TYPE_GROUP[type]}», строки и метрики пересчитаны`);
+  go('#/data/' + d.id);
+}
 
 /* ---------- Диалог описания набора ---------- */
 // Хвост вроде «, ₽» или «, шт.» — это часть названия колонки, а не отдельная колонка
@@ -228,7 +276,7 @@ function openSchemaDialog(existingId) {
             class: 'input', value: c.label, style: { height: '30px', minWidth: '140px' },
             'aria-label': 'Подпись колонки', oninput: e => { c.label = e.target.value; },
           })),
-          h('td', null, selectEl([['string', 'Текст'], ['number', 'Число'], ['date', 'Дата']], c.type, v => {
+          h('td', null, selectEl(SCHEMA_COL_TYPES, c.type, v => {
             c.type = v;
             if (v === 'number' && c.min == null) { c.min = 1; c.max = 1000; c.decimals = 0; }
             if (v === 'string' && !c.values) c.values = null;
