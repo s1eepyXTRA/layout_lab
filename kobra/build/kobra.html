@@ -924,6 +924,16 @@ const NUMBER_FORMATS = {
   auto: 'Как у метрики', smart: 'Сокращённо (1,2 млн)', int: 'Целое (1 234 567)', dec1: 'Один знак (1 234,5)',
   dec2: 'Два знака (1 234,56)', pct: 'Проценты (12,3 %)', rub: 'Рубли (1 234 ₽)', rub_smart: 'Рубли сокращённо (1,2 млн ₽)',
 };
+/* Единица измерения прячется в самом формате: 'suffix:шт.' — чтобы она доехала
+   до осей, легенд, подсказок и ячеек, не меняя подпись fmtNum по всему движку */
+const SUFFIX_RE = /^suffix:(.*)$/;
+const fmtSuffix = f => { const m = SUFFIX_RE.exec(f || ''); return m ? m[1] : null; };
+const withSuffix = s => 'suffix:' + String(s || '').trim();
+function formatLabel(f) {
+  const s = fmtSuffix(f);
+  if (s !== null) return s ? `Единица «${s}»` : 'Без единиц';
+  return NUMBER_FORMATS[f] || f;
+}
 const nfCache = {};
 function nf(min, max) {
   const k = min + ':' + max;
@@ -941,6 +951,9 @@ function fmtNum(v, f) {
   if (v == null || (typeof v === 'number' && isNaN(v))) return '—';
   if (typeof v !== 'number') return String(v);
   if (!isFinite(v)) return '∞';
+  // С единицей число не сокращаем: иначе «млн ₽» в единице даёт «1,2 млн млн ₽»
+  const suf = fmtSuffix(f);
+  if (suf !== null) return nf(0, 0).format(v) + (suf ? ' ' + suf : '');
   switch (f) {
     case 'int': return nf(0, 0).format(v);
     case 'dec1': return nf(1, 1).format(v);
@@ -2697,6 +2710,20 @@ function applyDsOverrides() {
     ds.metrics = [...clone(base.metrics), ...list];
   });
 }
+/* Скрытый набор принадлежит дашборду: без дашборда он мусор в хранилище */
+function dropOwnedDatasets() {
+  let n = 0;
+  Object.values(STATE.datasets || {}).forEach(meta => {
+    if (!meta.owner || STATE.dashboards[meta.owner]) return;
+    delete STATE.datasets[meta.id];
+    delete DS[meta.id];
+    n++;
+  });
+  return n;
+}
+/* Наборы, видимые человеку: скрытые макетные и временные примеры не в счёт */
+const visibleDatasets = () => Object.values(DS).filter(d => !d.owner && !d.preview);
+
 async function loadUploaded() {
   const ids = Object.keys(STATE.datasets || {});
   for (const id of ids) {
@@ -2838,13 +2865,13 @@ function startChoice() {
       note ? h('p', { class: 'start-note' }, note) : null,
       h('button', { class: 'btn ' + (cls ? 'primary' : ''), onclick: onClick }, btn));
   return h('div', { class: 'start-choice' },
-    card(' rec', 'schema', 'Выбрать готовый дашборд',
-      'Берёте готовый отчёт и прикладываете к своим данным: Кобра сама подберёт колонки и соберёт три уровня — общая картина, разбор, исходные строки.',
-      'Обычно это более подходящий вариант: состав и оформление уже сделаны по стандартам визуализации, вам останется поправить названия и разрезы.',
-      'Посмотреть готовые', () => go('#/templates')),
-    card('', 'plus', 'Собрать с нуля',
-      'Пустой дашборд, который вы наполняете сами: блоки, графики, вкладки, фильтры — всё на ваш выбор.',
-      null, 'Начать с чистого листа', createDashboard));
+    card(' rec', 'schema', 'Сделать макет',
+      'Выбираете готовый отчёт — Кобра собирает его на придуманных данных и раскладывает по уровням: общая картина, разбор, исходные строки. Названия блоков, показателей и категорий правятся прямо на дашборде.',
+      'Обычно подходит именно это: данные выбирать не надо, состав и оформление уже сделаны по стандартам визуализации, а под свой процесс макет переименовывается за пару минут.',
+      'Выбрать готовый', () => go('#/templates')),
+    card('', 'upload', 'Мои данные',
+      'Загружаете CSV или Excel и строите по своим цифрам: то же самое, но на настоящих данных вашей выгрузки.',
+      null, 'Загрузить файл', () => go('#/data')));
 }
 function renderDashboardList(main) {
   const page = h('div', { class: 'page' });
@@ -2868,7 +2895,7 @@ function renderDashboardList(main) {
     h('div', { class: 'grow' }, h('h1', null, 'Дашборды'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
     h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
     h('button', { class: 'btn', onclick: () => go('#/templates') }, ic('schema'), 'Готовые дашборды'),
-    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый дашборд')));
+    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый макет')));
   page.appendChild(dashGrid(list));
 }
 function dashGrid(list) {
@@ -2891,7 +2918,7 @@ function dashGrid(list) {
       h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
         h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`)), more)));
   });
-  grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый дашборд'));
+  grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый макет'));
   return grid;
 }
 // Пустые дашборды, созданные кнопкой «Новый дашборд»: если с такого ушли,
@@ -2899,6 +2926,9 @@ function dashGrid(list) {
 // Набор не сохраняется — после перезагрузки дашборд просто остаётся как раньше.
 const freshDashboards = new Set();
 function createDashboard() {
+  // Пустой дашборд — тоже макет: под блоки нужны данные, и Кобра их придумает
+  const mid = createMockup(null, { title: 'Новый макет' });
+  if (mid) { freshDashboards.add(mid); go('#/d/' + mid + '?edit=1'); return; }
   const id = uid('d_');
   freshDashboards.add(id);
   STATE.dashboards[id] = { id, title: 'Новый дашборд', updated: Date.now(), crossFilter: true, scheme: null, tabs: [{ id: uid('t'), title: 'Вкладка 1', items: [] }], filters: [] };
@@ -2919,6 +2949,7 @@ async function deleteDashboard(id) {
   const d = STATE.dashboards[id];
   if (!(await confirmDialog('Удалить дашборд', `Дашборд «${d.title}» будет удалён. Графики останутся в разделе «Графики».`))) return;
   delete STATE.dashboards[id];
+  dropOwnedDatasets();
   saveState();
   toast('Дашборд удалён');
   go('#/dashboards');
@@ -2984,7 +3015,7 @@ async function deleteChart(id) {
   return true;
 }
 function newChartDialog(opts = {}) {
-  const dsList = Object.values(DS);
+  const dsList = visibleDatasets();
   let dsId = opts.datasetId || (dsList[0] || {}).id;
   let viz = opts.viz || 'bar';
   const gal = h('div', { class: 'viz-gallery' });
@@ -3023,6 +3054,7 @@ async function boot() {
   STATE.datasets = STATE.datasets || {}; STATE.dsMetrics = STATE.dsMetrics || {};
   applyDsOverrides();
   await loadUploaded();
+  if (dropOwnedDatasets()) saveState();
   renderShell();
   let lastNav = { h: null, t: 0 };
   const onNav = () => { if (lastNav.h === location.hash && Date.now() - lastNav.t < 150) return; lastNav = { h: location.hash, t: Date.now() }; route(); };
@@ -3091,8 +3123,10 @@ function renderDashboard(main, id, q) {
   const editing = q.edit === '1';
   const tuning = !editing && q.tune === '1';   // простая правка: только подписи и разрезы
   const tuneBackup = {};                        // chartId → каким график был до правки
+  let tuneDsBackup = null;                      // и каким был придуманный набор
   const tuneTouch = cid => { if (!tuneBackup[cid] && STATE.charts[cid]) tuneBackup[cid] = clone(STATE.charts[cid]); };
-  const tuneDirty = () => Object.keys(tuneBackup).length > 0;
+  const tuneTouchDs = ds => { if (!tuneDsBackup && ds) tuneDsBackup = { id: ds.id, meta: clone(STATE.datasets[ds.id]) }; };
+  const tuneDirty = () => Object.keys(tuneBackup).length > 0 || !!tuneDsBackup;
   const D = editing ? clone(saved) : saved; // черновик в режиме правки
   const original = JSON.stringify(saved);
   let draftHandled = false; // судьбу черновика решили сами: «Сохранить» или «Отменить»
@@ -3268,6 +3302,11 @@ function renderDashboard(main, id, q) {
   async function tuneCancel() {
     if (tuneDirty() && !(await confirmDialog('Отменить изменения', 'Названия и разрезы вернутся к тому, что было.', 'Отменить изменения'))) return;
     Object.entries(tuneBackup).forEach(([cid, c]) => { STATE.charts[cid] = c; });
+    if (tuneDsBackup) {
+      STATE.datasets[tuneDsBackup.id] = tuneDsBackup.meta;
+      DS[tuneDsBackup.id] = Object.assign({}, tuneDsBackup.meta, { rows: generateSchemaRows(tuneDsBackup.meta.schema) });
+      saveState();
+    }
     go('#/d/' + id);
   }
   function saveEdit() {
@@ -3392,7 +3431,8 @@ function renderDashboard(main, id, q) {
   function renderVisibleCharts() {
     cells.forEach(c => { if (c.chartId) drawChart(c); });
   }
-  /* Полоса простой правки: название и разрез, словами задачи */
+  /* Полоса простой правки: название, показатель, единица, разрез и категории —
+     всё словами задачи. Придуманные данные правятся, настоящие — нет. */
   function tuneBar(it, chart, cell) {
     const ds = dsGet(chart.datasetId);
     const bar = h('div', { class: 'tune-bar' });
@@ -3400,11 +3440,26 @@ function renderDashboard(main, id, q) {
       oninput: e => { tuneTouch(it.chartId); guidedRename(chart, e.target.value); cell.titleEl && (cell.titleEl.textContent = chart.name); } });
     bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Название'), nameInp));
     if (!ds) return bar;
+    const mock = isMockupDs(ds);
+
+    // Показатель и единица живут в метрике набора, поэтому меняются везде сразу
+    if (mock && guidedMetricOf(ds, chart)) {
+      const redraw = () => { guidedRetitle(ds, chart); nameInp.value = chart.name; if (cell.titleEl) cell.titleEl.textContent = chart.name; refreshCharts(); };
+      bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Показатель'),
+        h('input', { class: 'input', value: guidedMetricOf(ds, chart).label, 'aria-label': 'Название показателя',
+          onchange: e => { tuneTouchDs(ds); guidedSetMetricLabel(ds, chart, e.target.value); redraw(); } })));
+      bar.appendChild(h('label', { class: 'tune-f', style: { flex: '0 1 150px' } }, h('span', null, 'Единица'),
+        h('input', { class: 'input', value: guidedSuffixOf(ds, chart) || '', placeholder: '₽, шт., мин',
+          'aria-label': 'Единица измерения',
+          onchange: e => { tuneTouchDs(ds); guidedSetSuffix(ds, chart, e.target.value); refreshCharts(); } })));
+    }
+
     const opts = guidedDimOptions(ds, chart);
     const cur = guidedDimKey(chart);
     if (!opts.length || !cur) {
       bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
         `Показывает ${guidedWhat(ds, chart)} — разрез у этого блока не меняется.`));
+      if (!mock) bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, 'Данные набора не меняются — правятся только подписи.'));
       return bar;
     }
     const sel = selectEl(opts.map(o => [o.key, o.label]), cur, v => {
@@ -3413,10 +3468,43 @@ function renderDashboard(main, id, q) {
       guidedRetitle(ds, chart);
       nameInp.value = chart.name;
       if (cell.titleEl) cell.titleEl.textContent = chart.name;
-      drawChart(cell);
+      repaintItem(it);
     }, { 'aria-label': 'В разрезе чего' });
     bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'В разрезе'), sel));
+
+    // Категории разреза: их число и названия — это значения в придуманных данных
+    const cats = mock ? guidedCats(ds, chart) : null;
+    if (cats) {
+      const namesInp = h('input', { class: 'input', value: cats.values.join(', '), placeholder: 'Названия через запятую',
+        'aria-label': 'Названия категорий' });
+      const cntInp = h('input', { class: 'input', type: 'number', min: 2, max: 12, value: cats.count, 'aria-label': 'Сколько категорий', style: { width: '64px' } });
+      const applyCats = () => {
+        tuneTouchDs(ds);
+        const res = guidedSetCats(ds, chart, cntInp.value, namesInp.value.split(',').map(x => x.trim()).filter(Boolean));
+        if (!res) return;
+        migrateFilterValues(res.col, res.old, res.next);
+        namesInp.value = res.next.join(', ');
+        cntInp.value = res.next.length;
+        paintFilterBar();
+        refreshCharts();
+      };
+      cntInp.addEventListener('change', applyCats);
+      namesInp.addEventListener('change', applyCats);
+      bar.appendChild(h('label', { class: 'tune-f', style: { flex: '0 1 120px' } }, h('span', null, 'Категорий'), cntInp));
+      bar.appendChild(h('label', { class: 'tune-f', style: { flex: '2 1 260px' } }, h('span', null, 'Названия'), namesInp));
+    } else if (!mock) {
+      bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, 'Данные набора не меняются — правятся только подписи.'));
+    }
     return bar;
+  }
+  /* Переименовали категории — переносим выбранное в фильтрах по месту, пропавшее убираем */
+  function migrateFilterValues(col, oldVals, newVals) {
+    D.filters.forEach(f => {
+      if (f.col !== col || !Array.isArray(f.value)) return;
+      const map = v => { const i = oldVals.indexOf(v); return i >= 0 ? newVals[i] : null; };
+      f.value = f.value.map(map).filter(v => v != null);
+      pending[f.id] = clone(f.value);
+    });
   }
   function drawChart(c) {
     const chart = STATE.charts[c.chartId];
@@ -3639,7 +3727,17 @@ function renderDashboard(main, id, q) {
     panel.appendChild(seg);
     const body = h('div', { class: 'edit-panel-body' });
     panel.appendChild(body);
-    if (panelTab === 'charts') {
+    const mockupDs = D.fromTemplate ? dsGet(D.fromTemplate.datasetId) : null;
+    if (panelTab === 'charts' && isMockupDs(mockupDs)) {
+      // В макете блок выбирается видом: данные под него уже есть
+      body.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '0 0 10px' } },
+        'Выберите вид блока. Название, показатель и категории поменяете на самом блоке.'));
+      mockupBlockOptions(mockupDs).forEach(b => body.appendChild(h('button', { class: 'comp', onclick: () => {
+        const cid = createMockupChart(mockupDs, b.viz);
+        if (!cid) { toast('Такой блок на этих данных не построить', true); return; }
+        addItem({ type: 'chart', chartId: cid });
+      } }, ic(VIZ[b.viz].icon), h('div', { class: 'grow' }, h('b', null, b.name), h('span', null, VIZ[b.viz].desc)), ic('plus'))));
+    } else if (panelTab === 'charts') {
       const onDash = new Set(D.tabs.flatMap(t => t.items.filter(i => i.type === 'chart').map(i => i.chartId)));
       const search = h('input', { class: 'input', type: 'search', placeholder: 'Найти график', style: { marginBottom: '10px' }, 'aria-label': 'Поиск графиков' });
       const list = h('div');
@@ -3706,7 +3804,11 @@ function renderDashboard(main, id, q) {
     if (editing) dmain.appendChild(h('div', { class: 'edit-banner' }, ic('edit'), 'Режим редактирования. Изменения появятся у всех после нажатия «Сохранить».'));
     const fakeNames = [...new Set(D.tabs.flatMap(t => t.items.map(i => i.chartId && (STATE.charts[i.chartId] || {}).datasetId))
       .filter(x => isSchemaDs(DS[x])).map(x => DS[x].name))];
-    if (fakeNames.length) dmain.appendChild(h('div', { class: 'edit-banner fake-banner' }, ic('schema'),
+    // У макета имя скрытого набора человеку ни о чём не говорит — незачем его называть
+    const ownDs = D.fromTemplate ? dsGet(D.fromTemplate.datasetId) : null;
+    if (isMockupDs(ownDs)) dmain.appendChild(h('div', { class: 'edit-banner fake-banner' }, ic('schema'),
+      'Это макет: цифры придуманы, для отчётности они не годятся. Названия блоков, показателей и категорий правятся на самих блоках.'));
+    else if (fakeNames.length) dmain.appendChild(h('div', { class: 'edit-banner fake-banner' }, ic('schema'),
       `Это макет: ${fakeNames.length > 1 ? 'наборы' : 'набор'} ${fakeNames.map(n => '«' + n + '»').join(', ')} ${plural(fakeNames.length, 'содержит', 'содержат', 'содержат')} вымышленные данные.`));
     dmain.appendChild(paintHead());
     const tabs = paintTabs();
@@ -3730,8 +3832,10 @@ function renderDashboard(main, id, q) {
     // именно запись в STATE: если человек успел дать название или завести фильтр,
     // работа уже есть — такой дашборд остаётся.
     const cur = STATE.dashboards[id];
-    if (freshDashboards.has(id) && cur && cur.title === 'Новый дашборд' && !cur.filters.length && !cur.tabs.some(t => t.items.length)) {
-      freshDashboards.delete(id); delete STATE.dashboards[id]; saveState();
+    if (freshDashboards.has(id) && cur && /^Новый (дашборд|макет)$/.test(cur.title) && !cur.filters.length && !cur.tabs.some(t => t.items.length)) {
+      freshDashboards.delete(id); delete STATE.dashboards[id];
+      dropOwnedDatasets();   // придуманные данные брошенного макета тоже не нужны
+      saveState();
     }
   };
 }
@@ -4111,7 +4215,9 @@ function renderExplore(main, parts, q) {
         return field(c.label, inp, c.hint);
       }
       case 'format':
-        return field(c.label, selectEl(Object.entries(NUMBER_FORMATS), v || 'auto', val => set(c.key, val, false)));
+        return field(c.label, selectEl(
+          fmtSuffix(v) !== null ? [[v, formatLabel(v)], ...Object.entries(NUMBER_FORMATS)] : Object.entries(NUMBER_FORMATS),
+          v || 'auto', val => set(c.key, val, false)));
       case 'scheme':
         return field(c.label, selectEl(Object.entries(COLOR_SCHEMES).map(([k, s]) => [k, s.label]), v || 'kobra', val => set(c.key, val, false)));
       case 'seqscheme':
@@ -4256,7 +4362,7 @@ function renderDatasetList(main) {
     h('div', { class: 'grow' }, h('h1', null, 'Данные'), h('p', null, 'Встроенные демо-наборы DNS и ваши файлы. Загруженные данные хранятся только в этом браузере.')),
     h('button', { class: 'btn', onclick: () => openSchemaDialog() }, ic('schema'), 'Описать набор'),
     h('button', { class: 'btn primary', onclick: openUpload }, ic('upload'), 'Загрузить CSV или Excel')));
-  const list = Object.values(DS).sort((a, b) => (b.builtin ? 1 : 0) - (a.builtin ? 1 : 0) || a.name.localeCompare(b.name, 'ru'));
+  const list = visibleDatasets().sort((a, b) => (b.builtin ? 1 : 0) - (a.builtin ? 1 : 0) || a.name.localeCompare(b.name, 'ru'));
   const usage = id => Object.values(STATE.charts).filter(c => c.datasetId === id).length;
   page.appendChild(h('div', { class: 'tbl-wrap' }, h('table', { class: 'list' },
     h('thead', null, h('tr', null, h('th', null, 'Набор данных'), h('th', null, 'Источник'), h('th', null, 'Строк'), h('th', null, 'Колонок'), h('th', null, 'Графиков'), h('th'))),
@@ -4325,7 +4431,7 @@ function renderDatasetPage(main, id) {
     clear(mWrap);
     mWrap.appendChild(h('table', { class: 'list' },
       h('thead', null, h('tr', null, h('th', null, 'Метрика'), h('th', null, 'Формула'), h('th', null, 'Формат'), h('th'))),
-      h('tbody', null, d.metrics.map(m => h('tr', null, h('td', null, m.label), h('td', { class: 'muted' }, exprText(d, m.expr)), h('td', { class: 'muted' }, NUMBER_FORMATS[m.format] || m.format),
+      h('tbody', null, d.metrics.map(m => h('tr', null, h('td', null, m.label), h('td', { class: 'muted' }, exprText(d, m.expr)), h('td', { class: 'muted' }, formatLabel(m.format)),
         h('td', { class: 'act' }, builtinKeys.has(m.key) ? h('span', { class: 'muted', style: { fontSize: '12px' } }, 'встроенная') : [
           iconBtn('edit', 'Изменить', () => editSavedMetric(d, m, paintMetrics), 'sm'),
           iconBtn('trash', 'Удалить', async () => {
@@ -4743,7 +4849,7 @@ function schemaMetrics(columns, prev) {
   return out.concat(keep);
 }
 
-function saveSchemaDataset({ id, name, schema }) {
+function saveSchemaDataset({ id, name, schema, owner }) {
   const sc = normalizeSchema(schema);
   const columns = sc.columns.map(c => ({ key: c.key, label: c.label || c.key, type: c.type }));
   const prev = id && DS[id] ? DS[id].metrics : null;
@@ -4754,6 +4860,9 @@ function saveSchemaDataset({ id, name, schema }) {
     metrics: schemaMetrics(columns, prev), mainDttm, description: SCHEMA_NOTE,
     created: (STATE.datasets[dsId] || {}).created || Date.now(),
   };
+  // Владелец — дашборд-макет: такой набор человеку не показывается и живёт вместе с ним
+  const own = owner !== undefined ? owner : (STATE.datasets[dsId] || {}).owner;
+  if (own) meta.owner = own;
   STATE.datasets[dsId] = meta;
   DS[dsId] = Object.assign({}, meta, { rows: generateSchemaRows(sc) });
   saveState();
@@ -4958,9 +5067,17 @@ function autoAdjDative(word) {
   const soft = /(яя|ее|ний|ший|щий|жий|чий)$/.test(s);
   return s.slice(0, -2) + (soft ? 'им' : 'ым');
 }
+// Слова-прилагательные в роли существительного: «Ответственный» → «ответственным»,
+// а не «ответственныям». Берём только бесспорные окончания: «‑ий» бывает и у
+// существительных («критерий»), там правило существительного верное.
+const AUTO_ADJ_NOUN_RE = /(ый|ой|ая|ое|яя|ее)$/;
 function autoDative(label) {
   const words = String(label || '').trim().split(/\s+/).filter(Boolean);
   if (!words.length || words.length > 2) return null;
+  if (words.length === 1 && AUTO_ADJ_NOUN_RE.test(words[0].toLowerCase())) {
+    const adj = autoAdjDative(words[0]);
+    if (adj) return adj;
+  }
   const noun = autoNounDative(words[words.length - 1]);
   if (!noun) return null;
   if (words.length === 1) return noun;
@@ -5644,8 +5761,29 @@ function tplLayout(charts, ds, intro, preview) {
   return items;
 }
 
+/* Макет: данных нет, набор порождается под дашборд и прячется за ним */
+function createMockup(tpl, { title, levels } = {}) {
+  const name = (title || (tpl ? tpl.name : 'Макет')).trim() || 'Макет';
+  const dashId = uid('d_');
+  const dsId = saveSchemaDataset({ name: `Данные макета «${name}»`, schema: mockupSchema(tpl), owner: dashId });
+  if (!tpl) { emptyMockup(dashId, dsId, name); return dashId; }
+  const id = createFromTemplate(tpl, DS[dsId], { title: name, levels, dashId });
+  if (!id) { delete STATE.datasets[dsId]; delete DS[dsId]; saveState(); return null; }
+  return id;
+}
+/* Пустой макет: блоков нет, но данные под них уже готовы */
+function emptyMockup(dashId, dsId, name) {
+  STATE.dashboards[dashId] = {
+    id: dashId, title: name, updated: Date.now(), crossFilter: true, scheme: null,
+    tabs: [{ id: uid('t'), title: TPL_LEVELS.sum.title, level: 'sum', items: [] }],
+    filters: [],
+    fromTemplate: { tplId: null, datasetId: dsId, levels: ['sum'], roles: tplRoleMap(pickRoles(DS[dsId])) },
+  };
+  saveState();
+}
+
 /* Создаёт дашборд из шаблона, пишет его в STATE и возвращает id */
-function createFromTemplate(tpl, ds, { title, roles, levels, preview }) {
+function createFromTemplate(tpl, ds, { title, roles, levels, preview, dashId }) {
   roles = roles || pickRoles(ds);
   const derived = preview ? ensureDerivedInMemory(tpl, ds, roles) : ensureDerived(tpl, ds, roles);
   const plan = buildFromTemplate(tpl, ds, roles, levels, derived);
@@ -5662,7 +5800,7 @@ function createFromTemplate(tpl, ds, { title, roles, levels, preview }) {
     id: uid('t'), title: lv.title, level: lv.id,
     items: tplLayout(lv.charts, ds, i === 0 ? intro : null, preview),
   }));
-  const id = uid('d_');
+  const id = dashId || uid('d_');
   STATE.dashboards[id] = {
     id, title: title || tpl.name, updated: Date.now(), crossFilter: true, scheme: null, tabs, filters: plan.filters,
     preview: preview || undefined,
@@ -5725,19 +5863,23 @@ function tplUsedRoles(tpl) {
 
 /* ---------- Окно создания из шаблона ---------- */
 function openTemplateDialog(tpl, dsId, opts = {}) {
-  const ds = DS[dsId];
+  // Без набора — путь макета: данные Кобра придумает сама, роли спрашивать не о чем
+  const mockup = !dsId;
+  let title = tpl.name;
+  const ds = mockup ? mockupDatasetDraft(tpl, title) : DS[dsId];
   if (!ds) { toast('Набор данных не найден', true); return; }
   const roles = pickRoles(ds);
-  let title = tpl.name;
   const docsFit = docsLevelFits(ds, roles);
   const levels = { sum: true, detail: true, docs: docsFit.ok };
   const body = h('div');
-  const used = tplUsedRoles(tpl).filter(n => TPL_ROLES[n]);
+  const used = mockup ? [] : tplUsedRoles(tpl).filter(n => TPL_ROLES[n]);
 
   const paint = () => {
     clear(body);
     body.appendChild(field('Название дашборда', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })));
 
+    if (mockup) body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 12px' } },
+      'Данные Кобра придумает сама. Названия блоков, показателей и категорий поменяете прямо на дашборде.'));
     // Роли
     const rolesBox = h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Какие поля во что идут'),
       h('div', { class: 'hint', style: { marginBottom: '6px' } }, 'Кобра подобрала их сама — поменяйте, если взяла не то.'));
@@ -5755,7 +5897,7 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
         h('div', null, h('b', { style: { fontSize: '13px' } }, r.label + (required ? '' : ' (если есть)')),
           h('div', { class: 'hint' }, r.hint)), sel));
     });
-    body.appendChild(rolesBox);
+    if (!mockup) body.appendChild(rolesBox);
 
     // Уровни
     const lvBox = h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Уровни детализации'));
@@ -5777,7 +5919,7 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
     info.appendChild(h('p', null, h('b', null, `Получится ${nCharts} ${plural(nCharts, 'блок', 'блока', 'блоков')} на ${plan.levels.length} ${plural(plan.levels.length, 'вкладке', 'вкладках', 'вкладках')}`)));
     plan.levels.forEach(l => info.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
       `${l.title}: ${l.charts.map(c => c.name).join('; ')}`)));
-    if (willAdd.length) info.appendChild(h('p', { style: { marginBottom: 0 } },
+    if (willAdd.length && !mockup) info.appendChild(h('p', { style: { marginBottom: 0 } },
       'В набор «' + ds.name + '» будет добавлен показатель: ',
       willAdd.map(d => h('b', null, `${d.label} = ${exprText(ds, d.expr)}`))));
     const miss = [...new Set(plan.skipped.flatMap(s => s.need))].map(n => (TPL_ROLES[n] || {}).label || n);
@@ -5792,17 +5934,85 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
     foot: close => [
       h('button', { class: 'btn', onclick: close }, 'Отмена'),
       h('button', { class: 'btn primary', onclick: () => {
-        const fit = templateFits(tpl, ds, roles);
-        if (!fit.ok) { toast('Не заполнено: ' + fit.missingLabels.join(', '), true); return; }
         const lv = Object.keys(levels).filter(k => levels[k]);
         if (!lv.length) { toast('Отметьте хотя бы один уровень', true); return; }
-        const id = createFromTemplate(tpl, ds, { title: title.trim() || tpl.name, roles, levels: lv });
+        let id;
+        if (mockup) {
+          id = createMockup(tpl, { title, levels: lv });
+        } else {
+          const fit = templateFits(tpl, ds, roles);
+          if (!fit.ok) { toast('Не заполнено: ' + fit.missingLabels.join(', '), true); return; }
+          id = createFromTemplate(tpl, ds, { title: title.trim() || tpl.name, roles, levels: lv });
+        }
         if (!id) return;
         close();
-        toast('Дашборд собран');
+        toast(mockup ? 'Макет собран: правьте названия прямо на блоках' : 'Дашборд собран');
         go('#/d/' + id);
       } }, ic('check'), 'Создать дашборд')],
   });
+}
+
+/* ---------- Скрытый набор макета ----------
+   У макета нет и не должно быть настоящих данных: колонки берутся из описания
+   шаблона, а если шаблона нет — нейтральные, чтобы блоки не называли чужих
+   сущностей. Набор принадлежит дашборду и человеку не показывается. */
+const MOCKUP_NEUTRAL_COLS = ['Период', 'Категория', 'Группа', 'Показатель', 'Количество, шт.'];
+
+function mockupSchema(tpl) {
+  const used = new Set();
+  const src = (tpl && tpl.demo && tpl.demo.length) ? tpl.demo : MOCKUP_NEUTRAL_COLS;
+  const columns = src.map((d, i) => {
+    const label = typeof d === 'string' ? d : d.label;
+    const col = Object.assign({ key: slugKey(label, i, used), label }, guessSchemaCol(label));
+    if (typeof d === 'object') Object.assign(col, d, { label, key: col.key });
+    return col;
+  });
+  return Object.assign({ seed: (Date.now() % 100000) + 1, rowCount: 2000, columns }, defaultSchemaPeriod());
+}
+/* Набор-объект без записи в состояние: нужен, чтобы показать состав будущего дашборда */
+function mockupDatasetDraft(tpl, title) {
+  const schema = normalizeSchema(mockupSchema(tpl));
+  const columns = schema.columns.map(c => ({ key: c.key, label: c.label, type: c.type }));
+  return {
+    id: 'mockup_draft', name: `Данные макета «${title}»`, kind: 'schema', schema, columns,
+    metrics: schemaMetrics(columns, null), mainDttm: (columns.find(c => c.type === 'date') || {}).key || null,
+    description: SCHEMA_NOTE, rows: generateSchemaRows(schema),
+  };
+}
+
+/* Блок в макете добавляется видом визуализации, а не метрикой и разрезом:
+   показатель и разрез Кобра берёт из скрытого набора молча. */
+const MOCKUP_BLOCKS = [
+  { viz: 'line', name: 'Линейный график', by: 'date' },
+  { viz: 'bar', name: 'Столбцы', by: 'dim1' },
+  { viz: 'pie', name: 'Круговая', by: 'dim1' },
+  { viz: 'area', name: 'Области', by: 'date', series: 'dim1' },
+  { viz: 'big_number_trend', name: 'Большое число', kind: 'kpi' },
+  { viz: 'table', name: 'Таблица', by: 'dim1' },
+  { viz: 'treemap', name: 'Дерево', by: 'dim1', by2: 'dim2' },
+  { viz: 'heatmap', name: 'Тепловая карта', by: 'date', y: 'dim1' },
+  { viz: 'funnel', name: 'Воронка', by: 'stage' },
+  { viz: 'pivot', name: 'Сводная таблица', by: 'dim1', cols: 'dim2' },
+];
+/* Какие виды блоков вообще построятся на этом наборе: воронке нужен этап,
+   тепловой карте — дата. Предлагать то, что не соберётся, нельзя. */
+function mockupBlockOptions(ds) {
+  const roles = pickRoles(ds);
+  return MOCKUP_BLOCKS.filter(b => !!tplBlockChart(Object.assign({ metric: 'main' }, b), ds, roles, null));
+}
+/* Создаёт блок выбранного вида на наборе дашборда и возвращает id графика */
+function createMockupChart(ds, vizId) {
+  const b = MOCKUP_BLOCKS.find(x => x.viz === vizId);
+  if (!b) return null;
+  const roles = pickRoles(ds);
+  const plan = tplBlockChart(Object.assign({ metric: 'main' }, b), ds, roles, null);
+  if (!plan) return null;
+  const id = uid('c_');
+  STATE.charts[id] = {
+    id, name: b.name, viz: plan.viz, datasetId: ds.id, autoName: true,
+    params: Object.assign(VIZ[plan.viz].defaults(ds), plan.params), updated: Date.now(),
+  };
+  return id;
 }
 
 /* ---------- Предпросмотр на вымышленных данных ---------- */
@@ -5844,23 +6054,26 @@ function purgePreviews(keepId) {
 function renderTemplateList(main, q) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
-  const dsList = Object.values(DS).filter(d => !d.preview);
-  let dsId = q.ds && DS[q.ds] ? q.ds : (dsList[0] || {}).id;
+  const dsList = visibleDatasets();
+  // Набор приходит только из пути «мои данные»; обычный путь — макет без данных
+  const ownData = q.ds && DS[q.ds] ? q.ds : null;
+  let dsId = ownData;
 
-  const head = h('div', { class: 'page-head' },
+  page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('h1', null, 'Готовые дашборды'),
-      h('p', null, 'Выберите готовый отчёт и приложите к своим данным. Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.')),
-    h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем дашбордам'));
-  page.appendChild(head);
+      h('p', null, ownData
+        ? `Выберите готовый отчёт и приложите к набору «${DS[ownData].name}». Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.`
+        : 'Выберите готовый отчёт: Кобра соберёт его на придуманных данных, а вы переименуете блоки и категории под свой процесс. Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.')),
+    h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем дашбордам')));
 
   const grid = h('div', { class: 'tpl-grid' });
   const paint = () => {
     clear(grid);
-    const ds = DS[dsId];
-    if (!ds) { grid.appendChild(h('div', { class: 'empty' }, h('b', null, 'Нет наборов данных'), 'Сначала загрузите файл или опишите набор.', h('br'), h('a', { class: 'btn', href: '#/data' }, 'К данным'))); return; }
-    const roles = pickRoles(ds);
+    const ds = dsId ? DS[dsId] : null;
+    if (dsId && !ds) { grid.appendChild(h('div', { class: 'empty' }, h('b', null, 'Набор данных не найден'), h('a', { class: 'btn', href: '#/data' }, 'К данным'))); return; }
+    const roles = ds ? pickRoles(ds) : null;
     TEMPLATES.forEach(tpl => {
-      const fit = templateFits(tpl, ds, roles);
+      const fit = ds ? templateFits(tpl, ds, roles) : { ok: true, missingLabels: [] };
       const card = h('div', { class: 'tpl-card' + (fit.ok ? '' : ' off') });
       card.appendChild(h('div', { class: 'tpl-head' }, h('b', null, tpl.name),
         fit.ok ? null : h('span', { class: 'pill' }, 'не подходит набору')));
@@ -5869,7 +6082,7 @@ function renderTemplateList(main, q) {
       const lvls = h('ul', { class: 'tpl-levels' });
       tpl.levels.forEach(l => lvls.appendChild(h('li', null, h('b', null, TPL_LEVELS[l.id].title), ' — ' + TPL_LEVELS[l.id].q)));
       card.appendChild(lvls);
-      card.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
+      if (ds) card.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
         'Нужны поля: ' + (tpl.need || []).map(n => (TPL_ROLES[n] || {}).label || n).join(', ')));
       if (!fit.ok) card.appendChild(h('div', { class: 'tpl-miss' }, 'В наборе «' + ds.name + '» не нашлось: ' + fit.missingLabels.join(', ')));
       card.appendChild(h('div', { class: 'tpl-act' },
@@ -5877,18 +6090,27 @@ function renderTemplateList(main, q) {
           const id = templatePreview(tpl);
           if (id) go('#/d/' + id);
         } }, ic('eye'), 'Посмотреть пример') : null,
-        h('button', { class: 'btn sm primary', disabled: !fit.ok, onclick: () => openTemplateDialog(tpl, dsId) }, 'Взять этот')));
+        h('button', { class: 'btn sm primary', disabled: !fit.ok, onclick: () => openTemplateDialog(tpl, dsId) }, ds ? 'Взять этот' : 'Сделать макет')));
       grid.appendChild(card);
     });
     // Запасной путь: ни один скелет не подошёл
     const own = h('div', { class: 'tpl-card' });
-    own.appendChild(h('div', { class: 'tpl-head' }, h('b', null, 'Собрать по моим данным')));
-    own.appendChild(h('p', null, 'Ни один готовый не подошёл? Кобра посмотрит на колонки набора и соберёт черновик одной вкладкой.'));
-    own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => openAutoDashDialog(dsId) }, ic('wand'), 'Собрать черновик')));
+    if (ds) {
+      own.appendChild(h('div', { class: 'tpl-head' }, h('b', null, 'Собрать по моим данным')));
+      own.appendChild(h('p', null, 'Ни один готовый не подошёл? Кобра посмотрит на колонки набора и соберёт черновик одной вкладкой.'));
+      own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => openAutoDashDialog(dsId) }, ic('wand'), 'Собрать черновик')));
+    } else {
+      own.appendChild(h('div', { class: 'tpl-head' }, h('b', null, 'Пустой макет')));
+      own.appendChild(h('p', null, 'Ни один готовый не подошёл? Начните с чистого листа и добавляйте блоки сами — данные Кобра тоже придумает.'));
+      own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => {
+        const id = createMockup(null, { title: 'Новый макет', levels: ['sum'] });
+        if (id) go('#/d/' + id + '?edit=1');
+      } }, ic('plus'), 'Пустой макет')));
+    }
     grid.appendChild(own);
   };
 
-  page.appendChild(field('Набор данных', selectEl(dsList.map(d => [d.id, d.name]), dsId, v => { dsId = v; paint(); })));
+  if (ownData) page.appendChild(field('Набор данных', selectEl(dsList.map(d => [d.id, d.name]), dsId, v => { dsId = v; paint(); })));
   page.appendChild(grid);
   paint();
 }
@@ -5966,6 +6188,75 @@ function guidedRename(chart, name) {
   chart.autoName = false;   // дальше заголовок наш не трогает
   return true;
 }
+/* ---------- Правка придуманных данных ----------
+   Работает только на макете: у настоящего набора подписи и значения трогать
+   нельзя, там правятся лишь названия блоков. */
+const isMockupDs = d => !!(d && d.owner && isSchemaDs(d));
+
+/* Сохранённая метрика блока в наборе: её подпись и формат и есть «показатель» */
+function guidedMetricOf(ds, chart) {
+  const m = guidedMainMetric(chart);
+  if (!m || m.kind !== 'saved') return null;
+  return (ds.metrics || []).find(x => x.key === m.key) || null;
+}
+function guidedSetMetricLabel(ds, chart, text) {
+  const met = guidedMetricOf(ds, chart);
+  const v = String(text || '').trim();
+  if (!met || !v) return false;
+  met.label = v;
+  persistDs(ds);
+  return true;
+}
+function guidedSuffixOf(ds, chart) {
+  const met = guidedMetricOf(ds, chart);
+  if (!met) return null;
+  const s = fmtSuffix(met.format);
+  return s === null ? '' : s;
+}
+function guidedSetSuffix(ds, chart, text) {
+  const met = guidedMetricOf(ds, chart);
+  if (!met) return false;
+  const v = String(text || '').trim();
+  met.format = v ? withSuffix(v) : 'smart';
+  persistDs(ds);
+  return true;
+}
+
+/* Колонка схемы, по которой построен разрез блока */
+function guidedSchemaCol(ds, chart) {
+  const key = guidedDimKey(chart);
+  if (!key || !isMockupDs(ds)) return null;
+  const col = (ds.schema.columns || []).find(c => c.key === key);
+  return col && col.type === 'string' ? col : null;
+}
+function guidedCats(ds, chart) {
+  const col = guidedSchemaCol(ds, chart);
+  if (!col) return null;
+  const values = (col.values && col.values.length) ? col.values : schemaFallbackValues(col.label);
+  return { col, values, count: values.length };
+}
+/* Новые названия категорий: чего человек не назвал — остаётся нейтральным */
+function guidedCatValues(col, count, names) {
+  const base = schemaFallbackValues(col.label);
+  const n = Math.max(2, Math.min(+count || 0, 12));
+  const out = [];
+  for (let i = 0; i < n; i++) out.push((names[i] && String(names[i]).trim()) || base[i % base.length].replace(/\s\d+$/, ' ' + (i + 1)));
+  return out;
+}
+/* Меняет категории в скрытом наборе и пересчитывает строки тем же seed.
+   Возвращает старый и новый списки: по ним потом чинятся фильтры дашборда. */
+function guidedSetCats(ds, chart, count, names) {
+  const cur = guidedCats(ds, chart);
+  if (!cur) return null;
+  const next = guidedCatValues(cur.col, count, names);
+  if (JSON.stringify(next) === JSON.stringify(cur.values)) return null;
+  cur.col.values = next;
+  ds.rows = generateSchemaRows(ds.schema);
+  delete ds._maxCache;
+  persistDs(ds);
+  return { col: cur.col.key, old: cur.values, next };
+}
+
 /* Что человек меняет в этом блоке: словами задачи, без терминов движка */
 function guidedWhat(ds, chart) {
   const met = guidedMainMetric(chart);
@@ -6337,7 +6628,7 @@ function specMetricText(ds, m) {
     const s = ds && ds.metrics.find(x => x.key === m.key);
     formula = s ? exprText(ds, s.expr) : `метрика «${m.key}» в наборе не найдена`;
   } else formula = exprText(ds, { type: 'simple', agg: m.agg, col: m.col });
-  const fmt = NUMBER_FORMATS[metricFormat(ds, m)];
+  const fmt = formatLabel(metricFormat(ds, m));
   return `**${mdEsc(label)}** — \`${formula}\`` + (fmt ? `, формат: ${fmt}` : '');
 }
 function specFilterText(ds, f) {
@@ -6396,7 +6687,7 @@ function specControlLine(c, p, ds, showFalse) {
       return `${L}: ${fmtNum(+v, 'int')}`;
     }
     case 'text': return v ? `${L}: ${mdEsc(v)}` : null;
-    case 'format': return v && v !== 'auto' ? `${L}: ${NUMBER_FORMATS[v] || v}` : null;
+    case 'format': return v && v !== 'auto' ? `${L}: ${formatLabel(v)}` : null;
     case 'scheme': return v && COLOR_SCHEMES[v] ? `${L}: ${COLOR_SCHEMES[v].label}` : null;
     case 'seqscheme': return v && SEQ_SCHEMES[v] ? `${L}: ${SEQ_SCHEMES[v].label}` : null;
   }

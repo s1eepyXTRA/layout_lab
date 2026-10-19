@@ -3719,7 +3719,11 @@ function renderDashboard(main, id, q) {
     if (editing) dmain.appendChild(h('div', { class: 'edit-banner' }, ic('edit'), 'Режим редактирования. Изменения появятся у всех после нажатия «Сохранить».'));
     const fakeNames = [...new Set(D.tabs.flatMap(t => t.items.map(i => i.chartId && (STATE.charts[i.chartId] || {}).datasetId))
       .filter(x => isSchemaDs(DS[x])).map(x => DS[x].name))];
-    if (fakeNames.length) dmain.appendChild(h('div', { class: 'edit-banner fake-banner' }, ic('schema'),
+    // У макета имя скрытого набора человеку ни о чём не говорит — незачем его называть
+    const ownDs = D.fromTemplate ? dsGet(D.fromTemplate.datasetId) : null;
+    if (isMockupDs(ownDs)) dmain.appendChild(h('div', { class: 'edit-banner fake-banner' }, ic('schema'),
+      'Это макет: цифры придуманы, для отчётности они не годятся. Названия блоков, показателей и категорий правятся на самих блоках.'));
+    else if (fakeNames.length) dmain.appendChild(h('div', { class: 'edit-banner fake-banner' }, ic('schema'),
       `Это макет: ${fakeNames.length > 1 ? 'наборы' : 'набор'} ${fakeNames.map(n => '«' + n + '»').join(', ')} ${plural(fakeNames.length, 'содержит', 'содержат', 'содержат')} вымышленные данные.`));
     dmain.appendChild(paintHead());
     const tabs = paintTabs();
