@@ -260,6 +260,25 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .tpl-plan { background: var(--surface-2); border-radius: var(--r-m); padding: 10px 12px; margin-top: 10px; }
 .tpl-plan p { margin: 0 0 6px; font-size: 13px; }
 .tpl-plan b { font-weight: 600; }
+/* Стартовый выбор пути */
+.start-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 8px; }
+.start-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); padding: 22px 24px; display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
+.start-card.rec { border-color: var(--primary); }
+.start-ic { width: 40px; height: 40px; border-radius: 10px; background: var(--surface-3); color: var(--ink-2); display: grid; place-items: center; }
+.start-card.rec .start-ic { background: var(--primary-soft); color: var(--primary); }
+.start-ic svg { width: 22px; height: 22px; }
+.start-card b { font: 600 18px/1.3 var(--font-display); }
+.start-card p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+.start-card .start-note { color: var(--ink-3); font-size: 12.5px; }
+.start-card .btn { margin-top: auto; align-self: flex-start; }
+.card-head .btn.drill { padding: 2px 8px; height: 24px; font-size: 12px; gap: 2px; flex: none; border-color: var(--primary); color: var(--primary); }
+.card-head .btn.drill:hover { background: var(--primary-soft); }
+.card-head .btn.drill svg { width: 13px; height: 13px; }
+/* Простая правка */
+.tune-bar { border-top: 1px solid var(--line); padding: 8px 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--surface-2); border-radius: 0 0 var(--r-l) var(--r-l); }
+.tune-f { display: flex; align-items: center; gap: 6px; flex: 1 1 200px; min-width: 0; }
+.tune-f > span { font-size: 12px; font-weight: 600; color: var(--ink-3); flex: none; }
+.tune-f .input, .tune-f .select { height: 30px; font-size: 13px; }
 .edit-banner svg { flex: none; }
 
 /* ---------- Исследование (Explore) ---------- */
@@ -2813,14 +2832,49 @@ function fmtWhen(ts) {
   const same = d.toDateString() === now.toDateString();
   return same ? `сегодня в ${pad2(d.getHours())}:${pad2(d.getMinutes())}` : `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()}`;
 }
+/* Два пути из стартового экрана: взять готовое или строить самому */
+function startChoice() {
+  const card = (cls, icon, title, desc, note, btn, onClick) =>
+    h('div', { class: 'start-card' + cls },
+      h('div', { class: 'start-ic' }, ic(icon)),
+      h('b', null, title), h('p', null, desc),
+      note ? h('p', { class: 'start-note' }, note) : null,
+      h('button', { class: 'btn ' + (cls ? 'primary' : ''), onclick: onClick }, btn));
+  return h('div', { class: 'start-choice' },
+    card(' rec', 'schema', 'Выбрать готовый дашборд',
+      'Берёте готовый отчёт и прикладываете к своим данным: Кобра сама подберёт колонки и соберёт три уровня — общая картина, разбор, исходные строки.',
+      'Обычно это более подходящий вариант: состав и оформление уже сделаны по стандартам визуализации, вам останется поправить названия и разрезы.',
+      'Посмотреть готовые', () => go('#/templates')),
+    card('', 'plus', 'Собрать с нуля',
+      'Пустой дашборд, который вы наполняете сами: блоки, графики, вкладки, фильтры — всё на ваш выбор.',
+      null, 'Начать с чистого листа', createDashboard));
+}
 function renderDashboardList(main) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
-  const list = Object.values(STATE.dashboards).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  const list = Object.values(STATE.dashboards).filter(d => !d.preview).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  // Свой дашборд — любой, кроме демо: пока их нет, показываем выбор пути
+  const own = list.filter(d => d.id !== 'd_dns');
+  if (!own.length) {
+    page.appendChild(h('div', { class: 'page-head' },
+      h('div', { class: 'grow' }, h('h1', null, 'С чего начнём'),
+        h('p', null, 'Кобра собирает дашборды по вашим данным. Выберите, как удобнее начать — потом всё можно поправить.')),
+      h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла')));
+    page.appendChild(startChoice());
+    if (list.length) {
+      page.appendChild(h('h2', { style: { fontSize: '17px', margin: '28px 0 10px' } }, 'Демо-дашборд'));
+      page.appendChild(dashGrid(list));
+    }
+    return;
+  }
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('h1', null, 'Дашборды'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
     h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
+    h('button', { class: 'btn', onclick: () => go('#/templates') }, ic('schema'), 'Готовые дашборды'),
     h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый дашборд')));
+  page.appendChild(dashGrid(list));
+}
+function dashGrid(list) {
   const grid = h('div', { class: 'dash-grid' });
   list.forEach(d => {
     const nCharts = d.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
@@ -2841,7 +2895,7 @@ function renderDashboardList(main) {
         h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`)), more)));
   });
   grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый дашборд'));
-  page.appendChild(grid);
+  return grid;
 }
 // Пустые дашборды, созданные кнопкой «Новый дашборд»: если с такого ушли,
 // ничего не добавив, запись убирается, чтобы в списке не оставался мусор.
@@ -3038,6 +3092,10 @@ function renderDashboard(main, id, q) {
     return () => { };
   }
   const editing = q.edit === '1';
+  const tuning = !editing && q.tune === '1';   // простая правка: только подписи и разрезы
+  const tuneBackup = {};                        // chartId → каким график был до правки
+  const tuneTouch = cid => { if (!tuneBackup[cid] && STATE.charts[cid]) tuneBackup[cid] = clone(STATE.charts[cid]); };
+  const tuneDirty = () => Object.keys(tuneBackup).length > 0;
   const D = editing ? clone(saved) : saved; // черновик в режиме правки
   const original = JSON.stringify(saved);
   let draftHandled = false; // судьбу черновика решили сами: «Сохранить» или «Отменить»
@@ -3156,6 +3214,18 @@ function renderDashboard(main, id, q) {
     cross = crossMemory[id] = [];
     applyFilters();
   }
+  /* Следующий уровень детализации — просто следующая вкладка */
+  function nextLevelTab() {
+    const i = D.tabs.findIndex(t => t.id === tabId);
+    return i >= 0 && D.tabs[i + 1] ? D.tabs[i + 1] : null;
+  }
+  function drillDown() {
+    const nt = nextLevelTab();
+    if (!nt) return;
+    tabId = tabMemory[id] = nt.id;
+    paintAll();
+    toast(`Уровень «${nt.title}»: выбранное перенесено фильтром`);
+  }
   function onCross(chartId) {
     if (!D.crossFilter) return null;
     return filters => {
@@ -3178,6 +3248,7 @@ function renderDashboard(main, id, q) {
     head.appendChild(h('div', { class: 'grow' }));
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
+      !editing && !tuning ? { label: 'Поменять названия и разрезы', icon: 'edit', onClick: () => go('#/d/' + id + '?tune=1') } : null,
       { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
       { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
       { label: 'Свойства дашборда', icon: 'settings', onClick: openProps },
@@ -3187,7 +3258,12 @@ function renderDashboard(main, id, q) {
       !editing ? { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(id) } : null,
       !editing ? { label: 'Удалить дашборд', icon: 'trash', danger: true, onClick: () => deleteDashboard(id) } : null,
     ]));
-    if (editing) {
+    if (tuning) {
+      head.append(
+        h('button', { class: 'btn', onclick: tuneCancel }, 'Отменить'),
+        h('button', { class: 'btn', title: 'Полное редактирование', onclick: () => leaveTo('#/d/' + id + '?edit=1') }, ic('edit'), 'Больше настроек'),
+        h('button', { class: 'btn primary', onclick: tuneDone }, ic('check'), 'Готово'), more);
+    } else if (editing) {
       head.append(
         h('button', { class: 'btn', onclick: cancelEdit }, 'Отменить'),
         h('button', { class: 'btn primary', onclick: saveEdit }, ic('check'), 'Сохранить'), more);
@@ -3197,6 +3273,17 @@ function renderDashboard(main, id, q) {
         h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'), more);
     }
     return head;
+  }
+  function tuneDone() {
+    saved.updated = Date.now();
+    saveState();
+    toast(tuneDirty() ? 'Изменения сохранены' : 'Изменений не было');
+    go('#/d/' + id);
+  }
+  async function tuneCancel() {
+    if (tuneDirty() && !(await confirmDialog('Отменить изменения', 'Названия и разрезы вернутся к тому, что было.', 'Отменить изменения'))) return;
+    Object.entries(tuneBackup).forEach(([cid, c]) => { STATE.charts[cid] = c; });
+    go('#/d/' + id);
   }
   function saveEdit() {
     draftHandled = true;
@@ -3320,12 +3407,42 @@ function renderDashboard(main, id, q) {
   function renderVisibleCharts() {
     cells.forEach(c => { if (c.chartId) drawChart(c); });
   }
+  /* Полоса простой правки: название и разрез, словами задачи */
+  function tuneBar(it, chart, cell) {
+    const ds = dsGet(chart.datasetId);
+    const bar = h('div', { class: 'tune-bar' });
+    const nameInp = h('input', { class: 'input', value: chart.name, 'aria-label': 'Название блока',
+      oninput: e => { tuneTouch(it.chartId); guidedRename(chart, e.target.value); cell.titleEl && (cell.titleEl.textContent = chart.name); } });
+    bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Название'), nameInp));
+    if (!ds) return bar;
+    const opts = guidedDimOptions(ds, chart);
+    const cur = guidedDimKey(chart);
+    if (!opts.length || !cur) {
+      bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
+        `Показывает ${guidedWhat(ds, chart)} — разрез у этого блока не меняется.`));
+      return bar;
+    }
+    const sel = selectEl(opts.map(o => [o.key, o.label]), cur, v => {
+      tuneTouch(it.chartId);
+      guidedSetDimParam(chart, v);
+      guidedRetitle(ds, chart);
+      nameInp.value = chart.name;
+      if (cell.titleEl) cell.titleEl.textContent = chart.name;
+      drawChart(cell);
+    }, { 'aria-label': 'В разрезе чего' });
+    bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'В разрезе'), sel));
+    return bar;
+  }
   function drawChart(c) {
     const chart = STATE.charts[c.chartId];
     if (!chart) return vizMsg(c.root, 'График удалён', true);
     const ex = extraFiltersFor(c.chartId);
     const ds = dsGet(chart.datasetId);
     renderChart(c.root, chart, { scheme: D.scheme, extraFilters: ex, onCross: onCross(c.chartId), crossActive: (cross.find(x => x.source === c.chartId) || {}).filters });
+    if (c.drill) {
+      const active = cross.some(x => x.source === c.chartId && (x.filters || []).length);
+      c.drill.style.display = active && nextLevelTab() ? '' : 'none';
+    }
     if (c.badge) {
       const n = ds ? ex.filter(f => dsCol(ds, f.col)).length : 0;
       clear(c.badge);
@@ -3359,12 +3476,21 @@ function renderDashboard(main, id, q) {
           editing ? { label: 'Убрать с дашборда', icon: 'trash', danger: true, onClick: () => removeItem(it) } : null,
         ]);
       });
-      const head = h('div', { class: 'card-head' + (editing ? ' drag-h' : '') },
-        h('div', { class: 't', title: chart ? chart.name : '' }, chart ? chart.name : 'График удалён'), badge, menuBtn);
+      // Провал на следующий уровень: только у дашбордов из шаблона и только
+      // когда по этому графику уже выбрано значение — иначе переносить нечего
+      const drill = D.fromTemplate && !editing
+        ? h('button', { class: 'btn sm drill', style: { display: 'none' }, title: 'Перенести выбранное на следующий уровень',
+            onclick: e => { e.stopPropagation(); drillDown(); } }, 'Разобрать', ic('chevR'))
+        : null;
+      const titleEl = h('div', { class: 't', title: chart ? chart.name : '' }, chart ? chart.name : 'График удалён');
+      const head = h('div', { class: 'card-head' + (editing ? ' drag-h' : '') }, titleEl, badge, drill, menuBtn);
+      cell.titleEl = titleEl;
       if (editing) head.addEventListener('pointerdown', e => { if (!e.target.closest('button')) startDrag(e, it); });
       const body = h('div', { class: 'card-body' }, root);
-      el.appendChild(h('div', { class: 'card' }, head, body));
-      Object.assign(cell, { root, badge, chartId: it.chartId });
+      const card = h('div', { class: 'card' }, head, body);
+      if (tuning && chart) card.appendChild(tuneBar(it, chart, cell));
+      el.appendChild(card);
+      Object.assign(cell, { root, badge, drill, chartId: it.chartId });
       cell.ro = new ResizeObserver(debounce(() => { if (root._ec) root._ec.resize(); }, 60));
       cell.ro.observe(body);
       if (editing) { tools.append(moveBtn() || '', delBtn()); }
@@ -4037,7 +4163,8 @@ function renderExplore(main, parts, q) {
   function paintMain() {
     clear(colMain);
     previewRO && previewRO.disconnect();
-    const name = h('input', { class: 'name', value: chart.name, 'aria-label': 'Название графика', oninput: e => { chart.name = e.target.value; } });
+    const name = h('input', { class: 'name', value: chart.name, 'aria-label': 'Название графика',
+      oninput: e => { chart.name = e.target.value; chart.autoName = false; } });
     const headBtns = [];
     if (back) headBtns.push(h('button', { class: 'btn ghost', onclick: () => leave('#/d/' + back) }, ic('back'), 'К дашборду'));
     const nSpec = specFilledCount(chart);
@@ -5060,7 +5187,7 @@ function createAutoDash(ds, title, opts = {}) {
   const newRow = () => { if (x) { y += rowH; x = 0; rowH = 0; } };
   plan.charts.forEach(c => {
     const id = uid('c_');
-    STATE.charts[id] = { id, name: c.name, viz: c.viz, datasetId: ds.id, params: Object.assign(VIZ[c.viz].defaults(ds), c.params), updated: Date.now() };
+    STATE.charts[id] = { id, name: c.name, viz: c.viz, datasetId: ds.id, autoName: true, params: Object.assign(VIZ[c.viz].defaults(ds), c.params), updated: Date.now() };
     const sz = c.size || itemDefaultSize('chart', STATE.charts[id]);
     // Заголовок-раздел перед разрезами: отделяет «что происходит» от «за счёт чего»
     if (c.viz === 'bar' && plan.hasBreak) { newRow(); items.push(Object.assign({ i: uid('i'), type: 'header', text: 'Разрезы', size: 'm', bg: false }, place(12, 2))); newRow(); }
@@ -5786,6 +5913,85 @@ function renderTemplateList(main, q) {
 }
 
 /* ============================================================
+   Кобра · простая правка
+   Режим для тех, кому нужно поменять подписи и разрезы, а не строить
+   график заново: ни «метрик», ни «агрегаций», ни конструктора.
+   Своего формата не вводит — правит обычные графики дашборда.
+   ============================================================ */
+
+/* Параметр, который у каждого типа визуализации отвечает за разрез.
+   Нет строки — значит, в простом режиме разрез у этого типа не меняется
+   (большие числа разреза не имеют, у комбинированного он всегда время). */
+const GUIDED_DIM = {
+  line: 'x_col', area: 'x_col', bar: 'x_col',
+  pie: 'dim', funnel: 'dim', bullet: 'dim',
+  heatmap: 'y_col',
+  table: 'groupby[0]', treemap: 'groupby[0]', pivot: 'rows[0]',
+};
+const GUIDED_ARR = /^(\w+)\[0\]$/;
+
+function guidedDimSpec(chart) {
+  if (!chart || !GUIDED_DIM[chart.viz]) return null;
+  if (chart.viz === 'table' && (chart.params || {}).mode === 'raw') return null; // исходные строки не группируются
+  return GUIDED_DIM[chart.viz];
+}
+function guidedDimKey(chart) {
+  const spec = guidedDimSpec(chart);
+  if (!spec) return null;
+  const p = chart.params || {};
+  const m = GUIDED_ARR.exec(spec);
+  return m ? ((p[m[1]] || [])[0] || null) : (p[spec] || null);
+}
+function guidedSetDimParam(chart, key) {
+  const spec = guidedDimSpec(chart);
+  if (!spec) return;
+  const m = GUIDED_ARR.exec(spec);
+  if (m) { const arr = [...(chart.params[m[1]] || [])]; arr[0] = key; chart.params[m[1]] = arr; }
+  else chart.params[spec] = key;
+}
+/* Поля, по которым этот график построится: тот же тип, что и сейчас,
+   без идентификаторов — по номеру документа разрез бессмыслен */
+function guidedDimOptions(ds, chart) {
+  const cur = guidedDimKey(chart);
+  if (!guidedDimSpec(chart)) return [];
+  const curCol = cur && dsCol(ds, cur);
+  const type = curCol ? curCol.type : 'string';
+  return ds.columns
+    .filter(c => c.type === type && !AUTO_ID_RE.test(c.key + ' ' + (c.label || '')))
+    .map(c => ({ key: c.key, label: colLabel(ds, c.key) }));
+}
+function guidedMainMetric(chart) {
+  const p = chart.params || {};
+  return p.metric || (Array.isArray(p.metrics) && p.metrics[0]) || null;
+}
+/* Заголовок пересобираем только у тех графиков, которым его придумала Кобра */
+function guidedRetitle(ds, chart) {
+  if (!chart.autoName) return;
+  const met = guidedMainMetric(chart);
+  const dim = guidedDimKey(chart);
+  if (!met) return;
+  const t = autoMetricTitle(ds, met);
+  const col = dim && dsCol(ds, dim);
+  if (col && col.type === 'date') { chart.name = `${t} по месяцам`; return; }
+  if (!dim) { chart.name = t; return; }
+  const label = colLabel(ds, dim);
+  if (chart.viz === 'table') { const d = autoDative(label); chart.name = d ? `Показатели по ${d}` : `Показатели: ${label}`; return; }
+  chart.name = autoTitleBy(t, label);
+}
+function guidedRename(chart, name) {
+  const v = String(name || '').trim();
+  if (!v) return false;
+  chart.name = v;
+  chart.autoName = false;   // дальше заголовок наш не трогает
+  return true;
+}
+/* Что человек меняет в этом блоке: словами задачи, без терминов движка */
+function guidedWhat(ds, chart) {
+  const met = guidedMainMetric(chart);
+  return met ? autoMetricTitle(ds, met) : 'строки набора';
+}
+
+/* ============================================================
    Кобра · обмен файлами
    Прототип живёт в одном браузере, поэтому шаблон, дашборд и данные
    передаются файлом .kobra.json: «шаблон» — только структура,
@@ -5883,7 +6089,7 @@ function openExportDialog(presetDashId) {
     clear(body);
     body.appendChild(h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Что вкладываем'),
       h('div', { class: 'seg' },
-        h('button', { class: withData ? '' : 'on', onclick: () => { withData = false; paint(); } }, 'Шаблон — без данных'),
+        h('button', { class: withData ? '' : 'on', onclick: () => { withData = false; paint(); } }, 'Шаблон для передачи — без данных'),
         h('button', { class: withData ? 'on' : '', onclick: () => { withData = true; paint(); } }, 'Проект — с данными')),
       h('div', { class: 'hint' }, withData
         ? 'Строки загруженных наборов попадут в файл. Не отправляйте его по открытым каналам, если данные чувствительные.'
@@ -5916,7 +6122,7 @@ function openExportDialog(presetDashId) {
           if (author.trim()) lsSet(LS_AUTHOR, author.trim());
           if (downloadFile(exportFileName(dashIds, withData), JSON.stringify(payload, null, 1))) {
             close();
-            toast(withData ? 'Проект сохранён в файл' : 'Шаблон сохранён в файл');
+            toast(withData ? 'Проект сохранён в файл' : 'Шаблон для передачи сохранён в файл');
           }
         },
       }, ic('download'), 'Скачать файл')],
@@ -6030,7 +6236,7 @@ function openImportPreview(file, p) {
     clear(body);
     body.appendChild(h('table', { class: 'list' }, h('tbody', null, [
       ['Файл', file.name],
-      ['Вид', p.kind === 'project' ? 'Проект со строками данных' : 'Шаблон без данных'],
+      ['Вид', p.kind === 'project' ? 'Проект со строками данных' : 'Шаблон для передачи, без данных'],
       ['Сохранён', p.exportedAt ? fmtDate(Date.parse(p.exportedAt)) : '—'],
       p.author ? ['Автор', p.author] : null,
       p.note ? ['Комментарий', p.note] : null,

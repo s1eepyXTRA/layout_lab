@@ -241,7 +241,7 @@ function createAutoDash(ds, title, opts = {}) {
   const newRow = () => { if (x) { y += rowH; x = 0; rowH = 0; } };
   plan.charts.forEach(c => {
     const id = uid('c_');
-    STATE.charts[id] = { id, name: c.name, viz: c.viz, datasetId: ds.id, params: Object.assign(VIZ[c.viz].defaults(ds), c.params), updated: Date.now() };
+    STATE.charts[id] = { id, name: c.name, viz: c.viz, datasetId: ds.id, autoName: true, params: Object.assign(VIZ[c.viz].defaults(ds), c.params), updated: Date.now() };
     const sz = c.size || itemDefaultSize('chart', STATE.charts[id]);
     // Заголовок-раздел перед разрезами: отделяет «что происходит» от «за счёт чего»
     if (c.viz === 'bar' && plan.hasBreak) { newRow(); items.push(Object.assign({ i: uid('i'), type: 'header', text: 'Разрезы', size: 'm', bg: false }, place(12, 2))); newRow(); }

@@ -274,6 +274,11 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .card-head .btn.drill { padding: 2px 8px; height: 24px; font-size: 12px; gap: 2px; flex: none; border-color: var(--primary); color: var(--primary); }
 .card-head .btn.drill:hover { background: var(--primary-soft); }
 .card-head .btn.drill svg { width: 13px; height: 13px; }
+/* Простая правка */
+.tune-bar { border-top: 1px solid var(--line); padding: 8px 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--surface-2); border-radius: 0 0 var(--r-l) var(--r-l); }
+.tune-f { display: flex; align-items: center; gap: 6px; flex: 1 1 200px; min-width: 0; }
+.tune-f > span { font-size: 12px; font-weight: 600; color: var(--ink-3); flex: none; }
+.tune-f .input, .tune-f .select { height: 30px; font-size: 13px; }
 .edit-banner svg { flex: none; }
 
 /* ---------- Исследование (Explore) ---------- */
@@ -3002,6 +3007,10 @@ function renderDashboard(main, id, q) {
     return () => { };
   }
   const editing = q.edit === '1';
+  const tuning = !editing && q.tune === '1';   // простая правка: только подписи и разрезы
+  const tuneBackup = {};                        // chartId → каким график был до правки
+  const tuneTouch = cid => { if (!tuneBackup[cid] && STATE.charts[cid]) tuneBackup[cid] = clone(STATE.charts[cid]); };
+  const tuneDirty = () => Object.keys(tuneBackup).length > 0;
   const D = editing ? clone(saved) : saved; // черновик в режиме правки
   const original = JSON.stringify(saved);
   let draftHandled = false; // судьбу черновика решили сами: «Сохранить» или «Отменить»
@@ -3154,6 +3163,7 @@ function renderDashboard(main, id, q) {
     head.appendChild(h('div', { class: 'grow' }));
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
+      !editing && !tuning ? { label: 'Поменять названия и разрезы', icon: 'edit', onClick: () => go('#/d/' + id + '?tune=1') } : null,
       { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
       { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
       { label: 'Свойства дашборда', icon: 'settings', onClick: openProps },
@@ -3163,7 +3173,12 @@ function renderDashboard(main, id, q) {
       !editing ? { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(id) } : null,
       !editing ? { label: 'Удалить дашборд', icon: 'trash', danger: true, onClick: () => deleteDashboard(id) } : null,
     ]));
-    if (editing) {
+    if (tuning) {
+      head.append(
+        h('button', { class: 'btn', onclick: tuneCancel }, 'Отменить'),
+        h('button', { class: 'btn', title: 'Полное редактирование', onclick: () => leaveTo('#/d/' + id + '?edit=1') }, ic('edit'), 'Больше настроек'),
+        h('button', { class: 'btn primary', onclick: tuneDone }, ic('check'), 'Готово'), more);
+    } else if (editing) {
       head.append(
         h('button', { class: 'btn', onclick: cancelEdit }, 'Отменить'),
         h('button', { class: 'btn primary', onclick: saveEdit }, ic('check'), 'Сохранить'), more);
@@ -3173,6 +3188,17 @@ function renderDashboard(main, id, q) {
         h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'), more);
     }
     return head;
+  }
+  function tuneDone() {
+    saved.updated = Date.now();
+    saveState();
+    toast(tuneDirty() ? 'Изменения сохранены' : 'Изменений не было');
+    go('#/d/' + id);
+  }
+  async function tuneCancel() {
+    if (tuneDirty() && !(await confirmDialog('Отменить изменения', 'Названия и разрезы вернутся к тому, что было.', 'Отменить изменения'))) return;
+    Object.entries(tuneBackup).forEach(([cid, c]) => { STATE.charts[cid] = c; });
+    go('#/d/' + id);
   }
   function saveEdit() {
     draftHandled = true;
@@ -3296,6 +3322,32 @@ function renderDashboard(main, id, q) {
   function renderVisibleCharts() {
     cells.forEach(c => { if (c.chartId) drawChart(c); });
   }
+  /* Полоса простой правки: название и разрез, словами задачи */
+  function tuneBar(it, chart, cell) {
+    const ds = dsGet(chart.datasetId);
+    const bar = h('div', { class: 'tune-bar' });
+    const nameInp = h('input', { class: 'input', value: chart.name, 'aria-label': 'Название блока',
+      oninput: e => { tuneTouch(it.chartId); guidedRename(chart, e.target.value); cell.titleEl && (cell.titleEl.textContent = chart.name); } });
+    bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Название'), nameInp));
+    if (!ds) return bar;
+    const opts = guidedDimOptions(ds, chart);
+    const cur = guidedDimKey(chart);
+    if (!opts.length || !cur) {
+      bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
+        `Показывает ${guidedWhat(ds, chart)} — разрез у этого блока не меняется.`));
+      return bar;
+    }
+    const sel = selectEl(opts.map(o => [o.key, o.label]), cur, v => {
+      tuneTouch(it.chartId);
+      guidedSetDimParam(chart, v);
+      guidedRetitle(ds, chart);
+      nameInp.value = chart.name;
+      if (cell.titleEl) cell.titleEl.textContent = chart.name;
+      drawChart(cell);
+    }, { 'aria-label': 'В разрезе чего' });
+    bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'В разрезе'), sel));
+    return bar;
+  }
   function drawChart(c) {
     const chart = STATE.charts[c.chartId];
     if (!chart) return vizMsg(c.root, 'График удалён', true);
@@ -3345,11 +3397,14 @@ function renderDashboard(main, id, q) {
         ? h('button', { class: 'btn sm drill', style: { display: 'none' }, title: 'Перенести выбранное на следующий уровень',
             onclick: e => { e.stopPropagation(); drillDown(); } }, 'Разобрать', ic('chevR'))
         : null;
-      const head = h('div', { class: 'card-head' + (editing ? ' drag-h' : '') },
-        h('div', { class: 't', title: chart ? chart.name : '' }, chart ? chart.name : 'График удалён'), badge, drill, menuBtn);
+      const titleEl = h('div', { class: 't', title: chart ? chart.name : '' }, chart ? chart.name : 'График удалён');
+      const head = h('div', { class: 'card-head' + (editing ? ' drag-h' : '') }, titleEl, badge, drill, menuBtn);
+      cell.titleEl = titleEl;
       if (editing) head.addEventListener('pointerdown', e => { if (!e.target.closest('button')) startDrag(e, it); });
       const body = h('div', { class: 'card-body' }, root);
-      el.appendChild(h('div', { class: 'card' }, head, body));
+      const card = h('div', { class: 'card' }, head, body);
+      if (tuning && chart) card.appendChild(tuneBar(it, chart, cell));
+      el.appendChild(card);
       Object.assign(cell, { root, badge, drill, chartId: it.chartId });
       cell.ro = new ResizeObserver(debounce(() => { if (root._ec) root._ec.resize(); }, 60));
       cell.ro.observe(body);
@@ -4023,7 +4078,8 @@ function renderExplore(main, parts, q) {
   function paintMain() {
     clear(colMain);
     previewRO && previewRO.disconnect();
-    const name = h('input', { class: 'name', value: chart.name, 'aria-label': 'Название графика', oninput: e => { chart.name = e.target.value; } });
+    const name = h('input', { class: 'name', value: chart.name, 'aria-label': 'Название графика',
+      oninput: e => { chart.name = e.target.value; chart.autoName = false; } });
     const headBtns = [];
     if (back) headBtns.push(h('button', { class: 'btn ghost', onclick: () => leave('#/d/' + back) }, ic('back'), 'К дашборду'));
     const nSpec = specFilledCount(chart);
@@ -5046,7 +5102,7 @@ function createAutoDash(ds, title, opts = {}) {
   const newRow = () => { if (x) { y += rowH; x = 0; rowH = 0; } };
   plan.charts.forEach(c => {
     const id = uid('c_');
-    STATE.charts[id] = { id, name: c.name, viz: c.viz, datasetId: ds.id, params: Object.assign(VIZ[c.viz].defaults(ds), c.params), updated: Date.now() };
+    STATE.charts[id] = { id, name: c.name, viz: c.viz, datasetId: ds.id, autoName: true, params: Object.assign(VIZ[c.viz].defaults(ds), c.params), updated: Date.now() };
     const sz = c.size || itemDefaultSize('chart', STATE.charts[id]);
     // Заголовок-раздел перед разрезами: отделяет «что происходит» от «за счёт чего»
     if (c.viz === 'bar' && plan.hasBreak) { newRow(); items.push(Object.assign({ i: uid('i'), type: 'header', text: 'Разрезы', size: 'm', bg: false }, place(12, 2))); newRow(); }
@@ -5769,6 +5825,85 @@ function renderTemplateList(main, q) {
   page.appendChild(field('Набор данных', selectEl(dsList.map(d => [d.id, d.name]), dsId, v => { dsId = v; paint(); })));
   page.appendChild(grid);
   paint();
+}
+
+/* ============================================================
+   Кобра · простая правка
+   Режим для тех, кому нужно поменять подписи и разрезы, а не строить
+   график заново: ни «метрик», ни «агрегаций», ни конструктора.
+   Своего формата не вводит — правит обычные графики дашборда.
+   ============================================================ */
+
+/* Параметр, который у каждого типа визуализации отвечает за разрез.
+   Нет строки — значит, в простом режиме разрез у этого типа не меняется
+   (большие числа разреза не имеют, у комбинированного он всегда время). */
+const GUIDED_DIM = {
+  line: 'x_col', area: 'x_col', bar: 'x_col',
+  pie: 'dim', funnel: 'dim', bullet: 'dim',
+  heatmap: 'y_col',
+  table: 'groupby[0]', treemap: 'groupby[0]', pivot: 'rows[0]',
+};
+const GUIDED_ARR = /^(\w+)\[0\]$/;
+
+function guidedDimSpec(chart) {
+  if (!chart || !GUIDED_DIM[chart.viz]) return null;
+  if (chart.viz === 'table' && (chart.params || {}).mode === 'raw') return null; // исходные строки не группируются
+  return GUIDED_DIM[chart.viz];
+}
+function guidedDimKey(chart) {
+  const spec = guidedDimSpec(chart);
+  if (!spec) return null;
+  const p = chart.params || {};
+  const m = GUIDED_ARR.exec(spec);
+  return m ? ((p[m[1]] || [])[0] || null) : (p[spec] || null);
+}
+function guidedSetDimParam(chart, key) {
+  const spec = guidedDimSpec(chart);
+  if (!spec) return;
+  const m = GUIDED_ARR.exec(spec);
+  if (m) { const arr = [...(chart.params[m[1]] || [])]; arr[0] = key; chart.params[m[1]] = arr; }
+  else chart.params[spec] = key;
+}
+/* Поля, по которым этот график построится: тот же тип, что и сейчас,
+   без идентификаторов — по номеру документа разрез бессмыслен */
+function guidedDimOptions(ds, chart) {
+  const cur = guidedDimKey(chart);
+  if (!guidedDimSpec(chart)) return [];
+  const curCol = cur && dsCol(ds, cur);
+  const type = curCol ? curCol.type : 'string';
+  return ds.columns
+    .filter(c => c.type === type && !AUTO_ID_RE.test(c.key + ' ' + (c.label || '')))
+    .map(c => ({ key: c.key, label: colLabel(ds, c.key) }));
+}
+function guidedMainMetric(chart) {
+  const p = chart.params || {};
+  return p.metric || (Array.isArray(p.metrics) && p.metrics[0]) || null;
+}
+/* Заголовок пересобираем только у тех графиков, которым его придумала Кобра */
+function guidedRetitle(ds, chart) {
+  if (!chart.autoName) return;
+  const met = guidedMainMetric(chart);
+  const dim = guidedDimKey(chart);
+  if (!met) return;
+  const t = autoMetricTitle(ds, met);
+  const col = dim && dsCol(ds, dim);
+  if (col && col.type === 'date') { chart.name = `${t} по месяцам`; return; }
+  if (!dim) { chart.name = t; return; }
+  const label = colLabel(ds, dim);
+  if (chart.viz === 'table') { const d = autoDative(label); chart.name = d ? `Показатели по ${d}` : `Показатели: ${label}`; return; }
+  chart.name = autoTitleBy(t, label);
+}
+function guidedRename(chart, name) {
+  const v = String(name || '').trim();
+  if (!v) return false;
+  chart.name = v;
+  chart.autoName = false;   // дальше заголовок наш не трогает
+  return true;
+}
+/* Что человек меняет в этом блоке: словами задачи, без терминов движка */
+function guidedWhat(ds, chart) {
+  const met = guidedMainMetric(chart);
+  return met ? autoMetricTitle(ds, met) : 'строки набора';
 }
 
 /* ============================================================

@@ -42,6 +42,10 @@ function renderDashboard(main, id, q) {
     return () => { };
   }
   const editing = q.edit === '1';
+  const tuning = !editing && q.tune === '1';   // простая правка: только подписи и разрезы
+  const tuneBackup = {};                        // chartId → каким график был до правки
+  const tuneTouch = cid => { if (!tuneBackup[cid] && STATE.charts[cid]) tuneBackup[cid] = clone(STATE.charts[cid]); };
+  const tuneDirty = () => Object.keys(tuneBackup).length > 0;
   const D = editing ? clone(saved) : saved; // черновик в режиме правки
   const original = JSON.stringify(saved);
   let draftHandled = false; // судьбу черновика решили сами: «Сохранить» или «Отменить»
@@ -194,6 +198,7 @@ function renderDashboard(main, id, q) {
     head.appendChild(h('div', { class: 'grow' }));
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
+      !editing && !tuning ? { label: 'Поменять названия и разрезы', icon: 'edit', onClick: () => go('#/d/' + id + '?tune=1') } : null,
       { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
       { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
       { label: 'Свойства дашборда', icon: 'settings', onClick: openProps },
@@ -203,7 +208,12 @@ function renderDashboard(main, id, q) {
       !editing ? { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(id) } : null,
       !editing ? { label: 'Удалить дашборд', icon: 'trash', danger: true, onClick: () => deleteDashboard(id) } : null,
     ]));
-    if (editing) {
+    if (tuning) {
+      head.append(
+        h('button', { class: 'btn', onclick: tuneCancel }, 'Отменить'),
+        h('button', { class: 'btn', title: 'Полное редактирование', onclick: () => leaveTo('#/d/' + id + '?edit=1') }, ic('edit'), 'Больше настроек'),
+        h('button', { class: 'btn primary', onclick: tuneDone }, ic('check'), 'Готово'), more);
+    } else if (editing) {
       head.append(
         h('button', { class: 'btn', onclick: cancelEdit }, 'Отменить'),
         h('button', { class: 'btn primary', onclick: saveEdit }, ic('check'), 'Сохранить'), more);
@@ -213,6 +223,17 @@ function renderDashboard(main, id, q) {
         h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'), more);
     }
     return head;
+  }
+  function tuneDone() {
+    saved.updated = Date.now();
+    saveState();
+    toast(tuneDirty() ? 'Изменения сохранены' : 'Изменений не было');
+    go('#/d/' + id);
+  }
+  async function tuneCancel() {
+    if (tuneDirty() && !(await confirmDialog('Отменить изменения', 'Названия и разрезы вернутся к тому, что было.', 'Отменить изменения'))) return;
+    Object.entries(tuneBackup).forEach(([cid, c]) => { STATE.charts[cid] = c; });
+    go('#/d/' + id);
   }
   function saveEdit() {
     draftHandled = true;
@@ -336,6 +357,32 @@ function renderDashboard(main, id, q) {
   function renderVisibleCharts() {
     cells.forEach(c => { if (c.chartId) drawChart(c); });
   }
+  /* Полоса простой правки: название и разрез, словами задачи */
+  function tuneBar(it, chart, cell) {
+    const ds = dsGet(chart.datasetId);
+    const bar = h('div', { class: 'tune-bar' });
+    const nameInp = h('input', { class: 'input', value: chart.name, 'aria-label': 'Название блока',
+      oninput: e => { tuneTouch(it.chartId); guidedRename(chart, e.target.value); cell.titleEl && (cell.titleEl.textContent = chart.name); } });
+    bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Название'), nameInp));
+    if (!ds) return bar;
+    const opts = guidedDimOptions(ds, chart);
+    const cur = guidedDimKey(chart);
+    if (!opts.length || !cur) {
+      bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
+        `Показывает ${guidedWhat(ds, chart)} — разрез у этого блока не меняется.`));
+      return bar;
+    }
+    const sel = selectEl(opts.map(o => [o.key, o.label]), cur, v => {
+      tuneTouch(it.chartId);
+      guidedSetDimParam(chart, v);
+      guidedRetitle(ds, chart);
+      nameInp.value = chart.name;
+      if (cell.titleEl) cell.titleEl.textContent = chart.name;
+      drawChart(cell);
+    }, { 'aria-label': 'В разрезе чего' });
+    bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'В разрезе'), sel));
+    return bar;
+  }
   function drawChart(c) {
     const chart = STATE.charts[c.chartId];
     if (!chart) return vizMsg(c.root, 'График удалён', true);
@@ -385,11 +432,14 @@ function renderDashboard(main, id, q) {
         ? h('button', { class: 'btn sm drill', style: { display: 'none' }, title: 'Перенести выбранное на следующий уровень',
             onclick: e => { e.stopPropagation(); drillDown(); } }, 'Разобрать', ic('chevR'))
         : null;
-      const head = h('div', { class: 'card-head' + (editing ? ' drag-h' : '') },
-        h('div', { class: 't', title: chart ? chart.name : '' }, chart ? chart.name : 'График удалён'), badge, drill, menuBtn);
+      const titleEl = h('div', { class: 't', title: chart ? chart.name : '' }, chart ? chart.name : 'График удалён');
+      const head = h('div', { class: 'card-head' + (editing ? ' drag-h' : '') }, titleEl, badge, drill, menuBtn);
+      cell.titleEl = titleEl;
       if (editing) head.addEventListener('pointerdown', e => { if (!e.target.closest('button')) startDrag(e, it); });
       const body = h('div', { class: 'card-body' }, root);
-      el.appendChild(h('div', { class: 'card' }, head, body));
+      const card = h('div', { class: 'card' }, head, body);
+      if (tuning && chart) card.appendChild(tuneBar(it, chart, cell));
+      el.appendChild(card);
       Object.assign(cell, { root, badge, drill, chartId: it.chartId });
       cell.ro = new ResizeObserver(debounce(() => { if (root._ec) root._ec.resize(); }, 60));
       cell.ro.observe(body);
