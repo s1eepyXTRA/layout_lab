@@ -12,7 +12,7 @@ function renderDatasetList(main) {
     h('div', { class: 'grow' }, h('h1', null, 'Данные'), h('p', null, 'Встроенные демо-наборы DNS и ваши файлы. Загруженные данные хранятся только в этом браузере.')),
     h('button', { class: 'btn', onclick: () => openSchemaDialog() }, ic('schema'), 'Описать набор'),
     h('button', { class: 'btn primary', onclick: openUpload }, ic('upload'), 'Загрузить CSV или Excel')));
-  const list = Object.values(DS).sort((a, b) => (b.builtin ? 1 : 0) - (a.builtin ? 1 : 0) || a.name.localeCompare(b.name, 'ru'));
+  const list = visibleDatasets().sort((a, b) => (b.builtin ? 1 : 0) - (a.builtin ? 1 : 0) || a.name.localeCompare(b.name, 'ru'));
   const usage = id => Object.values(STATE.charts).filter(c => c.datasetId === id).length;
   page.appendChild(h('div', { class: 'tbl-wrap' }, h('table', { class: 'list' },
     h('thead', null, h('tr', null, h('th', null, 'Набор данных'), h('th', null, 'Источник'), h('th', null, 'Строк'), h('th', null, 'Колонок'), h('th', null, 'Графиков'), h('th'))),
@@ -81,7 +81,7 @@ function renderDatasetPage(main, id) {
     clear(mWrap);
     mWrap.appendChild(h('table', { class: 'list' },
       h('thead', null, h('tr', null, h('th', null, 'Метрика'), h('th', null, 'Формула'), h('th', null, 'Формат'), h('th'))),
-      h('tbody', null, d.metrics.map(m => h('tr', null, h('td', null, m.label), h('td', { class: 'muted' }, exprText(d, m.expr)), h('td', { class: 'muted' }, NUMBER_FORMATS[m.format] || m.format),
+      h('tbody', null, d.metrics.map(m => h('tr', null, h('td', null, m.label), h('td', { class: 'muted' }, exprText(d, m.expr)), h('td', { class: 'muted' }, formatLabel(m.format)),
         h('td', { class: 'act' }, builtinKeys.has(m.key) ? h('span', { class: 'muted', style: { fontSize: '12px' } }, 'встроенная') : [
           iconBtn('edit', 'Изменить', () => editSavedMetric(d, m, paintMetrics), 'sm'),
           iconBtn('trash', 'Удалить', async () => {

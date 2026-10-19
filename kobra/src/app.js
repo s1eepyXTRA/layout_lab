@@ -90,6 +90,20 @@ function applyDsOverrides() {
     ds.metrics = [...clone(base.metrics), ...list];
   });
 }
+/* Скрытый набор принадлежит дашборду: без дашборда он мусор в хранилище */
+function dropOwnedDatasets() {
+  let n = 0;
+  Object.values(STATE.datasets || {}).forEach(meta => {
+    if (!meta.owner || STATE.dashboards[meta.owner]) return;
+    delete STATE.datasets[meta.id];
+    delete DS[meta.id];
+    n++;
+  });
+  return n;
+}
+/* Наборы, видимые человеку: скрытые макетные и временные примеры не в счёт */
+const visibleDatasets = () => Object.values(DS).filter(d => !d.owner && !d.preview);
+
 async function loadUploaded() {
   const ids = Object.keys(STATE.datasets || {});
   for (const id of ids) {
@@ -312,6 +326,7 @@ async function deleteDashboard(id) {
   const d = STATE.dashboards[id];
   if (!(await confirmDialog('Удалить дашборд', `Дашборд «${d.title}» будет удалён. Графики останутся в разделе «Графики».`))) return;
   delete STATE.dashboards[id];
+  dropOwnedDatasets();
   saveState();
   toast('Дашборд удалён');
   go('#/dashboards');
@@ -377,7 +392,7 @@ async function deleteChart(id) {
   return true;
 }
 function newChartDialog(opts = {}) {
-  const dsList = Object.values(DS);
+  const dsList = visibleDatasets();
   let dsId = opts.datasetId || (dsList[0] || {}).id;
   let viz = opts.viz || 'bar';
   const gal = h('div', { class: 'viz-gallery' });
@@ -416,6 +431,7 @@ async function boot() {
   STATE.datasets = STATE.datasets || {}; STATE.dsMetrics = STATE.dsMetrics || {};
   applyDsOverrides();
   await loadUploaded();
+  if (dropOwnedDatasets()) saveState();
   renderShell();
   let lastNav = { h: null, t: 0 };
   const onNav = () => { if (lastNav.h === location.hash && Date.now() - lastNav.t < 150) return; lastNav = { h: location.hash, t: Date.now() }; route(); };

@@ -67,6 +67,16 @@ const NUMBER_FORMATS = {
   auto: 'Как у метрики', smart: 'Сокращённо (1,2 млн)', int: 'Целое (1 234 567)', dec1: 'Один знак (1 234,5)',
   dec2: 'Два знака (1 234,56)', pct: 'Проценты (12,3 %)', rub: 'Рубли (1 234 ₽)', rub_smart: 'Рубли сокращённо (1,2 млн ₽)',
 };
+/* Единица измерения прячется в самом формате: 'suffix:шт.' — чтобы она доехала
+   до осей, легенд, подсказок и ячеек, не меняя подпись fmtNum по всему движку */
+const SUFFIX_RE = /^suffix:(.*)$/;
+const fmtSuffix = f => { const m = SUFFIX_RE.exec(f || ''); return m ? m[1] : null; };
+const withSuffix = s => 'suffix:' + String(s || '').trim();
+function formatLabel(f) {
+  const s = fmtSuffix(f);
+  if (s !== null) return s ? `Единица «${s}»` : 'Без единиц';
+  return NUMBER_FORMATS[f] || f;
+}
 const nfCache = {};
 function nf(min, max) {
   const k = min + ':' + max;
@@ -84,6 +94,9 @@ function fmtNum(v, f) {
   if (v == null || (typeof v === 'number' && isNaN(v))) return '—';
   if (typeof v !== 'number') return String(v);
   if (!isFinite(v)) return '∞';
+  // С единицей число не сокращаем: иначе «млн ₽» в единице даёт «1,2 млн млн ₽»
+  const suf = fmtSuffix(f);
+  if (suf !== null) return nf(0, 0).format(v) + (suf ? ' ' + suf : '');
   switch (f) {
     case 'int': return nf(0, 0).format(v);
     case 'dec1': return nf(1, 1).format(v);

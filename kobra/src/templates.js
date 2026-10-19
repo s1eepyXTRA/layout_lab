@@ -626,7 +626,7 @@ function purgePreviews(keepId) {
 function renderTemplateList(main, q) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
-  const dsList = Object.values(DS).filter(d => !d.preview);
+  const dsList = visibleDatasets();
   let dsId = q.ds && DS[q.ds] ? q.ds : (dsList[0] || {}).id;
 
   const head = h('div', { class: 'page-head' },

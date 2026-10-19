@@ -74,7 +74,7 @@ function specMetricText(ds, m) {
     const s = ds && ds.metrics.find(x => x.key === m.key);
     formula = s ? exprText(ds, s.expr) : `метрика «${m.key}» в наборе не найдена`;
   } else formula = exprText(ds, { type: 'simple', agg: m.agg, col: m.col });
-  const fmt = NUMBER_FORMATS[metricFormat(ds, m)];
+  const fmt = formatLabel(metricFormat(ds, m));
   return `**${mdEsc(label)}** — \`${formula}\`` + (fmt ? `, формат: ${fmt}` : '');
 }
 function specFilterText(ds, f) {
@@ -133,7 +133,7 @@ function specControlLine(c, p, ds, showFalse) {
       return `${L}: ${fmtNum(+v, 'int')}`;
     }
     case 'text': return v ? `${L}: ${mdEsc(v)}` : null;
-    case 'format': return v && v !== 'auto' ? `${L}: ${NUMBER_FORMATS[v] || v}` : null;
+    case 'format': return v && v !== 'auto' ? `${L}: ${formatLabel(v)}` : null;
     case 'scheme': return v && COLOR_SCHEMES[v] ? `${L}: ${COLOR_SCHEMES[v].label}` : null;
     case 'seqscheme': return v && SEQ_SCHEMES[v] ? `${L}: ${SEQ_SCHEMES[v].label}` : null;
   }
