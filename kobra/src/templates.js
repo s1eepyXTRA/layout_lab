@@ -432,7 +432,13 @@ function createFromTemplate(tpl, ds, { title, roles, levels, preview }) {
   const derived = preview ? ensureDerivedInMemory(tpl, ds, roles) : ensureDerived(tpl, ds, roles);
   const plan = buildFromTemplate(tpl, ds, roles, levels, derived);
   if (!plan.levels.length) { toast('По этому набору шаблон собрать нечем', true); return null; }
-  const intro = `**${tpl.name}.** ${TPL_LEVELS[plan.levels[0].id].q[0].toUpperCase() + TPL_LEVELS[plan.levels[0].id].q.slice(1)}. `
+  // Подсказка словами, а не кнопкой: переход между уровнями делается теми же
+  // средствами, что есть в обычной BI — кликом по графику и переключением вкладки
+  const deeper = plan.levels[1]
+    ? ` Чтобы углубиться, кликните по столбцу или сектору — остальные блоки отфильтруются — и перейдите на вкладку «${plan.levels[1].title}».`
+    : '';
+  const intro = `**${tpl.name}.** ${TPL_LEVELS[plan.levels[0].id].q[0].toUpperCase() + TPL_LEVELS[plan.levels[0].id].q.slice(1)}.`
+    + deeper + ' '
     + (isSchemaDs(ds) ? SCHEMA_NOTE : 'Это готовый дашборд: правьте названия, разрезы и состав как обычно.');
   const tabs = plan.levels.map((lv, i) => ({
     id: uid('t'), title: lv.title, level: lv.id,

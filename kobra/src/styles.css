@@ -264,9 +264,6 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .start-card p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
 .start-card .start-note { color: var(--ink-3); font-size: 12.5px; }
 .start-card .btn { margin-top: auto; align-self: flex-start; }
-.card-head .btn.drill { padding: 2px 8px; height: 24px; font-size: 12px; gap: 2px; flex: none; border-color: var(--primary); color: var(--primary); }
-.card-head .btn.drill:hover { background: var(--primary-soft); }
-.card-head .btn.drill svg { width: 13px; height: 13px; }
 /* Простая правка */
 .tune-bar { border-top: 1px solid var(--line); padding: 8px 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--surface-2); border-radius: 0 0 var(--r-l) var(--r-l); }
 .tune-f { display: flex; align-items: center; gap: 6px; flex: 1 1 200px; min-width: 0; }

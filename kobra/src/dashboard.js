@@ -164,18 +164,6 @@ function renderDashboard(main, id, q) {
     cross = crossMemory[id] = [];
     applyFilters();
   }
-  /* Следующий уровень детализации — просто следующая вкладка */
-  function nextLevelTab() {
-    const i = D.tabs.findIndex(t => t.id === tabId);
-    return i >= 0 && D.tabs[i + 1] ? D.tabs[i + 1] : null;
-  }
-  function drillDown() {
-    const nt = nextLevelTab();
-    if (!nt) return;
-    tabId = tabMemory[id] = nt.id;
-    paintAll();
-    toast(`Уровень «${nt.title}»: выбранное перенесено фильтром`);
-  }
   function onCross(chartId) {
     if (!D.crossFilter) return null;
     return filters => {
@@ -389,10 +377,6 @@ function renderDashboard(main, id, q) {
     const ex = extraFiltersFor(c.chartId);
     const ds = dsGet(chart.datasetId);
     renderChart(c.root, chart, { scheme: D.scheme, extraFilters: ex, onCross: onCross(c.chartId), crossActive: (cross.find(x => x.source === c.chartId) || {}).filters });
-    if (c.drill) {
-      const active = cross.some(x => x.source === c.chartId && (x.filters || []).length);
-      c.drill.style.display = active && nextLevelTab() ? '' : 'none';
-    }
     if (c.badge) {
       const n = ds ? ex.filter(f => dsCol(ds, f.col)).length : 0;
       clear(c.badge);
@@ -426,21 +410,15 @@ function renderDashboard(main, id, q) {
           editing ? { label: 'Убрать с дашборда', icon: 'trash', danger: true, onClick: () => removeItem(it) } : null,
         ]);
       });
-      // Провал на следующий уровень: только у дашбордов из шаблона и только
-      // когда по этому графику уже выбрано значение — иначе переносить нечего
-      const drill = D.fromTemplate && !editing
-        ? h('button', { class: 'btn sm drill', style: { display: 'none' }, title: 'Перенести выбранное на следующий уровень',
-            onclick: e => { e.stopPropagation(); drillDown(); } }, 'Разобрать', ic('chevR'))
-        : null;
       const titleEl = h('div', { class: 't', title: chart ? chart.name : '' }, chart ? chart.name : 'График удалён');
-      const head = h('div', { class: 'card-head' + (editing ? ' drag-h' : '') }, titleEl, badge, drill, menuBtn);
+      const head = h('div', { class: 'card-head' + (editing ? ' drag-h' : '') }, titleEl, badge, menuBtn);
       cell.titleEl = titleEl;
       if (editing) head.addEventListener('pointerdown', e => { if (!e.target.closest('button')) startDrag(e, it); });
       const body = h('div', { class: 'card-body' }, root);
       const card = h('div', { class: 'card' }, head, body);
       if (tuning && chart) card.appendChild(tuneBar(it, chart, cell));
       el.appendChild(card);
-      Object.assign(cell, { root, badge, drill, chartId: it.chartId });
+      Object.assign(cell, { root, badge, chartId: it.chartId });
       cell.ro = new ResizeObserver(debounce(() => { if (root._ec) root._ec.resize(); }, 60));
       cell.ro.observe(body);
       if (editing) { tools.append(moveBtn() || '', delBtn()); }
