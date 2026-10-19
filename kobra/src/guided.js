@@ -71,6 +71,75 @@ function guidedRename(chart, name) {
   chart.autoName = false;   // дальше заголовок наш не трогает
   return true;
 }
+/* ---------- Правка придуманных данных ----------
+   Работает только на макете: у настоящего набора подписи и значения трогать
+   нельзя, там правятся лишь названия блоков. */
+const isMockupDs = d => !!(d && d.owner && isSchemaDs(d));
+
+/* Сохранённая метрика блока в наборе: её подпись и формат и есть «показатель» */
+function guidedMetricOf(ds, chart) {
+  const m = guidedMainMetric(chart);
+  if (!m || m.kind !== 'saved') return null;
+  return (ds.metrics || []).find(x => x.key === m.key) || null;
+}
+function guidedSetMetricLabel(ds, chart, text) {
+  const met = guidedMetricOf(ds, chart);
+  const v = String(text || '').trim();
+  if (!met || !v) return false;
+  met.label = v;
+  persistDs(ds);
+  return true;
+}
+function guidedSuffixOf(ds, chart) {
+  const met = guidedMetricOf(ds, chart);
+  if (!met) return null;
+  const s = fmtSuffix(met.format);
+  return s === null ? '' : s;
+}
+function guidedSetSuffix(ds, chart, text) {
+  const met = guidedMetricOf(ds, chart);
+  if (!met) return false;
+  const v = String(text || '').trim();
+  met.format = v ? withSuffix(v) : 'smart';
+  persistDs(ds);
+  return true;
+}
+
+/* Колонка схемы, по которой построен разрез блока */
+function guidedSchemaCol(ds, chart) {
+  const key = guidedDimKey(chart);
+  if (!key || !isMockupDs(ds)) return null;
+  const col = (ds.schema.columns || []).find(c => c.key === key);
+  return col && col.type === 'string' ? col : null;
+}
+function guidedCats(ds, chart) {
+  const col = guidedSchemaCol(ds, chart);
+  if (!col) return null;
+  const values = (col.values && col.values.length) ? col.values : schemaFallbackValues(col.label);
+  return { col, values, count: values.length };
+}
+/* Новые названия категорий: чего человек не назвал — остаётся нейтральным */
+function guidedCatValues(col, count, names) {
+  const base = schemaFallbackValues(col.label);
+  const n = Math.max(2, Math.min(+count || 0, 12));
+  const out = [];
+  for (let i = 0; i < n; i++) out.push((names[i] && String(names[i]).trim()) || base[i % base.length].replace(/\s\d+$/, ' ' + (i + 1)));
+  return out;
+}
+/* Меняет категории в скрытом наборе и пересчитывает строки тем же seed.
+   Возвращает старый и новый списки: по ним потом чинятся фильтры дашборда. */
+function guidedSetCats(ds, chart, count, names) {
+  const cur = guidedCats(ds, chart);
+  if (!cur) return null;
+  const next = guidedCatValues(cur.col, count, names);
+  if (JSON.stringify(next) === JSON.stringify(cur.values)) return null;
+  cur.col.values = next;
+  ds.rows = generateSchemaRows(ds.schema);
+  delete ds._maxCache;
+  persistDs(ds);
+  return { col: cur.col.key, old: cur.values, next };
+}
+
 /* Что человек меняет в этом блоке: словами задачи, без терминов движка */
 function guidedWhat(ds, chart) {
   const met = guidedMainMetric(chart);

@@ -2780,13 +2780,13 @@ function startChoice() {
       note ? h('p', { class: 'start-note' }, note) : null,
       h('button', { class: 'btn ' + (cls ? 'primary' : ''), onclick: onClick }, btn));
   return h('div', { class: 'start-choice' },
-    card(' rec', 'schema', 'Выбрать готовый дашборд',
-      'Берёте готовый отчёт и прикладываете к своим данным: Кобра сама подберёт колонки и соберёт три уровня — общая картина, разбор, исходные строки.',
-      'Обычно это более подходящий вариант: состав и оформление уже сделаны по стандартам визуализации, вам останется поправить названия и разрезы.',
-      'Посмотреть готовые', () => go('#/templates')),
-    card('', 'plus', 'Собрать с нуля',
-      'Пустой дашборд, который вы наполняете сами: блоки, графики, вкладки, фильтры — всё на ваш выбор.',
-      null, 'Начать с чистого листа', createDashboard));
+    card(' rec', 'schema', 'Сделать макет',
+      'Выбираете готовый отчёт — Кобра собирает его на придуманных данных и раскладывает по уровням: общая картина, разбор, исходные строки. Названия блоков, показателей и категорий правятся прямо на дашборде.',
+      'Обычно подходит именно это: данные выбирать не надо, состав и оформление уже сделаны по стандартам визуализации, а под свой процесс макет переименовывается за пару минут.',
+      'Выбрать готовый', () => go('#/templates')),
+    card('', 'upload', 'Мои данные',
+      'Загружаете CSV или Excel и строите по своим цифрам: то же самое, но на настоящих данных вашей выгрузки.',
+      null, 'Загрузить файл', () => go('#/data')));
 }
 function renderDashboardList(main) {
   const page = h('div', { class: 'page' });
@@ -2810,7 +2810,7 @@ function renderDashboardList(main) {
     h('div', { class: 'grow' }, h('h1', null, 'Дашборды'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
     h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
     h('button', { class: 'btn', onclick: () => go('#/templates') }, ic('schema'), 'Готовые дашборды'),
-    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый дашборд')));
+    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый макет')));
   page.appendChild(dashGrid(list));
 }
 function dashGrid(list) {
@@ -2833,7 +2833,7 @@ function dashGrid(list) {
       h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
         h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`)), more)));
   });
-  grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый дашборд'));
+  grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый макет'));
   return grid;
 }
 // Пустые дашборды, созданные кнопкой «Новый дашборд»: если с такого ушли,
@@ -2841,6 +2841,9 @@ function dashGrid(list) {
 // Набор не сохраняется — после перезагрузки дашборд просто остаётся как раньше.
 const freshDashboards = new Set();
 function createDashboard() {
+  // Пустой дашборд — тоже макет: под блоки нужны данные, и Кобра их придумает
+  const mid = createMockup(null, { title: 'Новый макет' });
+  if (mid) { freshDashboards.add(mid); go('#/d/' + mid + '?edit=1'); return; }
   const id = uid('d_');
   freshDashboards.add(id);
   STATE.dashboards[id] = { id, title: 'Новый дашборд', updated: Date.now(), crossFilter: true, scheme: null, tabs: [{ id: uid('t'), title: 'Вкладка 1', items: [] }], filters: [] };
@@ -3035,8 +3038,10 @@ function renderDashboard(main, id, q) {
   const editing = q.edit === '1';
   const tuning = !editing && q.tune === '1';   // простая правка: только подписи и разрезы
   const tuneBackup = {};                        // chartId → каким график был до правки
+  let tuneDsBackup = null;                      // и каким был придуманный набор
   const tuneTouch = cid => { if (!tuneBackup[cid] && STATE.charts[cid]) tuneBackup[cid] = clone(STATE.charts[cid]); };
-  const tuneDirty = () => Object.keys(tuneBackup).length > 0;
+  const tuneTouchDs = ds => { if (!tuneDsBackup && ds) tuneDsBackup = { id: ds.id, meta: clone(STATE.datasets[ds.id]) }; };
+  const tuneDirty = () => Object.keys(tuneBackup).length > 0 || !!tuneDsBackup;
   const D = editing ? clone(saved) : saved; // черновик в режиме правки
   const original = JSON.stringify(saved);
   let draftHandled = false; // судьбу черновика решили сами: «Сохранить» или «Отменить»
@@ -3212,6 +3217,11 @@ function renderDashboard(main, id, q) {
   async function tuneCancel() {
     if (tuneDirty() && !(await confirmDialog('Отменить изменения', 'Названия и разрезы вернутся к тому, что было.', 'Отменить изменения'))) return;
     Object.entries(tuneBackup).forEach(([cid, c]) => { STATE.charts[cid] = c; });
+    if (tuneDsBackup) {
+      STATE.datasets[tuneDsBackup.id] = tuneDsBackup.meta;
+      DS[tuneDsBackup.id] = Object.assign({}, tuneDsBackup.meta, { rows: generateSchemaRows(tuneDsBackup.meta.schema) });
+      saveState();
+    }
     go('#/d/' + id);
   }
   function saveEdit() {
@@ -3336,7 +3346,8 @@ function renderDashboard(main, id, q) {
   function renderVisibleCharts() {
     cells.forEach(c => { if (c.chartId) drawChart(c); });
   }
-  /* Полоса простой правки: название и разрез, словами задачи */
+  /* Полоса простой правки: название, показатель, единица, разрез и категории —
+     всё словами задачи. Придуманные данные правятся, настоящие — нет. */
   function tuneBar(it, chart, cell) {
     const ds = dsGet(chart.datasetId);
     const bar = h('div', { class: 'tune-bar' });
@@ -3344,11 +3355,26 @@ function renderDashboard(main, id, q) {
       oninput: e => { tuneTouch(it.chartId); guidedRename(chart, e.target.value); cell.titleEl && (cell.titleEl.textContent = chart.name); } });
     bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Название'), nameInp));
     if (!ds) return bar;
+    const mock = isMockupDs(ds);
+
+    // Показатель и единица живут в метрике набора, поэтому меняются везде сразу
+    if (mock && guidedMetricOf(ds, chart)) {
+      const redraw = () => { guidedRetitle(ds, chart); nameInp.value = chart.name; if (cell.titleEl) cell.titleEl.textContent = chart.name; refreshCharts(); };
+      bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Показатель'),
+        h('input', { class: 'input', value: guidedMetricOf(ds, chart).label, 'aria-label': 'Название показателя',
+          onchange: e => { tuneTouchDs(ds); guidedSetMetricLabel(ds, chart, e.target.value); redraw(); } })));
+      bar.appendChild(h('label', { class: 'tune-f', style: { flex: '0 1 150px' } }, h('span', null, 'Единица'),
+        h('input', { class: 'input', value: guidedSuffixOf(ds, chart) || '', placeholder: '₽, шт., мин',
+          'aria-label': 'Единица измерения',
+          onchange: e => { tuneTouchDs(ds); guidedSetSuffix(ds, chart, e.target.value); refreshCharts(); } })));
+    }
+
     const opts = guidedDimOptions(ds, chart);
     const cur = guidedDimKey(chart);
     if (!opts.length || !cur) {
       bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
         `Показывает ${guidedWhat(ds, chart)} — разрез у этого блока не меняется.`));
+      if (!mock) bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, 'Данные набора не меняются — правятся только подписи.'));
       return bar;
     }
     const sel = selectEl(opts.map(o => [o.key, o.label]), cur, v => {
@@ -3357,10 +3383,43 @@ function renderDashboard(main, id, q) {
       guidedRetitle(ds, chart);
       nameInp.value = chart.name;
       if (cell.titleEl) cell.titleEl.textContent = chart.name;
-      drawChart(cell);
+      repaintItem(it);
     }, { 'aria-label': 'В разрезе чего' });
     bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'В разрезе'), sel));
+
+    // Категории разреза: их число и названия — это значения в придуманных данных
+    const cats = mock ? guidedCats(ds, chart) : null;
+    if (cats) {
+      const namesInp = h('input', { class: 'input', value: cats.values.join(', '), placeholder: 'Названия через запятую',
+        'aria-label': 'Названия категорий' });
+      const cntInp = h('input', { class: 'input', type: 'number', min: 2, max: 12, value: cats.count, 'aria-label': 'Сколько категорий', style: { width: '64px' } });
+      const applyCats = () => {
+        tuneTouchDs(ds);
+        const res = guidedSetCats(ds, chart, cntInp.value, namesInp.value.split(',').map(x => x.trim()).filter(Boolean));
+        if (!res) return;
+        migrateFilterValues(res.col, res.old, res.next);
+        namesInp.value = res.next.join(', ');
+        cntInp.value = res.next.length;
+        paintFilterBar();
+        refreshCharts();
+      };
+      cntInp.addEventListener('change', applyCats);
+      namesInp.addEventListener('change', applyCats);
+      bar.appendChild(h('label', { class: 'tune-f', style: { flex: '0 1 120px' } }, h('span', null, 'Категорий'), cntInp));
+      bar.appendChild(h('label', { class: 'tune-f', style: { flex: '2 1 260px' } }, h('span', null, 'Названия'), namesInp));
+    } else if (!mock) {
+      bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, 'Данные набора не меняются — правятся только подписи.'));
+    }
     return bar;
+  }
+  /* Переименовали категории — переносим выбранное в фильтрах по месту, пропавшее убираем */
+  function migrateFilterValues(col, oldVals, newVals) {
+    D.filters.forEach(f => {
+      if (f.col !== col || !Array.isArray(f.value)) return;
+      const map = v => { const i = oldVals.indexOf(v); return i >= 0 ? newVals[i] : null; };
+      f.value = f.value.map(map).filter(v => v != null);
+      pending[f.id] = clone(f.value);
+    });
   }
   function drawChart(c) {
     const chart = STATE.charts[c.chartId];
@@ -3583,7 +3642,17 @@ function renderDashboard(main, id, q) {
     panel.appendChild(seg);
     const body = h('div', { class: 'edit-panel-body' });
     panel.appendChild(body);
-    if (panelTab === 'charts') {
+    const mockupDs = D.fromTemplate ? dsGet(D.fromTemplate.datasetId) : null;
+    if (panelTab === 'charts' && isMockupDs(mockupDs)) {
+      // В макете блок выбирается видом: данные под него уже есть
+      body.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '0 0 10px' } },
+        'Выберите вид блока. Название, показатель и категории поменяете на самом блоке.'));
+      mockupBlockOptions(mockupDs).forEach(b => body.appendChild(h('button', { class: 'comp', onclick: () => {
+        const cid = createMockupChart(mockupDs, b.viz);
+        if (!cid) { toast('Такой блок на этих данных не построить', true); return; }
+        addItem({ type: 'chart', chartId: cid });
+      } }, ic(VIZ[b.viz].icon), h('div', { class: 'grow' }, h('b', null, b.name), h('span', null, VIZ[b.viz].desc)), ic('plus'))));
+    } else if (panelTab === 'charts') {
       const onDash = new Set(D.tabs.flatMap(t => t.items.filter(i => i.type === 'chart').map(i => i.chartId)));
       const search = h('input', { class: 'input', type: 'search', placeholder: 'Найти график', style: { marginBottom: '10px' }, 'aria-label': 'Поиск графиков' });
       const list = h('div');
@@ -3674,8 +3743,10 @@ function renderDashboard(main, id, q) {
     // именно запись в STATE: если человек успел дать название или завести фильтр,
     // работа уже есть — такой дашборд остаётся.
     const cur = STATE.dashboards[id];
-    if (freshDashboards.has(id) && cur && cur.title === 'Новый дашборд' && !cur.filters.length && !cur.tabs.some(t => t.items.length)) {
-      freshDashboards.delete(id); delete STATE.dashboards[id]; saveState();
+    if (freshDashboards.has(id) && cur && /^Новый (дашборд|макет)$/.test(cur.title) && !cur.filters.length && !cur.tabs.some(t => t.items.length)) {
+      freshDashboards.delete(id); delete STATE.dashboards[id];
+      dropOwnedDatasets();   // придуманные данные брошенного макета тоже не нужны
+      saveState();
     }
   };
 }
@@ -5606,9 +5677,20 @@ function createMockup(tpl, { title, levels } = {}) {
   const name = (title || (tpl ? tpl.name : 'Макет')).trim() || 'Макет';
   const dashId = uid('d_');
   const dsId = saveSchemaDataset({ name: `Данные макета «${name}»`, schema: mockupSchema(tpl), owner: dashId });
+  if (!tpl) { emptyMockup(dashId, dsId, name); return dashId; }
   const id = createFromTemplate(tpl, DS[dsId], { title: name, levels, dashId });
   if (!id) { delete STATE.datasets[dsId]; delete DS[dsId]; saveState(); return null; }
   return id;
+}
+/* Пустой макет: блоков нет, но данные под них уже готовы */
+function emptyMockup(dashId, dsId, name) {
+  STATE.dashboards[dashId] = {
+    id: dashId, title: name, updated: Date.now(), crossFilter: true, scheme: null,
+    tabs: [{ id: uid('t'), title: TPL_LEVELS.sum.title, level: 'sum', items: [] }],
+    filters: [],
+    fromTemplate: { tplId: null, datasetId: dsId, levels: ['sum'], roles: tplRoleMap(pickRoles(DS[dsId])) },
+  };
+  saveState();
 }
 
 /* Создаёт дашборд из шаблона, пишет его в STATE и возвращает id */
@@ -5809,6 +5891,41 @@ function mockupDatasetDraft(tpl, title) {
   };
 }
 
+/* Блок в макете добавляется видом визуализации, а не метрикой и разрезом:
+   показатель и разрез Кобра берёт из скрытого набора молча. */
+const MOCKUP_BLOCKS = [
+  { viz: 'line', name: 'Линейный график', by: 'date' },
+  { viz: 'bar', name: 'Столбцы', by: 'dim1' },
+  { viz: 'pie', name: 'Круговая', by: 'dim1' },
+  { viz: 'area', name: 'Области', by: 'date', series: 'dim1' },
+  { viz: 'big_number_trend', name: 'Большое число', kind: 'kpi' },
+  { viz: 'table', name: 'Таблица', by: 'dim1' },
+  { viz: 'treemap', name: 'Дерево', by: 'dim1', by2: 'dim2' },
+  { viz: 'heatmap', name: 'Тепловая карта', by: 'date', y: 'dim1' },
+  { viz: 'funnel', name: 'Воронка', by: 'stage' },
+  { viz: 'pivot', name: 'Сводная таблица', by: 'dim1', cols: 'dim2' },
+];
+/* Какие виды блоков вообще построятся на этом наборе: воронке нужен этап,
+   тепловой карте — дата. Предлагать то, что не соберётся, нельзя. */
+function mockupBlockOptions(ds) {
+  const roles = pickRoles(ds);
+  return MOCKUP_BLOCKS.filter(b => !!tplBlockChart(Object.assign({ metric: 'main' }, b), ds, roles, null));
+}
+/* Создаёт блок выбранного вида на наборе дашборда и возвращает id графика */
+function createMockupChart(ds, vizId) {
+  const b = MOCKUP_BLOCKS.find(x => x.viz === vizId);
+  if (!b) return null;
+  const roles = pickRoles(ds);
+  const plan = tplBlockChart(Object.assign({ metric: 'main' }, b), ds, roles, null);
+  if (!plan) return null;
+  const id = uid('c_');
+  STATE.charts[id] = {
+    id, name: b.name, viz: plan.viz, datasetId: ds.id, autoName: true,
+    params: Object.assign(VIZ[plan.viz].defaults(ds), plan.params), updated: Date.now(),
+  };
+  return id;
+}
+
 /* ---------- Предпросмотр на вымышленных данных ---------- */
 /* Временный набор и дашборд живут только в памяти: в localStorage не пишем */
 function templatePreview(tpl) {
@@ -5982,6 +6099,75 @@ function guidedRename(chart, name) {
   chart.autoName = false;   // дальше заголовок наш не трогает
   return true;
 }
+/* ---------- Правка придуманных данных ----------
+   Работает только на макете: у настоящего набора подписи и значения трогать
+   нельзя, там правятся лишь названия блоков. */
+const isMockupDs = d => !!(d && d.owner && isSchemaDs(d));
+
+/* Сохранённая метрика блока в наборе: её подпись и формат и есть «показатель» */
+function guidedMetricOf(ds, chart) {
+  const m = guidedMainMetric(chart);
+  if (!m || m.kind !== 'saved') return null;
+  return (ds.metrics || []).find(x => x.key === m.key) || null;
+}
+function guidedSetMetricLabel(ds, chart, text) {
+  const met = guidedMetricOf(ds, chart);
+  const v = String(text || '').trim();
+  if (!met || !v) return false;
+  met.label = v;
+  persistDs(ds);
+  return true;
+}
+function guidedSuffixOf(ds, chart) {
+  const met = guidedMetricOf(ds, chart);
+  if (!met) return null;
+  const s = fmtSuffix(met.format);
+  return s === null ? '' : s;
+}
+function guidedSetSuffix(ds, chart, text) {
+  const met = guidedMetricOf(ds, chart);
+  if (!met) return false;
+  const v = String(text || '').trim();
+  met.format = v ? withSuffix(v) : 'smart';
+  persistDs(ds);
+  return true;
+}
+
+/* Колонка схемы, по которой построен разрез блока */
+function guidedSchemaCol(ds, chart) {
+  const key = guidedDimKey(chart);
+  if (!key || !isMockupDs(ds)) return null;
+  const col = (ds.schema.columns || []).find(c => c.key === key);
+  return col && col.type === 'string' ? col : null;
+}
+function guidedCats(ds, chart) {
+  const col = guidedSchemaCol(ds, chart);
+  if (!col) return null;
+  const values = (col.values && col.values.length) ? col.values : schemaFallbackValues(col.label);
+  return { col, values, count: values.length };
+}
+/* Новые названия категорий: чего человек не назвал — остаётся нейтральным */
+function guidedCatValues(col, count, names) {
+  const base = schemaFallbackValues(col.label);
+  const n = Math.max(2, Math.min(+count || 0, 12));
+  const out = [];
+  for (let i = 0; i < n; i++) out.push((names[i] && String(names[i]).trim()) || base[i % base.length].replace(/\s\d+$/, ' ' + (i + 1)));
+  return out;
+}
+/* Меняет категории в скрытом наборе и пересчитывает строки тем же seed.
+   Возвращает старый и новый списки: по ним потом чинятся фильтры дашборда. */
+function guidedSetCats(ds, chart, count, names) {
+  const cur = guidedCats(ds, chart);
+  if (!cur) return null;
+  const next = guidedCatValues(cur.col, count, names);
+  if (JSON.stringify(next) === JSON.stringify(cur.values)) return null;
+  cur.col.values = next;
+  ds.rows = generateSchemaRows(ds.schema);
+  delete ds._maxCache;
+  persistDs(ds);
+  return { col: cur.col.key, old: cur.values, next };
+}
+
 /* Что человек меняет в этом блоке: словами задачи, без терминов движка */
 function guidedWhat(ds, chart) {
   const met = guidedMainMetric(chart);

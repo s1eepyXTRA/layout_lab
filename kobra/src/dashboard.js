@@ -44,8 +44,10 @@ function renderDashboard(main, id, q) {
   const editing = q.edit === '1';
   const tuning = !editing && q.tune === '1';   // простая правка: только подписи и разрезы
   const tuneBackup = {};                        // chartId → каким график был до правки
+  let tuneDsBackup = null;                      // и каким был придуманный набор
   const tuneTouch = cid => { if (!tuneBackup[cid] && STATE.charts[cid]) tuneBackup[cid] = clone(STATE.charts[cid]); };
-  const tuneDirty = () => Object.keys(tuneBackup).length > 0;
+  const tuneTouchDs = ds => { if (!tuneDsBackup && ds) tuneDsBackup = { id: ds.id, meta: clone(STATE.datasets[ds.id]) }; };
+  const tuneDirty = () => Object.keys(tuneBackup).length > 0 || !!tuneDsBackup;
   const D = editing ? clone(saved) : saved; // черновик в режиме правки
   const original = JSON.stringify(saved);
   let draftHandled = false; // судьбу черновика решили сами: «Сохранить» или «Отменить»
@@ -221,6 +223,11 @@ function renderDashboard(main, id, q) {
   async function tuneCancel() {
     if (tuneDirty() && !(await confirmDialog('Отменить изменения', 'Названия и разрезы вернутся к тому, что было.', 'Отменить изменения'))) return;
     Object.entries(tuneBackup).forEach(([cid, c]) => { STATE.charts[cid] = c; });
+    if (tuneDsBackup) {
+      STATE.datasets[tuneDsBackup.id] = tuneDsBackup.meta;
+      DS[tuneDsBackup.id] = Object.assign({}, tuneDsBackup.meta, { rows: generateSchemaRows(tuneDsBackup.meta.schema) });
+      saveState();
+    }
     go('#/d/' + id);
   }
   function saveEdit() {
@@ -345,7 +352,8 @@ function renderDashboard(main, id, q) {
   function renderVisibleCharts() {
     cells.forEach(c => { if (c.chartId) drawChart(c); });
   }
-  /* Полоса простой правки: название и разрез, словами задачи */
+  /* Полоса простой правки: название, показатель, единица, разрез и категории —
+     всё словами задачи. Придуманные данные правятся, настоящие — нет. */
   function tuneBar(it, chart, cell) {
     const ds = dsGet(chart.datasetId);
     const bar = h('div', { class: 'tune-bar' });
@@ -353,11 +361,26 @@ function renderDashboard(main, id, q) {
       oninput: e => { tuneTouch(it.chartId); guidedRename(chart, e.target.value); cell.titleEl && (cell.titleEl.textContent = chart.name); } });
     bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Название'), nameInp));
     if (!ds) return bar;
+    const mock = isMockupDs(ds);
+
+    // Показатель и единица живут в метрике набора, поэтому меняются везде сразу
+    if (mock && guidedMetricOf(ds, chart)) {
+      const redraw = () => { guidedRetitle(ds, chart); nameInp.value = chart.name; if (cell.titleEl) cell.titleEl.textContent = chart.name; refreshCharts(); };
+      bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Показатель'),
+        h('input', { class: 'input', value: guidedMetricOf(ds, chart).label, 'aria-label': 'Название показателя',
+          onchange: e => { tuneTouchDs(ds); guidedSetMetricLabel(ds, chart, e.target.value); redraw(); } })));
+      bar.appendChild(h('label', { class: 'tune-f', style: { flex: '0 1 150px' } }, h('span', null, 'Единица'),
+        h('input', { class: 'input', value: guidedSuffixOf(ds, chart) || '', placeholder: '₽, шт., мин',
+          'aria-label': 'Единица измерения',
+          onchange: e => { tuneTouchDs(ds); guidedSetSuffix(ds, chart, e.target.value); refreshCharts(); } })));
+    }
+
     const opts = guidedDimOptions(ds, chart);
     const cur = guidedDimKey(chart);
     if (!opts.length || !cur) {
       bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
         `Показывает ${guidedWhat(ds, chart)} — разрез у этого блока не меняется.`));
+      if (!mock) bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, 'Данные набора не меняются — правятся только подписи.'));
       return bar;
     }
     const sel = selectEl(opts.map(o => [o.key, o.label]), cur, v => {
@@ -366,10 +389,43 @@ function renderDashboard(main, id, q) {
       guidedRetitle(ds, chart);
       nameInp.value = chart.name;
       if (cell.titleEl) cell.titleEl.textContent = chart.name;
-      drawChart(cell);
+      repaintItem(it);
     }, { 'aria-label': 'В разрезе чего' });
     bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'В разрезе'), sel));
+
+    // Категории разреза: их число и названия — это значения в придуманных данных
+    const cats = mock ? guidedCats(ds, chart) : null;
+    if (cats) {
+      const namesInp = h('input', { class: 'input', value: cats.values.join(', '), placeholder: 'Названия через запятую',
+        'aria-label': 'Названия категорий' });
+      const cntInp = h('input', { class: 'input', type: 'number', min: 2, max: 12, value: cats.count, 'aria-label': 'Сколько категорий', style: { width: '64px' } });
+      const applyCats = () => {
+        tuneTouchDs(ds);
+        const res = guidedSetCats(ds, chart, cntInp.value, namesInp.value.split(',').map(x => x.trim()).filter(Boolean));
+        if (!res) return;
+        migrateFilterValues(res.col, res.old, res.next);
+        namesInp.value = res.next.join(', ');
+        cntInp.value = res.next.length;
+        paintFilterBar();
+        refreshCharts();
+      };
+      cntInp.addEventListener('change', applyCats);
+      namesInp.addEventListener('change', applyCats);
+      bar.appendChild(h('label', { class: 'tune-f', style: { flex: '0 1 120px' } }, h('span', null, 'Категорий'), cntInp));
+      bar.appendChild(h('label', { class: 'tune-f', style: { flex: '2 1 260px' } }, h('span', null, 'Названия'), namesInp));
+    } else if (!mock) {
+      bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, 'Данные набора не меняются — правятся только подписи.'));
+    }
     return bar;
+  }
+  /* Переименовали категории — переносим выбранное в фильтрах по месту, пропавшее убираем */
+  function migrateFilterValues(col, oldVals, newVals) {
+    D.filters.forEach(f => {
+      if (f.col !== col || !Array.isArray(f.value)) return;
+      const map = v => { const i = oldVals.indexOf(v); return i >= 0 ? newVals[i] : null; };
+      f.value = f.value.map(map).filter(v => v != null);
+      pending[f.id] = clone(f.value);
+    });
   }
   function drawChart(c) {
     const chart = STATE.charts[c.chartId];
@@ -592,7 +648,17 @@ function renderDashboard(main, id, q) {
     panel.appendChild(seg);
     const body = h('div', { class: 'edit-panel-body' });
     panel.appendChild(body);
-    if (panelTab === 'charts') {
+    const mockupDs = D.fromTemplate ? dsGet(D.fromTemplate.datasetId) : null;
+    if (panelTab === 'charts' && isMockupDs(mockupDs)) {
+      // В макете блок выбирается видом: данные под него уже есть
+      body.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '0 0 10px' } },
+        'Выберите вид блока. Название, показатель и категории поменяете на самом блоке.'));
+      mockupBlockOptions(mockupDs).forEach(b => body.appendChild(h('button', { class: 'comp', onclick: () => {
+        const cid = createMockupChart(mockupDs, b.viz);
+        if (!cid) { toast('Такой блок на этих данных не построить', true); return; }
+        addItem({ type: 'chart', chartId: cid });
+      } }, ic(VIZ[b.viz].icon), h('div', { class: 'grow' }, h('b', null, b.name), h('span', null, VIZ[b.viz].desc)), ic('plus'))));
+    } else if (panelTab === 'charts') {
       const onDash = new Set(D.tabs.flatMap(t => t.items.filter(i => i.type === 'chart').map(i => i.chartId)));
       const search = h('input', { class: 'input', type: 'search', placeholder: 'Найти график', style: { marginBottom: '10px' }, 'aria-label': 'Поиск графиков' });
       const list = h('div');
@@ -683,8 +749,10 @@ function renderDashboard(main, id, q) {
     // именно запись в STATE: если человек успел дать название или завести фильтр,
     // работа уже есть — такой дашборд остаётся.
     const cur = STATE.dashboards[id];
-    if (freshDashboards.has(id) && cur && cur.title === 'Новый дашборд' && !cur.filters.length && !cur.tabs.some(t => t.items.length)) {
-      freshDashboards.delete(id); delete STATE.dashboards[id]; saveState();
+    if (freshDashboards.has(id) && cur && /^Новый (дашборд|макет)$/.test(cur.title) && !cur.filters.length && !cur.tabs.some(t => t.items.length)) {
+      freshDashboards.delete(id); delete STATE.dashboards[id];
+      dropOwnedDatasets();   // придуманные данные брошенного макета тоже не нужны
+      saveState();
     }
   };
 }

@@ -245,13 +245,13 @@ function startChoice() {
       note ? h('p', { class: 'start-note' }, note) : null,
       h('button', { class: 'btn ' + (cls ? 'primary' : ''), onclick: onClick }, btn));
   return h('div', { class: 'start-choice' },
-    card(' rec', 'schema', 'Выбрать готовый дашборд',
-      'Берёте готовый отчёт и прикладываете к своим данным: Кобра сама подберёт колонки и соберёт три уровня — общая картина, разбор, исходные строки.',
-      'Обычно это более подходящий вариант: состав и оформление уже сделаны по стандартам визуализации, вам останется поправить названия и разрезы.',
-      'Посмотреть готовые', () => go('#/templates')),
-    card('', 'plus', 'Собрать с нуля',
-      'Пустой дашборд, который вы наполняете сами: блоки, графики, вкладки, фильтры — всё на ваш выбор.',
-      null, 'Начать с чистого листа', createDashboard));
+    card(' rec', 'schema', 'Сделать макет',
+      'Выбираете готовый отчёт — Кобра собирает его на придуманных данных и раскладывает по уровням: общая картина, разбор, исходные строки. Названия блоков, показателей и категорий правятся прямо на дашборде.',
+      'Обычно подходит именно это: данные выбирать не надо, состав и оформление уже сделаны по стандартам визуализации, а под свой процесс макет переименовывается за пару минут.',
+      'Выбрать готовый', () => go('#/templates')),
+    card('', 'upload', 'Мои данные',
+      'Загружаете CSV или Excel и строите по своим цифрам: то же самое, но на настоящих данных вашей выгрузки.',
+      null, 'Загрузить файл', () => go('#/data')));
 }
 function renderDashboardList(main) {
   const page = h('div', { class: 'page' });
@@ -275,7 +275,7 @@ function renderDashboardList(main) {
     h('div', { class: 'grow' }, h('h1', null, 'Дашборды'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
     h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
     h('button', { class: 'btn', onclick: () => go('#/templates') }, ic('schema'), 'Готовые дашборды'),
-    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый дашборд')));
+    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый макет')));
   page.appendChild(dashGrid(list));
 }
 function dashGrid(list) {
@@ -298,7 +298,7 @@ function dashGrid(list) {
       h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
         h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`)), more)));
   });
-  grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый дашборд'));
+  grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый макет'));
   return grid;
 }
 // Пустые дашборды, созданные кнопкой «Новый дашборд»: если с такого ушли,
@@ -306,6 +306,9 @@ function dashGrid(list) {
 // Набор не сохраняется — после перезагрузки дашборд просто остаётся как раньше.
 const freshDashboards = new Set();
 function createDashboard() {
+  // Пустой дашборд — тоже макет: под блоки нужны данные, и Кобра их придумает
+  const mid = createMockup(null, { title: 'Новый макет' });
+  if (mid) { freshDashboards.add(mid); go('#/d/' + mid + '?edit=1'); return; }
   const id = uid('d_');
   freshDashboards.add(id);
   STATE.dashboards[id] = { id, title: 'Новый дашборд', updated: Date.now(), crossFilter: true, scheme: null, tabs: [{ id: uid('t'), title: 'Вкладка 1', items: [] }], filters: [] };

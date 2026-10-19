@@ -431,9 +431,20 @@ function createMockup(tpl, { title, levels } = {}) {
   const name = (title || (tpl ? tpl.name : 'Макет')).trim() || 'Макет';
   const dashId = uid('d_');
   const dsId = saveSchemaDataset({ name: `Данные макета «${name}»`, schema: mockupSchema(tpl), owner: dashId });
+  if (!tpl) { emptyMockup(dashId, dsId, name); return dashId; }
   const id = createFromTemplate(tpl, DS[dsId], { title: name, levels, dashId });
   if (!id) { delete STATE.datasets[dsId]; delete DS[dsId]; saveState(); return null; }
   return id;
+}
+/* Пустой макет: блоков нет, но данные под них уже готовы */
+function emptyMockup(dashId, dsId, name) {
+  STATE.dashboards[dashId] = {
+    id: dashId, title: name, updated: Date.now(), crossFilter: true, scheme: null,
+    tabs: [{ id: uid('t'), title: TPL_LEVELS.sum.title, level: 'sum', items: [] }],
+    filters: [],
+    fromTemplate: { tplId: null, datasetId: dsId, levels: ['sum'], roles: tplRoleMap(pickRoles(DS[dsId])) },
+  };
+  saveState();
 }
 
 /* Создаёт дашборд из шаблона, пишет его в STATE и возвращает id */
@@ -632,6 +643,41 @@ function mockupDatasetDraft(tpl, title) {
     metrics: schemaMetrics(columns, null), mainDttm: (columns.find(c => c.type === 'date') || {}).key || null,
     description: SCHEMA_NOTE, rows: generateSchemaRows(schema),
   };
+}
+
+/* Блок в макете добавляется видом визуализации, а не метрикой и разрезом:
+   показатель и разрез Кобра берёт из скрытого набора молча. */
+const MOCKUP_BLOCKS = [
+  { viz: 'line', name: 'Линейный график', by: 'date' },
+  { viz: 'bar', name: 'Столбцы', by: 'dim1' },
+  { viz: 'pie', name: 'Круговая', by: 'dim1' },
+  { viz: 'area', name: 'Области', by: 'date', series: 'dim1' },
+  { viz: 'big_number_trend', name: 'Большое число', kind: 'kpi' },
+  { viz: 'table', name: 'Таблица', by: 'dim1' },
+  { viz: 'treemap', name: 'Дерево', by: 'dim1', by2: 'dim2' },
+  { viz: 'heatmap', name: 'Тепловая карта', by: 'date', y: 'dim1' },
+  { viz: 'funnel', name: 'Воронка', by: 'stage' },
+  { viz: 'pivot', name: 'Сводная таблица', by: 'dim1', cols: 'dim2' },
+];
+/* Какие виды блоков вообще построятся на этом наборе: воронке нужен этап,
+   тепловой карте — дата. Предлагать то, что не соберётся, нельзя. */
+function mockupBlockOptions(ds) {
+  const roles = pickRoles(ds);
+  return MOCKUP_BLOCKS.filter(b => !!tplBlockChart(Object.assign({ metric: 'main' }, b), ds, roles, null));
+}
+/* Создаёт блок выбранного вида на наборе дашборда и возвращает id графика */
+function createMockupChart(ds, vizId) {
+  const b = MOCKUP_BLOCKS.find(x => x.viz === vizId);
+  if (!b) return null;
+  const roles = pickRoles(ds);
+  const plan = tplBlockChart(Object.assign({ metric: 'main' }, b), ds, roles, null);
+  if (!plan) return null;
+  const id = uid('c_');
+  STATE.charts[id] = {
+    id, name: b.name, viz: plan.viz, datasetId: ds.id, autoName: true,
+    params: Object.assign(VIZ[plan.viz].defaults(ds), plan.params), updated: Date.now(),
+  };
+  return id;
 }
 
 /* ---------- Предпросмотр на вымышленных данных ---------- */
