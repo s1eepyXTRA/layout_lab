@@ -238,6 +238,21 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .comp.used { opacity: .6; }
 .edit-banner { background: var(--accent-soft); color: var(--ink); padding: 8px 24px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
 .edit-banner.fake-banner { background: var(--primary-soft); color: var(--ink); }
+/* Каталог готовых дашбордов */
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 18px; }
+.tpl-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }
+.tpl-card.off { opacity: .72; }
+.tpl-head { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.tpl-head b { font: 600 16px/1.3 var(--font-display); }
+.tpl-card p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+.tpl-card p.muted { color: var(--ink-3); font-size: 12.5px; }
+.tpl-levels { margin: 2px 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
+.tpl-levels li { margin: 2px 0; }
+.tpl-miss { background: var(--accent-soft); border-radius: var(--r-m); padding: 7px 10px; font-size: 12.5px; }
+.tpl-act { display: flex; gap: 8px; margin-top: auto; padding-top: 6px; }
+.tpl-plan { background: var(--surface-2); border-radius: var(--r-m); padding: 10px 12px; margin-top: 10px; }
+.tpl-plan p { margin: 0 0 6px; font-size: 13px; }
+.tpl-plan b { font-weight: 600; }
 .edit-banner svg { flex: none; }
 
 /* ---------- Исследование (Explore) ---------- */

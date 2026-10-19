@@ -123,9 +123,12 @@ function route() {
   clear(main);
   main.scrollTop = 0;
   const sec = parts[0] || 'dashboards';
+  // Примеры шаблонов живут только пока на них смотрят
+  if (typeof purgePreviews === 'function') purgePreviews(sec === 'd' ? parts[1] : null);
   document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.sec === (sec === 'd' ? 'dashboards' : sec === 'explore' ? 'charts' : sec)));
   try {
     if (sec === 'd' && parts[1]) pageCleanup = renderDashboard(main, parts[1], q);
+    else if (sec === 'templates') pageCleanup = renderTemplateList(main, q);
     else if (sec === 'charts') pageCleanup = renderChartList(main);
     else if (sec === 'explore') pageCleanup = renderExplore(main, parts, q);
     else if (sec === 'data' && parts[1]) pageCleanup = renderDatasetPage(main, parts[1]);
@@ -135,7 +138,7 @@ function route() {
     console.error(e);
     main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Не удалось открыть страницу'), e.message, h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'К дашбордам'))));
   }
-  document.title = 'Кобра — ' + ({ d: (STATE.dashboards[parts[1]] || {}).title || 'Дашборд', charts: 'Графики', explore: 'Конструктор графика', data: 'Данные' }[sec] || 'Дашборды');
+  document.title = 'Кобра — ' + ({ d: (STATE.dashboards[parts[1]] || {}).title || 'Дашборд', charts: 'Графики', explore: 'Конструктор графика', data: 'Данные', templates: 'Готовые дашборды' }[sec] || 'Дашборды');
 }
 
 /* ---------- Каркас ---------- */

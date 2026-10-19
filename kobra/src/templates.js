@@ -96,6 +96,18 @@ function ensureDerived(tpl, ds, roles) {
   return map;
 }
 
+/* Для примера на вымышленных данных набор в состояние не пишем */
+function ensureDerivedInMemory(tpl, ds, roles) {
+  const map = {};
+  plannedDerived(tpl, ds, roles).forEach(d => {
+    if (d.existing) { map[d.id] = d.existing; return; }
+    const key = uid('m_');
+    ds.metrics = [...(ds.metrics || []), { key, label: d.label, expr: d.expr, format: d.format }];
+    map[d.id] = { kind: 'saved', key };
+  });
+  return map;
+}
+
 /* ---------- Пригодность шаблона ---------- */
 function templateFits(tpl, ds, roles) {
   roles = roles || pickRoles(ds);
@@ -122,6 +134,7 @@ const TEMPLATES = [
     desc: 'Универсальный отчёт по любому процессу: что происходит, за счёт чего и какие строки за этим стоят.',
     forWhom: 'Подходит почти всегда — с него стоит начинать, если не уверены.',
     need: ['date', 'dim1'],
+    demo: ['Дата', 'Подразделение', 'Категория', 'Статус', 'Сумма, ₽', 'Количество, шт.'],
     derived: [],
     levels: [
       { id: 'sum', blocks: [
@@ -145,6 +158,7 @@ const TEMPLATES = [
     desc: 'Сколько заработали и за счёт чего: динамика выручки, разрезы по товарам и каналам, средний чек.',
     forWhom: 'Коммерция, руководитель направления.',
     need: ['date', 'money', 'dim1'],
+    demo: ['Дата заказа', 'Категория', 'Канал продаж', 'Город', 'Номер заказа', 'Выручка, ₽', 'Количество, шт.'],
     derived: ['avg_check'],
     levels: [
       { id: 'sum', blocks: [
@@ -170,6 +184,7 @@ const TEMPLATES = [
     desc: 'Где теряем клиентов: этапы воронки, доли перехода и разрез по источникам.',
     forWhom: 'Интернет-магазин, отдел продаж, маркетинг.',
     need: ['stage'],
+    demo: ['Дата', { label: 'Этап', values: ['Посещение', 'Карточка товара', 'Корзина', 'Оформление', 'Оплата'] }, 'Источник трафика', 'Платформа', 'Пользователи, шт.'],
     derived: [],
     levels: [
       { id: 'sum', blocks: [
@@ -191,6 +206,7 @@ const TEMPLATES = [
     desc: 'Сколько пришло, в каком состоянии и где затык: поступление по времени, состояния, ответственные.',
     forWhom: 'Поддержка, сервис, бэк-офис — там, где строка это заявка.',
     need: ['date', 'dim1'],
+    demo: ['Дата заявки', 'Статус', 'Ответственный', 'Категория', 'Номер заявки', 'Время обработки, мин'],
     derived: [],
     levels: [
       { id: 'sum', blocks: [
@@ -214,6 +230,7 @@ const TEMPLATES = [
     desc: 'Дотягиваем ли до цели: факт против плана по времени и по разрезам, процент выполнения.',
     forWhom: 'Там, где план лежит в тех же данных, что и факт.',
     need: ['plan', 'dim1'],
+    demo: ['Дата', 'Подразделение', 'Категория', 'Факт, ₽', 'План, ₽'],
     derived: ['plan_done'],
     levels: [
       { id: 'sum', blocks: [
@@ -389,7 +406,7 @@ function buildFromTemplate(tpl, ds, roles, levelIds, derived) {
 }
 
 /* Раскладка блоков уровня по сетке 12 колонок, слева направо */
-function tplLayout(charts, ds, intro) {
+function tplLayout(charts, ds, intro, preview) {
   const items = [];
   let x = 0, y = 0, rowH = 0;
   if (intro) { items.push({ i: uid('i'), type: 'markdown', x: 0, y: 0, w: 12, h: 3, text: intro }); y = 3; }
@@ -401,7 +418,7 @@ function tplLayout(charts, ds, intro) {
   };
   charts.forEach(c => {
     const id = uid('c_');
-    STATE.charts[id] = { id, name: c.name, viz: c.viz, datasetId: ds.id, autoName: true, params: Object.assign(VIZ[c.viz].defaults(ds), c.params), updated: Date.now() };
+    STATE.charts[id] = { id, name: c.name, viz: c.viz, datasetId: ds.id, autoName: true, preview: preview || undefined, params: Object.assign(VIZ[c.viz].defaults(ds), c.params), updated: Date.now() };
     const sz = c.size || itemDefaultSize('chart', STATE.charts[id]);
     items.push(Object.assign({ i: uid('i'), type: 'chart', chartId: id }, place(sz.w, sz.h)));
   });
@@ -410,23 +427,24 @@ function tplLayout(charts, ds, intro) {
 }
 
 /* Создаёт дашборд из шаблона, пишет его в STATE и возвращает id */
-function createFromTemplate(tpl, ds, { title, roles, levels }) {
+function createFromTemplate(tpl, ds, { title, roles, levels, preview }) {
   roles = roles || pickRoles(ds);
-  const derived = ensureDerived(tpl, ds, roles);
+  const derived = preview ? ensureDerivedInMemory(tpl, ds, roles) : ensureDerived(tpl, ds, roles);
   const plan = buildFromTemplate(tpl, ds, roles, levels, derived);
   if (!plan.levels.length) { toast('По этому набору шаблон собрать нечем', true); return null; }
   const intro = `**${tpl.name}.** ${TPL_LEVELS[plan.levels[0].id].q[0].toUpperCase() + TPL_LEVELS[plan.levels[0].id].q.slice(1)}. `
     + (isSchemaDs(ds) ? SCHEMA_NOTE : 'Это готовый дашборд: правьте названия, разрезы и состав как обычно.');
   const tabs = plan.levels.map((lv, i) => ({
     id: uid('t'), title: lv.title, level: lv.id,
-    items: tplLayout(lv.charts, ds, i === 0 ? intro : null),
+    items: tplLayout(lv.charts, ds, i === 0 ? intro : null, preview),
   }));
   const id = uid('d_');
   STATE.dashboards[id] = {
     id, title: title || tpl.name, updated: Date.now(), crossFilter: true, scheme: null, tabs, filters: plan.filters,
+    preview: preview || undefined,
     fromTemplate: { tplId: tpl.id, datasetId: ds.id, levels: plan.levels.map(l => l.id), roles: tplRoleMap(roles) },
   };
-  saveState();
+  if (!preview) saveState();
   return id;
 }
 /* Карта ролей для хранения: только то, что нужно простой правке и провалу */
@@ -435,4 +453,218 @@ function tplRoleMap(roles) {
     date: roles.date || null, docId: roles.docId || null, stage: roles.stage || null,
     dim1: roles.dim1 ? roles.dim1.key : null, dim2: roles.dim2 ? roles.dim2.key : null, dim3: roles.dim3 ? roles.dim3.key : null,
   };
+}
+
+/* ---------- Выбор колонок под роли ---------- */
+/* Варианты для роли: колонки подходящего типа либо показатели набора */
+function roleOptions(ds, name) {
+  const r = TPL_ROLES[name] || {};
+  if (r.type === 'metric') {
+    const out = (ds.metrics || []).map(m => ({ metric: { kind: 'saved', key: m.key }, label: m.label }));
+    ds.columns.filter(c => c.type === 'number').forEach(c =>
+      out.push({ metric: { kind: 'simple', agg: 'SUM', col: c.key }, label: 'Сумма: ' + colLabel(ds, c.key) }));
+    return out;
+  }
+  const type = r.type === 'date' ? 'date' : 'string';
+  const cols = ds.columns.filter(c => c.type === type || (name === 'docId' && c.type === 'number'));
+  return cols.map(c => ({ key: c.key, label: colLabel(ds, c.key) }));
+}
+/* Текущее значение роли как подпись */
+function roleValueLabel(ds, roles, name) {
+  const r = TPL_ROLES[name] || {};
+  if (r.type === 'metric') { const m = tplMetric(name, roles, null); return m ? metricLabel(ds, m) : null; }
+  const k = tplDimKey(name, roles);
+  return k ? colLabel(ds, k) : null;
+}
+function setRole(ds, roles, name, opt) {
+  const r = TPL_ROLES[name] || {};
+  if (r.type === 'metric') { roles[name] = opt ? opt.metric : null; roles.main = roles.money || roles.count || roles.rows; return; }
+  if (name === 'dim1' || name === 'dim2' || name === 'dim3') {
+    roles[name] = opt ? { key: opt.key, label: opt.label, card: 0 } : null;
+    roles.dims = ['dim1', 'dim2', 'dim3'].map(k => roles[k]).filter(Boolean);
+    return;
+  }
+  roles[name] = opt ? opt.key : null;
+}
+/* Роли, которые шаблон вообще использует: спрашивать про лишние незачем */
+function tplUsedRoles(tpl) {
+  const used = new Set(tpl.need || []);
+  // Роли, от которых зависят производные показатели: без них человек не сможет
+  // поправить подбор, а средний чек молча посчитается не по тому полю
+  (tpl.derived || []).forEach(id => ((TPL_DERIVED[id] || {}).need || []).forEach(n => { if (TPL_ROLES[n]) used.add(n); }));
+  tpl.levels.forEach(l => l.blocks.forEach(b => {
+    (b.need || []).forEach(n => { if (TPL_ROLES[n]) used.add(n); });
+    [b.metric, b.metricB, b.by, b.by2, b.y, b.series, b.cols, ...(b.extra || [])].forEach(n => { if (n && TPL_ROLES[n]) used.add(n); });
+  }));
+  return [...used];
+}
+
+/* ---------- Окно создания из шаблона ---------- */
+function openTemplateDialog(tpl, dsId, opts = {}) {
+  const ds = DS[dsId];
+  if (!ds) { toast('Набор данных не найден', true); return; }
+  const roles = pickRoles(ds);
+  let title = tpl.name;
+  const docsFit = docsLevelFits(ds, roles);
+  const levels = { sum: true, detail: true, docs: docsFit.ok };
+  const body = h('div');
+  const used = tplUsedRoles(tpl).filter(n => TPL_ROLES[n]);
+
+  const paint = () => {
+    clear(body);
+    body.appendChild(field('Название дашборда', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })));
+
+    // Роли
+    const rolesBox = h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Какие поля во что идут'),
+      h('div', { class: 'hint', style: { marginBottom: '6px' } }, 'Кобра подобрала их сама — поменяйте, если взяла не то.'));
+    used.forEach(name => {
+      const r = TPL_ROLES[name];
+      const options = roleOptions(ds, name);
+      const cur = roleValueLabel(ds, roles, name);
+      const required = (tpl.need || []).includes(name);
+      const sel = selectEl(
+        [['', required ? '— не выбрано —' : '— не нужно —'], ...options.map((o, i) => [String(i), o.label])],
+        String(options.findIndex(o => o.label === cur)),
+        v => { setRole(ds, roles, name, v === '' || +v < 0 ? null : options[+v]); paint(); },
+        { 'aria-label': r.label });
+      rolesBox.appendChild(h('div', { class: 'row2', style: { marginBottom: '6px', alignItems: 'center' } },
+        h('div', null, h('b', { style: { fontSize: '13px' } }, r.label + (required ? '' : ' (если есть)')),
+          h('div', { class: 'hint' }, r.hint)), sel));
+    });
+    body.appendChild(rolesBox);
+
+    // Уровни
+    const lvBox = h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Уровни детализации'));
+    tpl.levels.forEach(l => {
+      const meta = TPL_LEVELS[l.id];
+      const off = l.id === 'docs' && !docsFit.ok;
+      lvBox.appendChild(h('div', null,
+        checkbox(`${meta.title} — ${meta.q}`, levels[l.id] && !off, v => { levels[l.id] = v; paint(); }),
+        off ? h('div', { class: 'hint', style: { marginLeft: '24px' } }, `Недоступен: ${docsFit.why}`) : null));
+    });
+    body.appendChild(lvBox);
+
+    // Что получится
+    const derivedPlan = plannedDerived(tpl, ds, roles);
+    const willAdd = derivedPlan.filter(d => !d.existing);
+    const plan = buildFromTemplate(tpl, ds, roles, Object.keys(levels).filter(k => levels[k]), Object.fromEntries(derivedPlan.map(d => [d.id, d.existing || { kind: 'saved', key: '~' }])));
+    const nCharts = plan.levels.reduce((a, l) => a + l.charts.length, 0);
+    const info = h('div', { class: 'tpl-plan' });
+    info.appendChild(h('p', null, h('b', null, `Получится ${nCharts} ${plural(nCharts, 'блок', 'блока', 'блоков')} на ${plan.levels.length} ${plural(plan.levels.length, 'вкладке', 'вкладках', 'вкладках')}`)));
+    plan.levels.forEach(l => info.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
+      `${l.title}: ${l.charts.map(c => c.name).join('; ')}`)));
+    if (willAdd.length) info.appendChild(h('p', { style: { marginBottom: 0 } },
+      'В набор «' + ds.name + '» будет добавлен показатель: ',
+      willAdd.map(d => h('b', null, `${d.label} = ${exprText(ds, d.expr)}`))));
+    const miss = [...new Set(plan.skipped.flatMap(s => s.need))].map(n => (TPL_ROLES[n] || {}).label || n);
+    if (miss.length) info.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', marginBottom: 0 } },
+      `Часть блоков пропущена — не хватает: ${miss.join(', ')}.`));
+    body.appendChild(info);
+  };
+  paint();
+
+  openModal({
+    title: `Готовый дашборд: ${tpl.name}`, wide: true, body,
+    foot: close => [
+      h('button', { class: 'btn', onclick: close }, 'Отмена'),
+      h('button', { class: 'btn primary', onclick: () => {
+        const fit = templateFits(tpl, ds, roles);
+        if (!fit.ok) { toast('Не заполнено: ' + fit.missingLabels.join(', '), true); return; }
+        const lv = Object.keys(levels).filter(k => levels[k]);
+        if (!lv.length) { toast('Отметьте хотя бы один уровень', true); return; }
+        const id = createFromTemplate(tpl, ds, { title: title.trim() || tpl.name, roles, levels: lv });
+        if (!id) return;
+        close();
+        toast('Дашборд собран');
+        go('#/d/' + id);
+      } }, ic('check'), 'Создать дашборд')],
+  });
+}
+
+/* ---------- Предпросмотр на вымышленных данных ---------- */
+/* Временный набор и дашборд живут только в памяти: в localStorage не пишем */
+function templatePreview(tpl) {
+  const used = new Set();
+  const cols = (tpl.demo || []).map((d, i) => {
+    const label = typeof d === 'string' ? d : d.label;
+    const col = Object.assign({ key: slugKey(label, i, used), label }, guessSchemaCol(label));
+    if (typeof d === 'object') Object.assign(col, d, { label, key: col.key });
+    return col;
+  });
+  const schema = Object.assign({ seed: 11, rowCount: 1200, columns: cols }, defaultSchemaPeriod());
+  const dsId = 'tpl_preview';
+  const columns = cols.map(c => ({ key: c.key, label: c.label, type: c.type }));
+  DS[dsId] = {
+    id: dsId, name: `Пример: ${tpl.name}`, kind: 'schema', preview: true, schema, columns,
+    metrics: schemaMetrics(columns, null), mainDttm: (columns.find(c => c.type === 'date') || {}).key || null,
+    description: SCHEMA_NOTE, rows: generateSchemaRows(schema),
+  };
+  const id = createFromTemplate(tpl, DS[dsId], { title: `Пример: ${tpl.name}`, preview: true });
+  if (!id) { delete DS[dsId]; return null; }
+  return id;
+}
+/* Убираем примеры, когда человек ушёл с них: иначе они осядут в состоянии */
+function purgePreviews(keepId) {
+  let had = false;
+  Object.values(STATE.dashboards).forEach(d => {
+    if (!d.preview || d.id === keepId) return;
+    d.tabs.forEach(t => t.items.forEach(i => { if (i.chartId) delete STATE.charts[i.chartId]; }));
+    delete STATE.dashboards[d.id];
+    had = true;
+  });
+  if (had) Object.keys(DS).forEach(k => { if (DS[k].preview && !Object.values(STATE.dashboards).some(d => d.fromTemplate && d.fromTemplate.datasetId === k)) delete DS[k]; });
+  return had;
+}
+
+/* ---------- Каталог ---------- */
+function renderTemplateList(main, q) {
+  const page = h('div', { class: 'page' });
+  main.appendChild(page);
+  const dsList = Object.values(DS).filter(d => !d.preview);
+  let dsId = q.ds && DS[q.ds] ? q.ds : (dsList[0] || {}).id;
+
+  const head = h('div', { class: 'page-head' },
+    h('div', { class: 'grow' }, h('h1', null, 'Готовые дашборды'),
+      h('p', null, 'Выберите готовый отчёт и приложите к своим данным. Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.')),
+    h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем дашбордам'));
+  page.appendChild(head);
+
+  const grid = h('div', { class: 'tpl-grid' });
+  const paint = () => {
+    clear(grid);
+    const ds = DS[dsId];
+    if (!ds) { grid.appendChild(h('div', { class: 'empty' }, h('b', null, 'Нет наборов данных'), 'Сначала загрузите файл или опишите набор.', h('br'), h('a', { class: 'btn', href: '#/data' }, 'К данным'))); return; }
+    const roles = pickRoles(ds);
+    TEMPLATES.forEach(tpl => {
+      const fit = templateFits(tpl, ds, roles);
+      const card = h('div', { class: 'tpl-card' + (fit.ok ? '' : ' off') });
+      card.appendChild(h('div', { class: 'tpl-head' }, h('b', null, tpl.name),
+        fit.ok ? null : h('span', { class: 'pill' }, 'не подходит набору')));
+      card.appendChild(h('p', null, tpl.desc));
+      card.appendChild(h('p', { class: 'muted' }, tpl.forWhom));
+      const lvls = h('ul', { class: 'tpl-levels' });
+      tpl.levels.forEach(l => lvls.appendChild(h('li', null, h('b', null, TPL_LEVELS[l.id].title), ' — ' + TPL_LEVELS[l.id].q)));
+      card.appendChild(lvls);
+      card.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
+        'Нужны поля: ' + (tpl.need || []).map(n => (TPL_ROLES[n] || {}).label || n).join(', ')));
+      if (!fit.ok) card.appendChild(h('div', { class: 'tpl-miss' }, 'В наборе «' + ds.name + '» не нашлось: ' + fit.missingLabels.join(', ')));
+      card.appendChild(h('div', { class: 'tpl-act' },
+        tpl.demo && tpl.demo.length ? h('button', { class: 'btn sm', onclick: () => {
+          const id = templatePreview(tpl);
+          if (id) go('#/d/' + id);
+        } }, ic('eye'), 'Посмотреть пример') : null,
+        h('button', { class: 'btn sm primary', disabled: !fit.ok, onclick: () => openTemplateDialog(tpl, dsId) }, 'Взять этот')));
+      grid.appendChild(card);
+    });
+    // Запасной путь: ни один скелет не подошёл
+    const own = h('div', { class: 'tpl-card' });
+    own.appendChild(h('div', { class: 'tpl-head' }, h('b', null, 'Собрать по моим данным')));
+    own.appendChild(h('p', null, 'Ни один готовый не подошёл? Кобра посмотрит на колонки набора и соберёт черновик одной вкладкой.'));
+    own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => openAutoDashDialog(dsId) }, ic('wand'), 'Собрать черновик')));
+    grid.appendChild(own);
+  };
+
+  page.appendChild(field('Набор данных', selectEl(dsList.map(d => [d.id, d.name]), dsId, v => { dsId = v; paint(); })));
+  page.appendChild(grid);
+  paint();
 }
