@@ -37,9 +37,17 @@ function autoAdjDative(word) {
   const soft = /(яя|ее|ний|ший|щий|жий|чий)$/.test(s);
   return s.slice(0, -2) + (soft ? 'им' : 'ым');
 }
+// Слова-прилагательные в роли существительного: «Ответственный» → «ответственным»,
+// а не «ответственныям». Берём только бесспорные окончания: «‑ий» бывает и у
+// существительных («критерий»), там правило существительного верное.
+const AUTO_ADJ_NOUN_RE = /(ый|ой|ая|ое|яя|ее)$/;
 function autoDative(label) {
   const words = String(label || '').trim().split(/\s+/).filter(Boolean);
   if (!words.length || words.length > 2) return null;
+  if (words.length === 1 && AUTO_ADJ_NOUN_RE.test(words[0].toLowerCase())) {
+    const adj = autoAdjDative(words[0]);
+    if (adj) return adj;
+  }
   const noun = autoNounDative(words[words.length - 1]);
   if (!noun) return null;
   if (words.length === 1) return noun;

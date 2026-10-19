@@ -426,8 +426,18 @@ function tplLayout(charts, ds, intro, preview) {
   return items;
 }
 
+/* Макет: данных нет, набор порождается под дашборд и прячется за ним */
+function createMockup(tpl, { title, levels } = {}) {
+  const name = (title || (tpl ? tpl.name : 'Макет')).trim() || 'Макет';
+  const dashId = uid('d_');
+  const dsId = saveSchemaDataset({ name: `Данные макета «${name}»`, schema: mockupSchema(tpl), owner: dashId });
+  const id = createFromTemplate(tpl, DS[dsId], { title: name, levels, dashId });
+  if (!id) { delete STATE.datasets[dsId]; delete DS[dsId]; saveState(); return null; }
+  return id;
+}
+
 /* Создаёт дашборд из шаблона, пишет его в STATE и возвращает id */
-function createFromTemplate(tpl, ds, { title, roles, levels, preview }) {
+function createFromTemplate(tpl, ds, { title, roles, levels, preview, dashId }) {
   roles = roles || pickRoles(ds);
   const derived = preview ? ensureDerivedInMemory(tpl, ds, roles) : ensureDerived(tpl, ds, roles);
   const plan = buildFromTemplate(tpl, ds, roles, levels, derived);
@@ -444,7 +454,7 @@ function createFromTemplate(tpl, ds, { title, roles, levels, preview }) {
     id: uid('t'), title: lv.title, level: lv.id,
     items: tplLayout(lv.charts, ds, i === 0 ? intro : null, preview),
   }));
-  const id = uid('d_');
+  const id = dashId || uid('d_');
   STATE.dashboards[id] = {
     id, title: title || tpl.name, updated: Date.now(), crossFilter: true, scheme: null, tabs, filters: plan.filters,
     preview: preview || undefined,
@@ -507,19 +517,23 @@ function tplUsedRoles(tpl) {
 
 /* ---------- Окно создания из шаблона ---------- */
 function openTemplateDialog(tpl, dsId, opts = {}) {
-  const ds = DS[dsId];
+  // Без набора — путь макета: данные Кобра придумает сама, роли спрашивать не о чем
+  const mockup = !dsId;
+  let title = tpl.name;
+  const ds = mockup ? mockupDatasetDraft(tpl, title) : DS[dsId];
   if (!ds) { toast('Набор данных не найден', true); return; }
   const roles = pickRoles(ds);
-  let title = tpl.name;
   const docsFit = docsLevelFits(ds, roles);
   const levels = { sum: true, detail: true, docs: docsFit.ok };
   const body = h('div');
-  const used = tplUsedRoles(tpl).filter(n => TPL_ROLES[n]);
+  const used = mockup ? [] : tplUsedRoles(tpl).filter(n => TPL_ROLES[n]);
 
   const paint = () => {
     clear(body);
     body.appendChild(field('Название дашборда', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })));
 
+    if (mockup) body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 12px' } },
+      'Данные Кобра придумает сама. Названия блоков, показателей и категорий поменяете прямо на дашборде.'));
     // Роли
     const rolesBox = h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Какие поля во что идут'),
       h('div', { class: 'hint', style: { marginBottom: '6px' } }, 'Кобра подобрала их сама — поменяйте, если взяла не то.'));
@@ -537,7 +551,7 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
         h('div', null, h('b', { style: { fontSize: '13px' } }, r.label + (required ? '' : ' (если есть)')),
           h('div', { class: 'hint' }, r.hint)), sel));
     });
-    body.appendChild(rolesBox);
+    if (!mockup) body.appendChild(rolesBox);
 
     // Уровни
     const lvBox = h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Уровни детализации'));
@@ -559,7 +573,7 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
     info.appendChild(h('p', null, h('b', null, `Получится ${nCharts} ${plural(nCharts, 'блок', 'блока', 'блоков')} на ${plan.levels.length} ${plural(plan.levels.length, 'вкладке', 'вкладках', 'вкладках')}`)));
     plan.levels.forEach(l => info.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
       `${l.title}: ${l.charts.map(c => c.name).join('; ')}`)));
-    if (willAdd.length) info.appendChild(h('p', { style: { marginBottom: 0 } },
+    if (willAdd.length && !mockup) info.appendChild(h('p', { style: { marginBottom: 0 } },
       'В набор «' + ds.name + '» будет добавлен показатель: ',
       willAdd.map(d => h('b', null, `${d.label} = ${exprText(ds, d.expr)}`))));
     const miss = [...new Set(plan.skipped.flatMap(s => s.need))].map(n => (TPL_ROLES[n] || {}).label || n);
@@ -574,17 +588,50 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
     foot: close => [
       h('button', { class: 'btn', onclick: close }, 'Отмена'),
       h('button', { class: 'btn primary', onclick: () => {
-        const fit = templateFits(tpl, ds, roles);
-        if (!fit.ok) { toast('Не заполнено: ' + fit.missingLabels.join(', '), true); return; }
         const lv = Object.keys(levels).filter(k => levels[k]);
         if (!lv.length) { toast('Отметьте хотя бы один уровень', true); return; }
-        const id = createFromTemplate(tpl, ds, { title: title.trim() || tpl.name, roles, levels: lv });
+        let id;
+        if (mockup) {
+          id = createMockup(tpl, { title, levels: lv });
+        } else {
+          const fit = templateFits(tpl, ds, roles);
+          if (!fit.ok) { toast('Не заполнено: ' + fit.missingLabels.join(', '), true); return; }
+          id = createFromTemplate(tpl, ds, { title: title.trim() || tpl.name, roles, levels: lv });
+        }
         if (!id) return;
         close();
-        toast('Дашборд собран');
+        toast(mockup ? 'Макет собран: правьте названия прямо на блоках' : 'Дашборд собран');
         go('#/d/' + id);
       } }, ic('check'), 'Создать дашборд')],
   });
+}
+
+/* ---------- Скрытый набор макета ----------
+   У макета нет и не должно быть настоящих данных: колонки берутся из описания
+   шаблона, а если шаблона нет — нейтральные, чтобы блоки не называли чужих
+   сущностей. Набор принадлежит дашборду и человеку не показывается. */
+const MOCKUP_NEUTRAL_COLS = ['Период', 'Категория', 'Группа', 'Показатель', 'Количество, шт.'];
+
+function mockupSchema(tpl) {
+  const used = new Set();
+  const src = (tpl && tpl.demo && tpl.demo.length) ? tpl.demo : MOCKUP_NEUTRAL_COLS;
+  const columns = src.map((d, i) => {
+    const label = typeof d === 'string' ? d : d.label;
+    const col = Object.assign({ key: slugKey(label, i, used), label }, guessSchemaCol(label));
+    if (typeof d === 'object') Object.assign(col, d, { label, key: col.key });
+    return col;
+  });
+  return Object.assign({ seed: (Date.now() % 100000) + 1, rowCount: 2000, columns }, defaultSchemaPeriod());
+}
+/* Набор-объект без записи в состояние: нужен, чтобы показать состав будущего дашборда */
+function mockupDatasetDraft(tpl, title) {
+  const schema = normalizeSchema(mockupSchema(tpl));
+  const columns = schema.columns.map(c => ({ key: c.key, label: c.label, type: c.type }));
+  return {
+    id: 'mockup_draft', name: `Данные макета «${title}»`, kind: 'schema', schema, columns,
+    metrics: schemaMetrics(columns, null), mainDttm: (columns.find(c => c.type === 'date') || {}).key || null,
+    description: SCHEMA_NOTE, rows: generateSchemaRows(schema),
+  };
 }
 
 /* ---------- Предпросмотр на вымышленных данных ---------- */
@@ -627,22 +674,25 @@ function renderTemplateList(main, q) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
   const dsList = visibleDatasets();
-  let dsId = q.ds && DS[q.ds] ? q.ds : (dsList[0] || {}).id;
+  // Набор приходит только из пути «мои данные»; обычный путь — макет без данных
+  const ownData = q.ds && DS[q.ds] ? q.ds : null;
+  let dsId = ownData;
 
-  const head = h('div', { class: 'page-head' },
+  page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('h1', null, 'Готовые дашборды'),
-      h('p', null, 'Выберите готовый отчёт и приложите к своим данным. Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.')),
-    h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем дашбордам'));
-  page.appendChild(head);
+      h('p', null, ownData
+        ? `Выберите готовый отчёт и приложите к набору «${DS[ownData].name}». Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.`
+        : 'Выберите готовый отчёт: Кобра соберёт его на придуманных данных, а вы переименуете блоки и категории под свой процесс. Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.')),
+    h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем дашбордам')));
 
   const grid = h('div', { class: 'tpl-grid' });
   const paint = () => {
     clear(grid);
-    const ds = DS[dsId];
-    if (!ds) { grid.appendChild(h('div', { class: 'empty' }, h('b', null, 'Нет наборов данных'), 'Сначала загрузите файл или опишите набор.', h('br'), h('a', { class: 'btn', href: '#/data' }, 'К данным'))); return; }
-    const roles = pickRoles(ds);
+    const ds = dsId ? DS[dsId] : null;
+    if (dsId && !ds) { grid.appendChild(h('div', { class: 'empty' }, h('b', null, 'Набор данных не найден'), h('a', { class: 'btn', href: '#/data' }, 'К данным'))); return; }
+    const roles = ds ? pickRoles(ds) : null;
     TEMPLATES.forEach(tpl => {
-      const fit = templateFits(tpl, ds, roles);
+      const fit = ds ? templateFits(tpl, ds, roles) : { ok: true, missingLabels: [] };
       const card = h('div', { class: 'tpl-card' + (fit.ok ? '' : ' off') });
       card.appendChild(h('div', { class: 'tpl-head' }, h('b', null, tpl.name),
         fit.ok ? null : h('span', { class: 'pill' }, 'не подходит набору')));
@@ -651,7 +701,7 @@ function renderTemplateList(main, q) {
       const lvls = h('ul', { class: 'tpl-levels' });
       tpl.levels.forEach(l => lvls.appendChild(h('li', null, h('b', null, TPL_LEVELS[l.id].title), ' — ' + TPL_LEVELS[l.id].q)));
       card.appendChild(lvls);
-      card.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
+      if (ds) card.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
         'Нужны поля: ' + (tpl.need || []).map(n => (TPL_ROLES[n] || {}).label || n).join(', ')));
       if (!fit.ok) card.appendChild(h('div', { class: 'tpl-miss' }, 'В наборе «' + ds.name + '» не нашлось: ' + fit.missingLabels.join(', ')));
       card.appendChild(h('div', { class: 'tpl-act' },
@@ -659,18 +709,27 @@ function renderTemplateList(main, q) {
           const id = templatePreview(tpl);
           if (id) go('#/d/' + id);
         } }, ic('eye'), 'Посмотреть пример') : null,
-        h('button', { class: 'btn sm primary', disabled: !fit.ok, onclick: () => openTemplateDialog(tpl, dsId) }, 'Взять этот')));
+        h('button', { class: 'btn sm primary', disabled: !fit.ok, onclick: () => openTemplateDialog(tpl, dsId) }, ds ? 'Взять этот' : 'Сделать макет')));
       grid.appendChild(card);
     });
     // Запасной путь: ни один скелет не подошёл
     const own = h('div', { class: 'tpl-card' });
-    own.appendChild(h('div', { class: 'tpl-head' }, h('b', null, 'Собрать по моим данным')));
-    own.appendChild(h('p', null, 'Ни один готовый не подошёл? Кобра посмотрит на колонки набора и соберёт черновик одной вкладкой.'));
-    own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => openAutoDashDialog(dsId) }, ic('wand'), 'Собрать черновик')));
+    if (ds) {
+      own.appendChild(h('div', { class: 'tpl-head' }, h('b', null, 'Собрать по моим данным')));
+      own.appendChild(h('p', null, 'Ни один готовый не подошёл? Кобра посмотрит на колонки набора и соберёт черновик одной вкладкой.'));
+      own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => openAutoDashDialog(dsId) }, ic('wand'), 'Собрать черновик')));
+    } else {
+      own.appendChild(h('div', { class: 'tpl-head' }, h('b', null, 'Пустой макет')));
+      own.appendChild(h('p', null, 'Ни один готовый не подошёл? Начните с чистого листа и добавляйте блоки сами — данные Кобра тоже придумает.'));
+      own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => {
+        const id = createMockup(null, { title: 'Новый макет', levels: ['sum'] });
+        if (id) go('#/d/' + id + '?edit=1');
+      } }, ic('plus'), 'Пустой макет')));
+    }
     grid.appendChild(own);
   };
 
-  page.appendChild(field('Набор данных', selectEl(dsList.map(d => [d.id, d.name]), dsId, v => { dsId = v; paint(); })));
+  if (ownData) page.appendChild(field('Набор данных', selectEl(dsList.map(d => [d.id, d.name]), dsId, v => { dsId = v; paint(); })));
   page.appendChild(grid);
   paint();
 }

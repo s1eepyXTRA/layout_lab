@@ -155,7 +155,7 @@ function schemaMetrics(columns, prev) {
   return out.concat(keep);
 }
 
-function saveSchemaDataset({ id, name, schema }) {
+function saveSchemaDataset({ id, name, schema, owner }) {
   const sc = normalizeSchema(schema);
   const columns = sc.columns.map(c => ({ key: c.key, label: c.label || c.key, type: c.type }));
   const prev = id && DS[id] ? DS[id].metrics : null;
@@ -166,6 +166,9 @@ function saveSchemaDataset({ id, name, schema }) {
     metrics: schemaMetrics(columns, prev), mainDttm, description: SCHEMA_NOTE,
     created: (STATE.datasets[dsId] || {}).created || Date.now(),
   };
+  // Владелец — дашборд-макет: такой набор человеку не показывается и живёт вместе с ним
+  const own = owner !== undefined ? owner : (STATE.datasets[dsId] || {}).owner;
+  if (own) meta.owner = own;
   STATE.datasets[dsId] = meta;
   DS[dsId] = Object.assign({}, meta, { rows: generateSchemaRows(sc) });
   saveState();
