@@ -106,14 +106,76 @@ function autoDateCol(ds) {
   const c = key && dsCol(ds, key);
   return c && c.type === 'date' ? key : null;
 }
+/* Номер документа — то, что autoDims отбрасывает как идентификатор.
+   Нужен, чтобы отличить средний чек от средней строки заказа. */
+function autoDocIdCol(ds) {
+  for (const c of ds.columns) {
+    if (c.type !== 'string' && c.type !== 'number') continue;
+    if (!AUTO_ID_RE.test(c.key + ' ' + (c.label || ''))) continue;
+    return c.key;
+  }
+  return null;
+}
+
+/* Этап воронки и план — роли, которые нужны не всем шаблонам, но угадываются так же */
+const AUTO_STAGE_RE = /этап|стади|шаг|воронк|stage|статус|состояни/i;
+const AUTO_STAGE_ORDER_RE = /порядок|очерёдн|очередн|номер этапа|order|seq/i;
+const AUTO_PLAN_RE = /план|цель|норма|целев|target|plan|quota/i;
+function autoStageCol(ds, dims) {
+  const hit = (dims || autoDims(ds, 20)).find(d => AUTO_STAGE_RE.test(d.label + ' ' + d.key));
+  return hit ? hit.key : null;
+}
+function autoStageOrderCol(ds) {
+  const c = ds.columns.find(x => x.type === 'number' && AUTO_STAGE_ORDER_RE.test(x.key + ' ' + (x.label || '')));
+  return c ? c.key : null;
+}
+/* План — числовая колонка, названная планом; метрикой делаем сумму по ней */
+function autoPlanMetric(ds) {
+  const saved = (ds.metrics || []).find(m => AUTO_PLAN_RE.test(m.label));
+  if (saved) return { kind: 'saved', key: saved.key };
+  const c = ds.columns.find(x => x.type === 'number' && AUTO_PLAN_RE.test(x.key + ' ' + (x.label || '')));
+  return c ? { kind: 'simple', agg: 'SUM', col: c.key } : null;
+}
+
+/* ---------- Роли полей ----------
+   Единственная точка подбора: ею пользуются и черновик по набору, и шаблоны.
+   Не хватает правила — дописывать сюда, тогда оба пути поумнеют разом. */
+function pickRoles(ds) {
+  const metrics = autoMetrics(ds);
+  const rank = m => autoMetricRank(ds, m);
+  const money = metrics.find(m => rank(m) === 0) || null;
+  const count = metrics.find(m => rank(m) === 1) || null;
+  const rows = metrics.find(m => autoIsRowCount(ds, m)) || { kind: 'simple', agg: 'COUNT', col: '*' };
+  // Смотрим шире трёх разрезов: среди дальних колонок может прятаться этап воронки.
+  // Каждый разрез — проход по строкам, поэтому предел держим скромным.
+  const dims = autoDims(ds, 12);
+  const stage = autoStageCol(ds, dims);
+  // Этап — не обычный разрез: в разрезы он попадать не должен, иначе задвоится
+  const plain = dims.filter(d => d.key !== stage).slice(0, AUTO_DIMS_MAX);
+  const plan = autoPlanMetric(ds);
+  return {
+    date: autoDateCol(ds),
+    docId: autoDocIdCol(ds),
+    money: money && plan && sameMetric(money, plan) ? null : money,  // план фактом не считаем
+    count, rows, plan,
+    stage, stageOrder: stage ? autoStageOrderCol(ds) : null,
+    main: money || count || rows,   // главный показатель дашборда
+    dim1: plain[0] || null,
+    dim2: plain[1] || null,
+    dim3: plain[2] || null,
+    dims: plain, metrics,
+  };
+}
+const sameMetric = (a, b) => !!a && !!b && JSON.stringify(a) === JSON.stringify(b);
 
 /* ---------- Сборка ---------- */
 /* Что получится: {charts:[{name,viz,params,size}], filters:[...]} — сначала план,
    потом раскладка, чтобы пустые блоки не оставляли дырок в сетке. */
 function buildAutoDash(ds, opts = {}) {
-  const dt = autoDateCol(ds);
-  const mets = autoMetrics(ds);
-  const dims = autoDims(ds);
+  const roles = opts.roles || pickRoles(ds);
+  const dt = roles.date;
+  const mets = roles.metrics;
+  const dims = roles.dims;
   const main = mets[0];
   const mainTitle = autoMetricTitle(ds, main);
   const kpi = (mets.filter(m => !autoIsRowCount(ds, m)).length ? mets.filter(m => !autoIsRowCount(ds, m)) : mets).slice(0, AUTO_KPI_MAX);
@@ -179,7 +241,7 @@ function createAutoDash(ds, title, opts = {}) {
   const newRow = () => { if (x) { y += rowH; x = 0; rowH = 0; } };
   plan.charts.forEach(c => {
     const id = uid('c_');
-    STATE.charts[id] = { id, name: c.name, viz: c.viz, datasetId: ds.id, params: Object.assign(VIZ[c.viz].defaults(ds), c.params), updated: Date.now() };
+    STATE.charts[id] = { id, name: c.name, viz: c.viz, datasetId: ds.id, autoName: true, params: Object.assign(VIZ[c.viz].defaults(ds), c.params), updated: Date.now() };
     const sz = c.size || itemDefaultSize('chart', STATE.charts[id]);
     // Заголовок-раздел перед разрезами: отделяет «что происходит» от «за счёт чего»
     if (c.viz === 'bar' && plan.hasBreak) { newRow(); items.push(Object.assign({ i: uid('i'), type: 'header', text: 'Разрезы', size: 'm', bg: false }, place(12, 2))); newRow(); }

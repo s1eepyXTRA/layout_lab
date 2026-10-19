@@ -297,7 +297,8 @@ function renderExplore(main, parts, q) {
   function paintMain() {
     clear(colMain);
     previewRO && previewRO.disconnect();
-    const name = h('input', { class: 'name', value: chart.name, 'aria-label': 'Название графика', oninput: e => { chart.name = e.target.value; } });
+    const name = h('input', { class: 'name', value: chart.name, 'aria-label': 'Название графика',
+      oninput: e => { chart.name = e.target.value; chart.autoName = false; } });
     const headBtns = [];
     if (back) headBtns.push(h('button', { class: 'btn ghost', onclick: () => leave('#/d/' + back) }, ic('back'), 'К дашборду'));
     const nSpec = specFilledCount(chart);
