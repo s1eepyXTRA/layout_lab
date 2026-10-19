@@ -222,14 +222,49 @@ function fmtWhen(ts) {
   const same = d.toDateString() === now.toDateString();
   return same ? `сегодня в ${pad2(d.getHours())}:${pad2(d.getMinutes())}` : `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()}`;
 }
+/* Два пути из стартового экрана: взять готовое или строить самому */
+function startChoice() {
+  const card = (cls, icon, title, desc, note, btn, onClick) =>
+    h('div', { class: 'start-card' + cls },
+      h('div', { class: 'start-ic' }, ic(icon)),
+      h('b', null, title), h('p', null, desc),
+      note ? h('p', { class: 'start-note' }, note) : null,
+      h('button', { class: 'btn ' + (cls ? 'primary' : ''), onclick: onClick }, btn));
+  return h('div', { class: 'start-choice' },
+    card(' rec', 'schema', 'Выбрать готовый дашборд',
+      'Берёте готовый отчёт и прикладываете к своим данным: Кобра сама подберёт колонки и соберёт три уровня — общая картина, разбор, исходные строки.',
+      'Обычно это более подходящий вариант: состав и оформление уже сделаны по стандартам визуализации, вам останется поправить названия и разрезы.',
+      'Посмотреть готовые', () => go('#/templates')),
+    card('', 'plus', 'Собрать с нуля',
+      'Пустой дашборд, который вы наполняете сами: блоки, графики, вкладки, фильтры — всё на ваш выбор.',
+      null, 'Начать с чистого листа', createDashboard));
+}
 function renderDashboardList(main) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
-  const list = Object.values(STATE.dashboards).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  const list = Object.values(STATE.dashboards).filter(d => !d.preview).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  // Свой дашборд — любой, кроме демо: пока их нет, показываем выбор пути
+  const own = list.filter(d => d.id !== 'd_dns');
+  if (!own.length) {
+    page.appendChild(h('div', { class: 'page-head' },
+      h('div', { class: 'grow' }, h('h1', null, 'С чего начнём'),
+        h('p', null, 'Кобра собирает дашборды по вашим данным. Выберите, как удобнее начать — потом всё можно поправить.')),
+      h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла')));
+    page.appendChild(startChoice());
+    if (list.length) {
+      page.appendChild(h('h2', { style: { fontSize: '17px', margin: '28px 0 10px' } }, 'Демо-дашборд'));
+      page.appendChild(dashGrid(list));
+    }
+    return;
+  }
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('h1', null, 'Дашборды'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
     h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
+    h('button', { class: 'btn', onclick: () => go('#/templates') }, ic('schema'), 'Готовые дашборды'),
     h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый дашборд')));
+  page.appendChild(dashGrid(list));
+}
+function dashGrid(list) {
   const grid = h('div', { class: 'dash-grid' });
   list.forEach(d => {
     const nCharts = d.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
@@ -250,7 +285,7 @@ function renderDashboardList(main) {
         h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`)), more)));
   });
   grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый дашборд'));
-  page.appendChild(grid);
+  return grid;
 }
 // Пустые дашборды, созданные кнопкой «Новый дашборд»: если с такого ушли,
 // ничего не добавив, запись убирается, чтобы в списке не оставался мусор.

@@ -96,7 +96,7 @@ function openExportDialog(presetDashId) {
     clear(body);
     body.appendChild(h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Что вкладываем'),
       h('div', { class: 'seg' },
-        h('button', { class: withData ? '' : 'on', onclick: () => { withData = false; paint(); } }, 'Шаблон — без данных'),
+        h('button', { class: withData ? '' : 'on', onclick: () => { withData = false; paint(); } }, 'Шаблон для передачи — без данных'),
         h('button', { class: withData ? 'on' : '', onclick: () => { withData = true; paint(); } }, 'Проект — с данными')),
       h('div', { class: 'hint' }, withData
         ? 'Строки загруженных наборов попадут в файл. Не отправляйте его по открытым каналам, если данные чувствительные.'
@@ -129,7 +129,7 @@ function openExportDialog(presetDashId) {
           if (author.trim()) lsSet(LS_AUTHOR, author.trim());
           if (downloadFile(exportFileName(dashIds, withData), JSON.stringify(payload, null, 1))) {
             close();
-            toast(withData ? 'Проект сохранён в файл' : 'Шаблон сохранён в файл');
+            toast(withData ? 'Проект сохранён в файл' : 'Шаблон для передачи сохранён в файл');
           }
         },
       }, ic('download'), 'Скачать файл')],
@@ -243,7 +243,7 @@ function openImportPreview(file, p) {
     clear(body);
     body.appendChild(h('table', { class: 'list' }, h('tbody', null, [
       ['Файл', file.name],
-      ['Вид', p.kind === 'project' ? 'Проект со строками данных' : 'Шаблон без данных'],
+      ['Вид', p.kind === 'project' ? 'Проект со строками данных' : 'Шаблон для передачи, без данных'],
       ['Сохранён', p.exportedAt ? fmtDate(Date.parse(p.exportedAt)) : '—'],
       p.author ? ['Автор', p.author] : null,
       p.note ? ['Комментарий', p.note] : null,

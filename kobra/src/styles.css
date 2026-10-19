@@ -253,6 +253,20 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .tpl-plan { background: var(--surface-2); border-radius: var(--r-m); padding: 10px 12px; margin-top: 10px; }
 .tpl-plan p { margin: 0 0 6px; font-size: 13px; }
 .tpl-plan b { font-weight: 600; }
+/* Стартовый выбор пути */
+.start-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 8px; }
+.start-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); padding: 22px 24px; display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
+.start-card.rec { border-color: var(--primary); }
+.start-ic { width: 40px; height: 40px; border-radius: 10px; background: var(--surface-3); color: var(--ink-2); display: grid; place-items: center; }
+.start-card.rec .start-ic { background: var(--primary-soft); color: var(--primary); }
+.start-ic svg { width: 22px; height: 22px; }
+.start-card b { font: 600 18px/1.3 var(--font-display); }
+.start-card p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+.start-card .start-note { color: var(--ink-3); font-size: 12.5px; }
+.start-card .btn { margin-top: auto; align-self: flex-start; }
+.card-head .btn.drill { padding: 2px 8px; height: 24px; font-size: 12px; gap: 2px; flex: none; border-color: var(--primary); color: var(--primary); }
+.card-head .btn.drill:hover { background: var(--primary-soft); }
+.card-head .btn.drill svg { width: 13px; height: 13px; }
 .edit-banner svg { flex: none; }
 
 /* ---------- Исследование (Explore) ---------- */
