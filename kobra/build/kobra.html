@@ -91,6 +91,7 @@ a { color: var(--primary); }
 .btn:hover { border-color: var(--ink-3); }
 .btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
 .btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 .btn.ghost { border-color: transparent; background: transparent; }
 .btn.ghost:hover { background: var(--surface-3); }
 .btn.danger { color: var(--danger); }
@@ -3289,8 +3290,7 @@ function renderDashboard(main, id, q) {
     head.appendChild(h('div', { class: 'grow' }));
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
-      !editing && !tuning ? { label: 'Поменять названия и разрезы', icon: 'edit', onClick: () => go('#/d/' + id + '?tune=1') } : null,
-      !editing ? { label: aiOpen ? 'Скрыть помощника' : 'Спросить помощника', icon: 'cobra', onClick: () => { aiOpen = !aiOpen; aiSetOpen(id, aiOpen); paintAi(); } } : null,
+      tuning ? { label: aiOpen ? 'Скрыть помощника' : 'Спросить помощника', icon: 'cobra', onClick: () => { aiOpen = !aiOpen; aiSetOpen(id, aiOpen); paintAi(); } } : null,
       { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
       { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
       { label: 'Свойства дашборда', icon: 'settings', onClick: openProps },
@@ -3311,7 +3311,9 @@ function renderDashboard(main, id, q) {
         h('button', { class: 'btn primary', onclick: saveEdit }, ic('check'), 'Сохранить'), more);
     } else {
       head.append(
-        h('button', { class: 'btn', title: 'Обновить все графики', onclick: () => refreshCharts() }, ic('refresh'), 'Обновить'),
+        h('button', { class: 'btn' + (aiOpen ? ' on' : ''), title: 'Описать задачу словами — помощник предложит блоки', onclick: () => { aiOpen = !aiOpen; aiSetOpen(id, aiOpen); paintAi(); paintBody(); } }, ic('cobra'), 'Помощник'),
+        h('button', { class: 'btn', title: 'Поменять названия и разрезы прямо на блоках', onclick: () => go('#/d/' + id + '?tune=1') }, ic('edit'), 'Названия и разрезы'),
+        h('button', { class: 'btn', title: 'Обновить все графики', 'aria-label': 'Обновить все графики', onclick: () => refreshCharts() }, ic('refresh')),
         h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'), more);
     }
     return head;
@@ -3409,10 +3411,19 @@ function renderDashboard(main, id, q) {
     return { left: it.x * (g.colW + G_GAP), top: it.y * (G_ROWH + G_GAP), width: it.w * g.colW + (it.w - 1) * G_GAP, height: it.h * G_ROWH + (it.h - 1) * G_GAP };
   }
   function place(el, p) { el.style.left = p.left + 'px'; el.style.top = p.top + 'px'; el.style.width = p.width + 'px'; el.style.height = p.height + 'px'; }
+  /* В простой правке под каждым блоком живёт полоса с полями. Она должна
+     занимать место в сетке, иначе наезжает на график и на соседние блоки. */
+  const TUNE_ROWS = 4;
+  function tuneLayout(items) {
+    const copy = items.map(i => Object.assign({}, i, { h: i.h + (i.type === 'chart' ? TUNE_ROWS : 0) }));
+    compactLayout(copy);
+    return copy;
+  }
   function layoutGrid(items) {
     if (!gridEl) return;
     const t = curTab();
     items = items || t.items;
+    if (tuning) items = tuneLayout(items);
     if (narrow()) {
       let y = 0;
       [...items].sort((a, b) => a.y - b.y || a.x - b.x).forEach(it => {
@@ -3481,8 +3492,7 @@ function renderDashboard(main, id, q) {
     const cur = guidedDimKey(chart);
     if (!opts.length || !cur) {
       bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
-        `Показывает ${guidedWhat(ds, chart)} — разрез у этого блока не меняется.`));
-      if (!mock) bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, 'Данные набора не меняются — правятся только подписи.'));
+        `Показывает ${guidedWhat(ds, chart)} — разрез не меняется`));
       return bar;
     }
     const sel = selectEl(opts.map(o => [o.key, o.label]), cur, v => {
@@ -3515,8 +3525,6 @@ function renderDashboard(main, id, q) {
       namesInp.addEventListener('change', applyCats);
       bar.appendChild(h('label', { class: 'tune-f', style: { flex: '0 1 120px' } }, h('span', null, 'Категорий'), cntInp));
       bar.appendChild(h('label', { class: 'tune-f', style: { flex: '2 1 260px' } }, h('span', null, 'Названия'), namesInp));
-    } else if (!mock) {
-      bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, 'Данные набора не меняются — правятся только подписи.'));
     }
     return bar;
   }
@@ -3920,6 +3928,10 @@ function renderDashboard(main, id, q) {
     disposeCells();
     clear(dmain);
     if (editing) dmain.appendChild(h('div', { class: 'edit-banner' }, ic('edit'), 'Режим редактирования. Изменения появятся у всех после нажатия «Сохранить».'));
+    if (tuning) dmain.appendChild(h('div', { class: 'edit-banner' }, ic('edit'),
+      isMockupDs(dsGet((D.fromTemplate || {}).datasetId))
+        ? 'Меняйте названия, показатели, единицы и категории прямо на блоках. Категории и подписи живут в данных, поэтому поменяются сразу во всех блоках.'
+        : 'Меняйте названия блоков и разрезы прямо здесь. Данные набора при этом не трогаются — правятся только подписи.'));
     const fakeNames = [...new Set(D.tabs.flatMap(t => t.items.map(i => i.chartId && (STATE.charts[i.chartId] || {}).datasetId))
       .filter(x => isSchemaDs(DS[x])).map(x => DS[x].name))];
     // У макета имя скрытого набора человеку ни о чём не говорит — незачем его называть
