@@ -3445,6 +3445,9 @@ function renderDashboard(main, id, q) {
     });
   }
   function drawChart(c) {
+    // Отложенная отрисовка может добраться до плитки, которую уже сняли с экрана
+    // (например, данные макета успели смениться) — рисовать её незачем и нечем
+    if (!c.el || !c.el.isConnected) return;
     const chart = STATE.charts[c.chartId];
     if (!chart) return vizMsg(c.root, 'График удалён', true);
     const ex = extraFiltersFor(c.chartId);
