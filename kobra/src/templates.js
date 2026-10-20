@@ -769,7 +769,8 @@ function renderTemplateList(main, q) {
       own.appendChild(h('p', null, 'Ни один готовый не подошёл? Начните с чистого листа и добавляйте блоки сами — данные Кобра тоже придумает.'));
       own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => {
         const id = createMockup(null, { title: 'Новый макет', levels: ['sum'] });
-        if (id) go('#/d/' + id + '?edit=1');
+        // Помечаем как только что созданный: брошенную пустышку уберут при уходе
+        if (id) { freshDashboards.add(id); go('#/d/' + id + '?edit=1'); }
       } }, ic('plus'), 'Пустой макет')));
     }
     grid.appendChild(own);
