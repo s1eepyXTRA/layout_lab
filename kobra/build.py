@@ -39,7 +39,7 @@ html = f'''<!DOCTYPE html>
 <style>{css}</style>
 {libs}</head>
 <body>
-<div class="loading" role="status"><div><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5c-3.3 0-6 2.6-6 6.3 0 2.4 1.2 4 2.6 5.2.8.7 1.1 1.4 1.1 2.4V21h4.6v-4.6c0-1 .3-1.7 1.1-2.4 1.4-1.2 2.6-2.8 2.6-5.2 0-3.7-2.7-6.3-6-6.3z"/></svg><span>Готовлю данные DNS…</span></div></div>
+<div class="loading" role="status"><div><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5c-3.3 0-6 2.6-6 6.3 0 2.4 1.2 4 2.6 5.2.8.7 1.1 1.4 1.1 2.4V21h4.6v-4.6c0-1 .3-1.7 1.1-2.4 1.4-1.2 2.6-2.8 2.6-5.2 0-3.7-2.7-6.3-6-6.3z"/></svg><span>Готовлю демо-данные…</span></div></div>
 <div id="app"></div>
 <script>
 {js}

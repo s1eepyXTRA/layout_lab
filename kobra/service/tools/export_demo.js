@@ -1,4 +1,4 @@
-// Выгружает демо-данные DNS из src/data.js в CSV для сервера: node service/tools/export_demo.js
+// Выгружает демо-данные из src/data.js в CSV для сервера: node service/tools/export_demo.js
 const fs = require('fs'), zlib = require('zlib'), path = require('path');
 const root = path.join(__dirname, '..', '..');
 eval(fs.readFileSync(path.join(root, 'src', 'data.js'), 'utf8') + ';global.G={BUILTIN_DATASETS}');

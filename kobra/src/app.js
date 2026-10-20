@@ -7,43 +7,43 @@ const saveSoon = debounce(saveState, 300);
 
 /* ---------- Демо-наполнение ---------- */
 function seedState() {
-  const S = { v: 1, charts: {}, dashboards: {}, datasets: {}, dsMetrics: {}, theme: null };
+  const S = { v: 2, charts: {}, dashboards: {}, datasets: {}, dsMetrics: {}, theme: null };
   const mk = (id, name, viz, ds, params) => { S.charts[id] = { id, name, viz, datasetId: ds, params: Object.assign(VIZ[viz].defaults(DS[ds]), params), updated: Date.now() }; return id; };
   const M = key => ({ kind: 'saved', key });
   const noTime = { time_range: { preset: 'all' } };
   // Обзор
-  mk('c_rev', 'Выручка за месяц', 'big_number_trend', 'dns_sales', { metric: M('revenue'), x_grain: 'month', compare_lag: 1, subheader: 'Выручка', ...noTime });
-  mk('c_orders', 'Заказы за месяц', 'big_number_trend', 'dns_sales', { metric: M('orders'), x_grain: 'month', compare_lag: 12, subheader: 'Заказы', color_scheme: 'cold' });
-  mk('c_check', 'Средний чек', 'big_number', 'dns_sales', { metric: M('avg_check'), compare: 'prev_period', subheader: 'Средний чек за период' });
-  mk('c_marg', 'Маржинальность', 'big_number', 'dns_sales', { metric: M('margin_pct'), compare: 'prev_year', subheader: 'Маржинальность за период' });
-  mk('c_mixed', 'Выручка и средний чек по месяцам', 'mixed', 'dns_sales', { x_col: 'date', x_grain: 'month', metrics: [M('revenue')], metrics_b: [M('avg_check')], type_a: 'bar', type_b: 'line', axis_b: 'right', smooth: true });
-  mk('c_channel', 'Каналы продаж', 'pie', 'dns_sales', { dim: 'channel', metric: M('revenue'), label_type: 'name_pct', show_legend: false });
-  mk('c_cat_bar', 'Выручка по категориям', 'bar', 'dns_sales', { x_col: 'category', metrics: [M('revenue'), M('margin')], horizontal: true, show_labels: false, show_legend: true });
-  mk('c_cat_area', 'Структура выручки по категориям', 'area', 'dns_sales', { x_col: 'date', x_grain: 'month', metrics: [M('revenue')], series_col: 'category', stacked: true, expand: true, smooth: true, opacity: 70 });
-  mk('c_daily', 'Выручка по дням, скользящее среднее 7 дней', 'line', 'dns_sales', { x_col: 'date', x_grain: 'day', metrics: [M('revenue')], series_col: 'channel', rolling: 7, zoom: true, smooth: true, y_min_zero: true });
+  mk('c_rev', 'Выручка за месяц', 'big_number_trend', 'demo_sales', { metric: M('revenue'), x_grain: 'month', compare_lag: 1, subheader: 'Выручка', ...noTime });
+  mk('c_orders', 'Заказы за месяц', 'big_number_trend', 'demo_sales', { metric: M('orders'), x_grain: 'month', compare_lag: 12, subheader: 'Заказы', color_scheme: 'cold' });
+  mk('c_check', 'Средний чек', 'big_number', 'demo_sales', { metric: M('avg_check'), compare: 'prev_period', subheader: 'Средний чек за период' });
+  mk('c_marg', 'Маржинальность', 'big_number', 'demo_sales', { metric: M('margin_pct'), compare: 'prev_year', subheader: 'Маржинальность за период' });
+  mk('c_mixed', 'Выручка и средний чек по месяцам', 'mixed', 'demo_sales', { x_col: 'date', x_grain: 'month', metrics: [M('revenue')], metrics_b: [M('avg_check')], type_a: 'bar', type_b: 'line', axis_b: 'right', smooth: true });
+  mk('c_channel', 'Каналы продаж', 'pie', 'demo_sales', { dim: 'channel', metric: M('revenue'), label_type: 'name_pct', show_legend: false });
+  mk('c_cat_bar', 'Выручка по направлениям', 'bar', 'demo_sales', { x_col: 'direction', metrics: [M('revenue'), M('margin')], horizontal: true, show_labels: false, show_legend: true });
+  mk('c_cat_area', 'Структура выручки по направлениям', 'area', 'demo_sales', { x_col: 'date', x_grain: 'month', metrics: [M('revenue')], series_col: 'direction', stacked: true, expand: true, smooth: true, opacity: 70 });
+  mk('c_daily', 'Выручка по дням, скользящее среднее 7 дней', 'line', 'demo_sales', { x_col: 'date', x_grain: 'day', metrics: [M('revenue')], series_col: 'channel', rolling: 7, zoom: true, smooth: true, y_min_zero: true });
   // Товары
-  mk('c_tree', 'Выручка: категории и подкатегории', 'treemap', 'dns_sales', { groupby: ['category', 'subcategory'], metric: M('revenue'), show_pct: true });
-  mk('c_top', 'Топ товаров', 'table', 'dns_sales', { mode: 'agg', groupby: ['product'], metrics: [M('revenue'), M('qty'), M('margin_pct')], row_limit: 50, page_size: '10', cell_bars: true, totals: true });
-  mk('c_pivot', 'Выручка: категория × канал продаж', 'pivot', 'dns_sales', { rows: ['category', 'subcategory'], cols: ['channel'], metrics: [M('revenue')], row_sort: 'name', heat: true });
-  mk('c_bullet', 'Маржинальность категорий против средней', 'bullet', 'dns_sales', { metric: M('margin_pct'), dim: 'category', target_mode: 'avg', ranges: '0,1; 0,18; 0,5', range_labels: 'Низкая, Нормальная, Высокая' });
-  mk('c_brands', 'Топ-15 брендов', 'bar', 'dns_sales', { x_col: 'brand', metrics: [M('revenue')], series_col: 'own_brand', stacked: true, row_limit: 15, x_rotate: '45', series_limit: 2 });
+  mk('c_tree', 'Выручка: направления и группы товаров', 'treemap', 'demo_sales', { groupby: ['direction', 'group'], metric: M('revenue'), show_pct: true });
+  mk('c_top', 'Топ товаров', 'table', 'demo_sales', { mode: 'agg', groupby: ['product'], metrics: [M('revenue'), M('qty'), M('margin_pct')], row_limit: 50, page_size: '10', cell_bars: true, totals: true });
+  mk('c_pivot', 'Выручка: направление × канал продаж', 'pivot', 'demo_sales', { rows: ['direction', 'group'], cols: ['channel'], metrics: [M('revenue')], row_sort: 'name', heat: true });
+  mk('c_bullet', 'Маржинальность направлений против средней', 'bullet', 'demo_sales', { metric: M('margin_pct'), dim: 'direction', target_mode: 'avg', ranges: '0,1; 0,18; 0,5', range_labels: 'Низкая, Нормальная, Высокая' });
+  mk('c_brands', 'Группы товаров по линейкам', 'bar', 'demo_sales', { x_col: 'group', metrics: [M('revenue')], series_col: 'line', stacked: true, row_limit: 15, x_rotate: '45', series_limit: 3 });
   // Регионы
-  mk('c_heat', 'Выручка городов по месяцам', 'heatmap', 'dns_sales', { x_col: 'date', y_col: 'city', x_grain: 'month', metric: M('revenue'), normalize: 'y', seq_scheme: 'jade', y_limit: 25 });
-  mk('c_district', 'Округа и каналы', 'bar', 'dns_sales', { x_col: 'district', metrics: [M('revenue')], series_col: 'channel', stacked: true, x_rotate: '30' });
-  mk('c_stores', 'Магазины', 'table', 'dns_sales', { mode: 'agg', groupby: ['city', 'store'], metrics: [M('revenue'), M('orders'), M('avg_check')], row_limit: 100, page_size: '25', totals: true });
+  mk('c_heat', 'Выручка городов по месяцам', 'heatmap', 'demo_sales', { x_col: 'date', y_col: 'city', x_grain: 'month', metric: M('revenue'), normalize: 'y', seq_scheme: 'jade', y_limit: 25 });
+  mk('c_district', 'Регионы и каналы', 'bar', 'demo_sales', { x_col: 'region', metrics: [M('revenue')], series_col: 'channel', stacked: true, x_rotate: '30' });
+  mk('c_stores', 'Точки продаж', 'table', 'demo_sales', { mode: 'agg', groupby: ['city', 'store'], metrics: [M('revenue'), M('orders'), M('avg_check')], row_limit: 100, page_size: '25', totals: true });
   // Интернет-магазин
-  mk('c_funnel', 'Воронка интернет-магазина', 'funnel', 'dns_funnel', { dim: 'stage', metric: M('users'), order_by: 'stage_order', label_type: 'pct_first' });
-  mk('c_funnel_pf', 'Воронка по платформам', 'bar', 'dns_funnel', { x_col: 'stage', metrics: [M('users')], series_col: 'platform', sort: 'value_desc', horizontal: true, show_labels: true });
-  mk('c_visits', 'Посещения по платформам', 'line', 'dns_funnel', { x_col: 'date', x_grain: 'month', markers: true, metrics: [M('users')], series_col: 'platform', adhoc_filters: [{ col: 'stage', op: 'in', val: ['Посещение'] }], smooth: true });
-  mk('c_sources', 'Источники трафика', 'pie', 'dns_funnel', { dim: 'source', metric: M('users'), adhoc_filters: [{ col: 'stage', op: 'in', val: ['Посещение'] }], label_type: 'pct', show_legend: true, legend_pos: 'right' });
-  mk('c_paid', 'Оплаченные заказы онлайн', 'big_number_trend', 'dns_funnel', { metric: M('users'), x_grain: 'week', adhoc_filters: [{ col: 'stage', op: 'in', val: ['Оплата'] }], subheader: 'Оплаты за неделю', skip_partial: true });
+  mk('c_funnel', 'Воронка интернет-магазина', 'funnel', 'demo_funnel', { dim: 'stage', metric: M('users'), order_by: 'stage_order', label_type: 'pct_first' });
+  mk('c_funnel_pf', 'Воронка по платформам', 'bar', 'demo_funnel', { x_col: 'stage', metrics: [M('users')], series_col: 'platform', sort: 'value_desc', horizontal: true, show_labels: true });
+  mk('c_visits', 'Посещения по платформам', 'line', 'demo_funnel', { x_col: 'date', x_grain: 'month', markers: true, metrics: [M('users')], series_col: 'platform', adhoc_filters: [{ col: 'stage', op: 'in', val: ['Посещение'] }], smooth: true });
+  mk('c_sources', 'Источники трафика', 'pie', 'demo_funnel', { dim: 'source', metric: M('users'), adhoc_filters: [{ col: 'stage', op: 'in', val: ['Посещение'] }], label_type: 'pct', show_legend: true, legend_pos: 'right' });
+  mk('c_paid', 'Оплаченные заказы онлайн', 'big_number_trend', 'demo_funnel', { metric: M('users'), x_grain: 'week', adhoc_filters: [{ col: 'stage', op: 'in', val: ['Оплата'] }], subheader: 'Оплаты за неделю', skip_partial: true });
 
   const ch = (chartId, x, y, w, hh) => ({ i: uid('i'), type: 'chart', chartId, x, y, w, h: hh });
-  S.dashboards.d_dns = {
-    id: 'd_dns', title: 'Продажи DNS', updated: Date.now(), crossFilter: true, scheme: null,
+  S.dashboards.d_demo = {
+    id: 'd_demo', title: 'Продажи розничной сети', updated: Date.now(), crossFilter: true, scheme: null,
     tabs: [
       { id: 't1', title: 'Обзор', items: [
-        { i: uid('i'), type: 'markdown', x: 0, y: 0, w: 12, h: 3, text: '**Прототип дашборда продаж.** Данные синтетические: сеть DNS, январь 2024 — август 2026. Кликните по столбцу, сектору или строке — остальные графики отфильтруются.' },
+        { i: uid('i'), type: 'markdown', x: 0, y: 0, w: 12, h: 3, text: '**Прототип дашборда продаж.** Данные вымышленные: розничная сеть, январь 2024 — август 2026. Кликните по столбцу, сектору или строке — остальные графики отфильтруются.' },
         ch('c_rev', 0, 3, 3, 7), ch('c_orders', 3, 3, 3, 7), ch('c_check', 6, 3, 3, 7), ch('c_marg', 9, 3, 3, 7),
         ch('c_mixed', 0, 10, 8, 13), ch('c_channel', 8, 10, 4, 13),
         ch('c_cat_bar', 0, 23, 6, 13), ch('c_cat_area', 6, 23, 6, 13),
@@ -65,12 +65,12 @@ function seedState() {
       ] },
     ],
     filters: [
-      { id: 'f_time', name: 'Период', type: 'time', datasetId: 'dns_sales', col: 'date', value: { preset: 'last_12m' }, def: { preset: 'last_12m' }, scope: 'all' },
-      { id: 'f_district', name: 'Федеральный округ', type: 'select', datasetId: 'dns_sales', col: 'district', multi: true, value: [], def: [], scope: 'all', dependent: true },
-      { id: 'f_city', name: 'Город', type: 'select', datasetId: 'dns_sales', col: 'city', multi: true, value: [], def: [], scope: 'all', dependent: true },
-      { id: 'f_cat', name: 'Категория', type: 'select', datasetId: 'dns_sales', col: 'category', multi: true, value: [], def: [], scope: 'all', dependent: true },
-      { id: 'f_channel', name: 'Канал продаж', type: 'select', datasetId: 'dns_sales', col: 'channel', multi: true, value: [], def: [], scope: 'all', dependent: false },
-      { id: 'f_platform', name: 'Платформа', type: 'select', datasetId: 'dns_funnel', col: 'platform', multi: true, value: [], def: [], scope: 'all', dependent: false },
+      { id: 'f_time', name: 'Период', type: 'time', datasetId: 'demo_sales', col: 'date', value: { preset: 'last_12m' }, def: { preset: 'last_12m' }, scope: 'all' },
+      { id: 'f_district', name: 'Регион', type: 'select', datasetId: 'demo_sales', col: 'region', multi: true, value: [], def: [], scope: 'all', dependent: true },
+      { id: 'f_city', name: 'Город', type: 'select', datasetId: 'demo_sales', col: 'city', multi: true, value: [], def: [], scope: 'all', dependent: true },
+      { id: 'f_cat', name: 'Направление', type: 'select', datasetId: 'demo_sales', col: 'direction', multi: true, value: [], def: [], scope: 'all', dependent: true },
+      { id: 'f_channel', name: 'Канал продаж', type: 'select', datasetId: 'demo_sales', col: 'channel', multi: true, value: [], def: [], scope: 'all', dependent: false },
+      { id: 'f_platform', name: 'Платформа', type: 'select', datasetId: 'demo_funnel', col: 'platform', multi: true, value: [], def: [], scope: 'all', dependent: false },
     ],
   };
   return S;
@@ -197,12 +197,12 @@ async function restoreDemo() {
   const seed = seedState();
   let n = 0;
   Object.values(seed.charts).forEach(c => { if (!STATE.charts[c.id]) { STATE.charts[c.id] = c; n++; } });
-  if (STATE.dashboards.d_dns && !(await confirmDialog('Вернуть демо-дашборд', 'Демо-дашборд «Продажи DNS» уже есть. Заменить его исходной версией? Ваши изменения в нём пропадут.', 'Заменить', false))) return;
-  STATE.dashboards.d_dns = seed.dashboards.d_dns;
+  if (STATE.dashboards.d_demo && !(await confirmDialog('Вернуть демо-дашборд', 'Демо-дашборд «Продажи розничной сети» уже есть. Заменить его исходной версией? Ваши изменения в нём пропадут.', 'Заменить', false))) return;
+  STATE.dashboards.d_demo = seed.dashboards.d_demo;
   Object.values(seed.charts).forEach(c => { STATE.charts[c.id] = c; });
   saveState();
   toast('Демо-дашборд восстановлен');
-  go('#/d/d_dns');
+  go('#/d/d_demo');
 }
 async function resetAll() {
   if (!(await confirmDialog('Сбросить всё', 'Удалятся все ваши дашборды, графики и загруженные наборы данных. Останется только демо. Действие нельзя отменить.', 'Сбросить всё'))) return;
@@ -258,7 +258,7 @@ function renderDashboardList(main) {
   main.appendChild(page);
   const list = Object.values(STATE.dashboards).filter(d => !d.preview).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   // Свой дашборд — любой, кроме демо: пока их нет, показываем выбор пути
-  const own = list.filter(d => d.id !== 'd_dns');
+  const own = list.filter(d => d.id !== 'd_demo');
   if (!own.length) {
     page.appendChild(h('div', { class: 'page-head' },
       h('div', { class: 'grow' }, h('h1', null, 'С чего начнём'),
@@ -430,7 +430,7 @@ async function boot() {
   }
   registerBuiltins();
   STATE = lsGet(LS_KEY);
-  if (!STATE || STATE.v !== 1 || !STATE.charts) { STATE = seedState(); saveState(); }
+  if (!STATE || STATE.v !== 2 || !STATE.charts) { STATE = seedState(); saveState(); }
   STATE.datasets = STATE.datasets || {}; STATE.dsMetrics = STATE.dsMetrics || {};
   applyDsOverrides();
   await loadUploaded();
@@ -451,7 +451,7 @@ async function boot() {
   let lastW = window.innerWidth;
   window.addEventListener('resize', debounce(() => { if (Math.abs(window.innerWidth - lastW) > 40 && (lastW < 760) !== (window.innerWidth < 760)) route(); lastW = window.innerWidth; }, 200));
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!document.documentElement.getAttribute('data-theme')) { window._themeBtn && window._themeBtn._paint(); route(); } });
-  if (!location.hash) { try { history.replaceState(null, '', '#/d/d_dns'); } catch (e) { } }
+  if (!location.hash) { try { history.replaceState(null, '', '#/d/d_demo'); } catch (e) { } }
   route();
   const ld = document.querySelector('.loading');
   ld && ld.remove();

@@ -1,7 +1,7 @@
 {
- "id": "dns_sales",
- "name": "Продажи DNS",
- "description": "Синтетические продажи сети DNS: строки заказов с января 2024 по август 2026 года.",
+ "id": "demo_sales",
+ "name": "Продажи розничной сети",
+ "description": "Вымышленные продажи розничной сети: строки заказов с января 2024 по август 2026 года. Компании, марки и товары придуманы.",
  "mainDttm": "date",
  "columns": [
   {
@@ -15,8 +15,8 @@
    "type": "string"
   },
   {
-   "key": "district",
-   "label": "Федеральный округ",
+   "key": "region",
+   "label": "Регион",
    "type": "string"
   },
   {
@@ -26,7 +26,7 @@
   },
   {
    "key": "store",
-   "label": "Магазин",
+   "label": "Точка продаж",
    "type": "string"
   },
   {
@@ -50,38 +50,33 @@
    "type": "string"
   },
   {
-   "key": "customer_type",
-   "label": "Тип клиента",
+   "key": "segment",
+   "label": "Сегмент клиента",
    "type": "string"
   },
   {
-   "key": "age_group",
-   "label": "Возраст клиента",
+   "key": "loyalty",
+   "label": "Программа лояльности",
    "type": "string"
   },
   {
-   "key": "category",
-   "label": "Категория",
+   "key": "direction",
+   "label": "Направление",
    "type": "string"
   },
   {
-   "key": "subcategory",
-   "label": "Подкатегория",
+   "key": "group",
+   "label": "Группа товаров",
    "type": "string"
   },
   {
-   "key": "brand",
-   "label": "Бренд",
+   "key": "line",
+   "label": "Линейка",
    "type": "string"
   },
   {
    "key": "product",
    "label": "Товар",
-   "type": "string"
-  },
-  {
-   "key": "own_brand",
-   "label": "Собственная марка",
    "type": "string"
   },
   {

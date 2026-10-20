@@ -9,7 +9,7 @@ function renderDatasetList(main) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
   page.appendChild(h('div', { class: 'page-head' },
-    h('div', { class: 'grow' }, h('h1', null, 'Данные'), h('p', null, 'Встроенные демо-наборы DNS и ваши файлы. Загруженные данные хранятся только в этом браузере.')),
+    h('div', { class: 'grow' }, h('h1', null, 'Данные'), h('p', null, 'Встроенные демо-наборы и ваши файлы. Загруженные данные хранятся только в этом браузере.')),
     h('button', { class: 'btn', onclick: () => openSchemaDialog() }, ic('schema'), 'Описать набор'),
     h('button', { class: 'btn primary', onclick: openUpload }, ic('upload'), 'Загрузить CSV или Excel')));
   const list = visibleDatasets().sort((a, b) => (b.builtin ? 1 : 0) - (a.builtin ? 1 : 0) || a.name.localeCompare(b.name, 'ru'));
@@ -18,7 +18,7 @@ function renderDatasetList(main) {
     h('thead', null, h('tr', null, h('th', null, 'Набор данных'), h('th', null, 'Источник'), h('th', null, 'Строк'), h('th', null, 'Колонок'), h('th', null, 'Графиков'), h('th'))),
     h('tbody', null, list.map(d => h('tr', { class: 'click', onclick: () => go('#/data/' + d.id) },
       h('td', null, h('span', { class: 'vt' }, ic('db'), h('b', { style: { fontWeight: 500 } }, d.name))),
-      h('td', null, d.builtin ? h('span', { class: 'pill pri' }, 'Демо DNS')
+      h('td', null, d.builtin ? h('span', { class: 'pill pri' }, 'Демо')
         : isSchemaDs(d) ? h('span', { class: 'pill acc' }, 'Схема, данные вымышленные')
           : h('span', { class: 'pill' }, d.fileName || 'Файл')),
       h('td', null, fmtNum(d.rows.length, 'int')),

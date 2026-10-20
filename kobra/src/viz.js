@@ -7,7 +7,7 @@ const COLOR_SCHEMES = {
   warm: { label: 'Тёплая', colors: ['#9C2F1E', '#D25A2B', '#E88F3A', '#F2BE5C', '#B7864A', '#7A4A2A', '#E0635F', '#C73E61', '#8E5B3E', '#F0A58A'] },
   cold: { label: 'Холодная', colors: ['#0B3C5D', '#1D6A96', '#3E92CC', '#72B8D8', '#2A7F62', '#5FB49C', '#8AA1B1', '#4B5D8C', '#9BC4E2', '#305F72'] },
   jade: { label: 'Оттенки нефрита', colors: ['#0B5F47', '#0E7457', '#2E9474', '#56AE91', '#84C7AF', '#B3DDCD', '#1E4A3D', '#6C9C8B', '#3F7F6A', '#A2C8BA'] },
-  dns: { label: 'Оранжевая DNS', colors: ['#FC8507', '#333333', '#8A8A8A', '#FFB45C', '#5A5A5A', '#C96A00', '#BDBDBD', '#FFD3A1', '#1F1F1F', '#E07A10'] },
+  orange: { label: 'Оранжевая', colors: ['#FC8507', '#333333', '#8A8A8A', '#FFB45C', '#5A5A5A', '#C96A00', '#BDBDBD', '#FFD3A1', '#1F1F1F', '#E07A10'] },
 };
 const SEQ_SCHEMES = {
   jade: { label: 'Нефрит', colors: ['#EAF4EF', '#9FD2BD', '#3E9C7A', '#0B5F47'] },
@@ -670,7 +670,7 @@ VIZ.big_number_trend = {
   // текущего месяца, и тогда KPI сравнивает незакрытый месяц с полным предыдущим и
   // показывает ложный обвал («−49,5 % к сен»). Отброшенный период не прячется —
   // подпись под числом всегда называет месяц, за который взято число. Демо-дашборд
-  // это не меняет: dns_* заканчиваются 31.08.2026, последний месяц у них полный,
+  // это не меняет: демо-наборы заканчиваются 31.08.2026, последний месяц у них полный,
   // а единственный недельный KPI («Оплаченные заказы онлайн») и так ставил галочку сам.
   defaults: ds => ({ metric: firstMetric(ds), time_col: ds.mainDttm, x_grain: 'month', value_mode: 'last', compare_lag: 1, show_trend: true, skip_partial: true, y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [], subheader: '' }),
   render(root, ctx) {
