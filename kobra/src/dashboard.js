@@ -189,7 +189,10 @@ function renderDashboard(main, id, q) {
     if (editing) {
       const inp = h('input', { class: 'title-input', value: D.title, 'aria-label': 'Название дашборда', oninput: e => { D.title = e.target.value; } });
       head.appendChild(inp);
-    } else head.appendChild(h('h1', null, D.title));
+    } else head.appendChild(h('h1', null, D.title,
+      isMockupDs(dsGet((D.fromTemplate || {}).datasetId))
+        ? h('span', { class: 'pill acc', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: 'Цифры придуманы: это макет, а не отчёт' }, 'Макет')
+        : null));
     head.appendChild(h('div', { class: 'grow' }));
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
@@ -398,18 +401,26 @@ function renderDashboard(main, id, q) {
         `Показывает ${guidedWhat(ds, chart)} — разрез не меняется`));
       return bar;
     }
-    const sel = selectEl(opts.map(o => [o.key, o.label]), cur, v => {
-      tuneTouch(it.chartId);
-      guidedSetDimParam(chart, v);
-      guidedRetitle(ds, chart);
-      nameInp.value = chart.name;
-      if (cell.titleEl) cell.titleEl.textContent = chart.name;
-      repaintItem(it);
-    }, { 'aria-label': 'В разрезе чего' });
-    bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'В разрезе'), sel));
+    const cats = mock ? guidedCats(ds, chart) : null;
+    if (cats) {
+      // В макете разрез — это просто его название: какая колонка под ним, человеку незачем
+      bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Разрез'),
+        h('input', { class: 'input', value: guidedDimLabel(ds, chart) || '', placeholder: 'Филиалы, продукты, статусы',
+          'aria-label': 'Название разреза',
+          onchange: e => { tuneTouchDs(ds); if (guidedRenameDim(ds, chart, e.target.value)) { guidedRetitle(ds, chart); nameInp.value = chart.name; if (cell.titleEl) cell.titleEl.textContent = chart.name; refreshCharts(); } } })));
+    } else {
+      const sel = selectEl(opts.map(o => [o.key, o.label]), cur, v => {
+        tuneTouch(it.chartId);
+        guidedSetDimParam(chart, v);
+        guidedRetitle(ds, chart);
+        nameInp.value = chart.name;
+        if (cell.titleEl) cell.titleEl.textContent = chart.name;
+        repaintItem(it);
+      }, { 'aria-label': 'В разрезе чего' });
+      bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'В разрезе'), sel));
+    }
 
     // Категории разреза: их число и названия — это значения в придуманных данных
-    const cats = mock ? guidedCats(ds, chart) : null;
     if (cats) {
       const namesInp = h('input', { class: 'input', value: cats.values.join(', '), placeholder: 'Названия через запятую',
         'aria-label': 'Названия категорий' });
@@ -427,7 +438,9 @@ function renderDashboard(main, id, q) {
       cntInp.addEventListener('change', applyCats);
       namesInp.addEventListener('change', applyCats);
       bar.appendChild(h('label', { class: 'tune-f', style: { flex: '0 1 120px' } }, h('span', null, 'Категорий'), cntInp));
-      bar.appendChild(h('label', { class: 'tune-f', style: { flex: '2 1 260px' } }, h('span', null, 'Названия'), namesInp));
+      bar.appendChild(h('label', { class: 'tune-f', style: { flex: '2 1 240px' } }, h('span', null, 'Названия'), namesInp));
+      bar.appendChild(h('button', { class: 'btn sm', title: 'Другая форма распределения: подписи те же, пропорции другие',
+        onclick: () => { tuneTouchDs(ds); if (guidedCycleSpread(ds, chart)) refreshCharts(); } }, ic('refresh'), 'Распределение'));
     }
     return bar;
   }
@@ -837,11 +850,10 @@ function renderDashboard(main, id, q) {
         : 'Меняйте названия блоков и разрезы прямо здесь. Данные набора при этом не трогаются — правятся только подписи.'));
     const fakeNames = [...new Set(D.tabs.flatMap(t => t.items.map(i => i.chartId && (STATE.charts[i.chartId] || {}).datasetId))
       .filter(x => isSchemaDs(DS[x])).map(x => DS[x].name))];
-    // У макета имя скрытого набора человеку ни о чём не говорит — незачем его называть
+    // У макета пометка маленькая, рядом с названием: большая полоса занимает
+    // пол-экрана и мозолит глаза, а сказать нужно всего одно слово
     const ownDs = D.fromTemplate ? dsGet(D.fromTemplate.datasetId) : null;
-    if (isMockupDs(ownDs)) dmain.appendChild(h('div', { class: 'edit-banner fake-banner' }, ic('schema'),
-      'Это макет: цифры придуманы, для отчётности они не годятся. Названия блоков, показателей и категорий правятся на самих блоках.'));
-    else if (fakeNames.length) dmain.appendChild(h('div', { class: 'edit-banner fake-banner' }, ic('schema'),
+    if (!isMockupDs(ownDs) && fakeNames.length) dmain.appendChild(h('div', { class: 'edit-banner fake-banner' }, ic('schema'),
       `Это макет: ${fakeNames.length > 1 ? 'наборы' : 'набор'} ${fakeNames.map(n => '«' + n + '»').join(', ')} ${plural(fakeNames.length, 'содержит', 'содержат', 'содержат')} вымышленные данные.`));
     dmain.appendChild(paintHead());
     const tabs = paintTabs();

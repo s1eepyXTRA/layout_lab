@@ -86,6 +86,17 @@ function defaultSchemaPeriod() {
   return { dateFrom: isoDate(truncTime(shiftTime(to, 'month', -23), 'month')), dateTo: isoDate(to) };
 }
 
+/* Четыре формы распределения по кругу: длинный хвост, ровное, обратное и
+   «один лидер». Больше вариантов человеку не нужно — он просто жмёт кнопку. */
+const SCHEMA_SPREADS = 4;
+function schemaWeight(i, n, spread) {
+  switch (((spread % SCHEMA_SPREADS) + SCHEMA_SPREADS) % SCHEMA_SPREADS) {
+    case 1: return 1 / Math.pow(i + 1, 0.25);              // почти поровну
+    case 2: return 1 / Math.pow(n - i, 0.75);              // растёт к концу списка
+    case 3: return i === 0 ? n * 1.4 : 1 / (i + 1);        // один явный лидер
+    default: return 1 / Math.pow(i + 1, 0.75);             // длинный хвост
+  }
+}
 function generateSchemaRows(schema) {
   const s = normalizeSchema(schema);
   const rnd = mulberry32(s.seed);
@@ -94,11 +105,13 @@ function generateSchemaRows(schema) {
   const dateCols = s.columns.filter(c => c.type === 'date');
   const strCols = s.columns.filter(c => c.type === 'string');
   const numCols = s.columns.filter(c => c.type === 'number');
-  // Первые значения в списке популярнее остальных — так столбики и секторы выглядят живее
+  // Первые значения в списке популярнее остальных — так столбики и секторы выглядят живее.
+  // Форма распределения переключается (spread): иногда заказчику нужно, чтобы
+  // картинка была похожа на его реальную, а данные всё равно придуманные.
   const pools = {};
   strCols.forEach(c => {
     const vals = (c.values && c.values.length ? c.values : schemaFallbackValues(c.label));
-    pools[c.key] = vals.map((v, i) => ({ v, w: 1 / Math.pow(i + 1, 0.75) }));
+    pools[c.key] = vals.map((v, i) => ({ v, w: schemaWeight(i, vals.length, c.spread || 0) }));
   });
   const rows = new Array(s.rowCount);
   for (let i = 0; i < s.rowCount; i++) {

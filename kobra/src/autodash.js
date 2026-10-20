@@ -24,6 +24,9 @@ const AUTO_AGG_PREFIX = /^(сумма|среднее|количество|уни
 function autoNounDative(word) {
   const s = String(word || '').toLowerCase();
   if (!/^[а-яё][а-яё-]{2,}$/.test(s)) return null;
+  // Слово уже во множественном: «филиалы» → «филиалам», «статьи» → «статьям»
+  if (/ы$/.test(s)) return s.slice(0, -1) + 'ам';
+  if (/и$/.test(s)) return s.slice(0, -1) + (/[кгхжшчщ]и$/.test(s) ? 'ам' : 'ям');
   if (/[иы]я$/.test(s)) return s.slice(0, -1) + 'ям';   // категория → категориям
   if (/[иы]е$/.test(s)) return s.slice(0, -1) + 'ям';   // направление → направлениям
   if (/я$/.test(s)) return s.slice(0, -1) + 'ям';       // статья → статьям

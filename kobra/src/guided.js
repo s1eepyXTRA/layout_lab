@@ -140,6 +140,33 @@ function guidedSetCats(ds, chart, count, names) {
   return { col: cur.col.key, old: cur.values, next };
 }
 
+/* Разрез в макете — это подпись колонки: человеку всё равно, как она
+   называется внутри, ему важно, что написано на экране */
+function guidedDimLabel(ds, chart) {
+  const col = guidedSchemaCol(ds, chart);
+  return col ? col.label : null;
+}
+function guidedRenameDim(ds, chart, text) {
+  const col = guidedSchemaCol(ds, chart);
+  const v = String(text || '').trim();
+  if (!col || !v || col.label === v) return false;
+  col.label = v;
+  const c = (ds.columns || []).find(x => x.key === col.key);
+  if (c) c.label = v;
+  persistDs(ds);
+  return true;
+}
+/* Другая форма распределения: подписи те же, пропорции другие */
+function guidedCycleSpread(ds, chart) {
+  const col = guidedSchemaCol(ds, chart);
+  if (!col) return false;
+  col.spread = ((col.spread || 0) + 1) % SCHEMA_SPREADS;
+  ds.rows = generateSchemaRows(ds.schema);
+  delete ds._maxCache;
+  persistDs(ds);
+  return true;
+}
+
 /* Что человек меняет в этом блоке: словами задачи, без терминов движка */
 function guidedWhat(ds, chart) {
   const met = guidedMainMetric(chart);
