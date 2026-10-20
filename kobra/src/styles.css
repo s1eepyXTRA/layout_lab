@@ -269,6 +269,23 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .tune-f { display: flex; align-items: center; gap: 6px; flex: 1 1 200px; min-width: 0; }
 .tune-f > span { font-size: 12px; font-weight: 600; color: var(--ink-3); flex: none; }
 .tune-f .input, .tune-f .select { height: 30px; font-size: 13px; }
+/* Помощник */
+.ai-panel { width: 340px; flex: none; border-left: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; overflow: auto; transition: width .18s; }
+.ai-panel.closed { width: 0; padding: 0; border: 0; overflow: hidden; }
+.ai-head { display: flex; align-items: center; gap: 8px; }
+.ai-head b { font: 600 15px/1.2 var(--font-display); }
+.ai-log { flex: 1 1 auto; min-height: 120px; max-height: 46vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.ai-msg { border-radius: var(--r-m); padding: 8px 10px; font-size: 13px; line-height: 1.45; }
+.ai-msg.user { background: var(--primary-soft); align-self: flex-end; max-width: 92%; }
+.ai-msg.assistant { background: var(--surface-2); }
+.ai-msg.system { background: var(--accent-soft); font-size: 12.5px; }
+.ai-text { white-space: pre-wrap; }
+.ai-blocks { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-2); }
+.ai-note { color: var(--ink-3); font-size: 12.5px; line-height: 1.45; }
+.ai-offer { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-m); padding: 10px; font-size: 13px; display: grid; gap: 8px; }
+.ai-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.ai-input { font-size: 13px; }
+@media (max-width: 1100px) { .ai-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 40; box-shadow: var(--shadow-pop); } }
 .edit-banner svg { flex: none; }
 
 /* ---------- Исследование (Explore) ---------- */

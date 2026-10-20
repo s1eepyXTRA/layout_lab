@@ -14,6 +14,8 @@ function collectRefs(dashIds, includeLoose) {
     const d = STATE.dashboards[id];
     if (!d) return;
     dashboards[id] = clone(d);
+    delete dashboards[id].chat;          // переписка с помощником — личное, в файл не уходит
+    delete dashboards[id].chatTrimmed;
     d.tabs.forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) charts[i.chartId] = clone(STATE.charts[i.chartId]); }));
     (d.filters || []).forEach(f => { if (f.datasetId) dsIds.add(f.datasetId); });
   });

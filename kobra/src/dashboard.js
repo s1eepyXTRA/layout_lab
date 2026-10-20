@@ -66,8 +66,13 @@ function renderDashboard(main, id, q) {
   const fbar = h('aside', { class: 'fbar' + (fbarOpen ? '' : ' closed'), 'aria-label': 'Фильтры дашборда' });
   const dmain = h('div', { class: 'dash-main' });
   const panel = editing ? h('aside', { class: 'edit-panel', 'aria-label': 'Добавление элементов' }) : null;
+  const aiHost = h('aside', { class: 'ai-panel', 'aria-label': 'Помощник' });
+  let aiOpen = !editing && aiIsOpen(id);
+  let aiUi = null;
+  let aiSnap = null;            // снимок перед применением предложения
   dash.append(fbar, dmain);
   if (panel) dash.appendChild(panel);
+  if (!editing) dash.appendChild(aiHost);
 
   const curTab = () => D.tabs.find(t => t.id === tabId) || D.tabs[0];
   const markDirty = () => { /* черновик сравнивается при выходе */ };
@@ -189,6 +194,7 @@ function renderDashboard(main, id, q) {
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
       !editing && !tuning ? { label: 'Поменять названия и разрезы', icon: 'edit', onClick: () => go('#/d/' + id + '?tune=1') } : null,
+      !editing ? { label: aiOpen ? 'Скрыть помощника' : 'Спросить помощника', icon: 'cobra', onClick: () => { aiOpen = !aiOpen; aiSetOpen(id, aiOpen); paintAi(); } } : null,
       { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
       { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
       { label: 'Свойства дашборда', icon: 'settings', onClick: openProps },
@@ -718,6 +724,98 @@ function renderDashboard(main, id, q) {
     });
   }
 
+  /* ---------- Помощник ---------- */
+  const aiDs = () => dsGet((D.fromTemplate || {}).datasetId) || dsGet(((STATE.charts[(D.tabs.flatMap(t => t.items).find(i => i.chartId) || {}).chartId] || {}).datasetId));
+  function paintAi() {
+    aiHost.className = 'ai-panel' + (aiOpen ? '' : ' closed');
+    clear(aiHost);
+    if (!aiOpen) { aiUi = null; setTimeout(layoutGrid, 220); return; }
+    aiUi = renderAssistant(D, aiHost, {
+      ds: aiDs,
+      close: () => { aiOpen = false; paintAi(); paintHeadOnly(); },
+      canRollback: () => !!aiSnap,
+      rollback: () => {
+        if (!aiSnap) return;
+        (aiSnap.newCharts || []).forEach(cid => { delete STATE.charts[cid]; });
+        Object.entries(aiSnap.charts || {}).forEach(([cid, c]) => { STATE.charts[cid] = c; });
+        STATE.dashboards[id] = aiSnap.dash;
+        if (aiSnap.ds) { STATE.datasets[aiSnap.ds.id] = aiSnap.ds.meta; DS[aiSnap.ds.id] = Object.assign({}, aiSnap.ds.meta, { rows: generateSchemaRows(aiSnap.ds.meta.schema) }); }
+        aiSnap = null;
+        saveState();
+        go('#/d/' + id);
+      },
+      applyBlocks: blocks => {
+        const ds = aiDs();
+        if (!ds) { toast('Нет данных, на которых строить блоки', true); return; }
+        snapshotForAi();
+        const t = curTab();
+        let y = Math.max(0, ...t.items.map(i => i.y + i.h), 0), x = 0, rowH = 0;
+        blocks.forEach(b => {
+          const cid = createMockupChart(ds, b.viz);
+          if (!cid) return;
+          if (b.name) { STATE.charts[cid].name = b.name; STATE.charts[cid].autoName = false; }
+          aiSnap.newCharts.push(cid);
+          const sz = itemDefaultSize('chart', STATE.charts[cid]);
+          if (x + sz.w > G_COLS) { y += rowH; x = 0; rowH = 0; }
+          t.items.push({ i: uid('i'), type: 'chart', chartId: cid, x, y, w: sz.w, h: sz.h });
+          x += sz.w; rowH = Math.max(rowH, sz.h);
+        });
+        compactLayout(t.items);
+        D.updated = Date.now();
+        saveState();
+        paintBody();
+      },
+      applySchema: schema => {
+        const ds = aiDs();
+        if (!isMockupDs(ds)) { toast('Подставить придуманные данные можно только в макет', true); return; }
+        snapshotForAi();
+        aiSnap.ds = { id: ds.id, meta: clone(STATE.datasets[ds.id]) };
+        ds.schema = normalizeSchema(schema);
+        ds.columns = ds.schema.columns.map(c => ({ key: c.key, label: c.label, type: c.type }));
+        ds.metrics = schemaMetrics(ds.columns, null);
+        ds.mainDttm = (ds.columns.find(c => c.type === 'date') || {}).key || null;
+        ds.rows = generateSchemaRows(ds.schema);
+        delete ds._maxCache;
+        persistDs(ds);
+        rebuildMockupBlocks(ds);
+        paintAll();
+      },
+    });
+    setTimeout(layoutGrid, 220);
+  }
+  /* Снимок перед применением: дашборд, его графики и набор. Графики живут
+     отдельно от дашборда и правятся на месте — без их копии откат неполный. */
+  function snapshotForAi() {
+    if (aiSnap) return;
+    const charts = {};
+    D.tabs.forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) charts[i.chartId] = clone(STATE.charts[i.chartId]); }));
+    aiSnap = { dash: clone(STATE.dashboards[id]), charts, newCharts: [], ds: null };
+  }
+  /* Данные сменились целиком — блоки пересобираем под новые поля */
+  function rebuildMockupBlocks(ds) {
+    D.tabs.forEach(t => {
+      t.items = t.items.filter(i => {
+        if (!i.chartId) return true;
+        const c = STATE.charts[i.chartId];
+        if (!c) return false;
+        const fresh = createMockupChart(ds, c.viz);
+        if (!fresh) { delete STATE.charts[i.chartId]; return false; }
+        const keepName = c.autoName === false ? c.name : null;
+        STATE.charts[i.chartId] = Object.assign(STATE.charts[fresh], { id: i.chartId });
+        delete STATE.charts[fresh];
+        if (keepName) { STATE.charts[i.chartId].name = keepName; STATE.charts[i.chartId].autoName = false; }
+        // Заданное человеком имя бережём, остальным даём подпись из новых полей,
+        // иначе после подмены данных дашборд превращается в «Столбцы, Столбцы»
+        else guidedRetitle(ds, STATE.charts[i.chartId]);
+        return true;
+      });
+    });
+    D.filters = (D.filters || []).filter(f => dsCol(ds, f.col));
+    D.updated = Date.now();
+    saveState();
+  }
+  function paintHeadOnly() { paintBody(); }
+
   /* ---------- Сборка ---------- */
   function paintBody() {
     disposeCells();
@@ -737,7 +835,7 @@ function renderDashboard(main, id, q) {
     dmain.appendChild(paintGrid());
     paintPanel();
   }
-  function paintAll() { paintFilterBar(); paintBody(); }
+  function paintAll() { paintFilterBar(); paintBody(); if (!editing) paintAi(); }
   paintAll();
 
   return () => {
