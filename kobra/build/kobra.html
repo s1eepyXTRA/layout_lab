@@ -3467,6 +3467,19 @@ function renderDashboard(main, id, q) {
         `Показывает ${guidedWhat(ds, chart)} — разрез не меняется`));
       return bar;
     }
+    // Блок со временем: период вместо выбора колонки — колонка там всё равно одна
+    if (guidedIsTimeDim(ds, chart)) {
+      bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Период'),
+        selectEl(Object.entries(TIME_GRAINS), guidedGrainOf(chart), v => {
+          tuneTouch(it.chartId);
+          guidedSetGrain(chart, v);
+          guidedRetitle(ds, chart);
+          nameInp.value = chart.name;
+          if (cell.titleEl) cell.titleEl.textContent = chart.name;
+          drawChart(cell);
+        }, { 'aria-label': 'Шаг по времени' })));
+      return bar;
+    }
     const cats = mock ? guidedCats(ds, chart) : null;
     if (cats) {
       // В макете разрез — это просто его название: какая колонка под ним, человеку незачем
@@ -6303,7 +6316,11 @@ function guidedRetitle(ds, chart) {
   if (!met) return;
   const t = autoMetricTitle(ds, met);
   const col = dim && dsCol(ds, dim);
-  if (col && col.type === 'date') { chart.name = `${t} по месяцам`; return; }
+  if (col && col.type === 'date') {
+    const by = { day: 'по дням', week: 'по неделям', month: 'по месяцам', quarter: 'по кварталам', year: 'по годам' };
+    chart.name = `${t} ${by[guidedGrainOf(chart)] || 'по месяцам'}`;
+    return;
+  }
   if (!dim) { chart.name = t; return; }
   const label = colLabel(ds, dim);
   if (chart.viz === 'table') { const d = autoDative(label); chart.name = d ? `Показатели по ${d}` : `Показатели: ${label}`; return; }
@@ -6363,12 +6380,21 @@ function guidedCats(ds, chart) {
   const values = (col.values && col.values.length) ? col.values : schemaFallbackValues(col.label);
   return { col, values, count: values.length };
 }
-/* Новые названия категорий: чего человек не назвал — остаётся нейтральным */
+/* Новые названия категорий: чего человек не назвал — дополняем в его же стиле.
+   Если он писал «Категория А, Категория Б», продолжаем буквами, а не цифрами:
+   иначе в легенде оказывается «Категория Б» вперемешку с «Категория 3». */
+const CAT_LETTERS = 'АБВГДЕЖЗИКЛМН';
 function guidedCatValues(col, count, names) {
-  const base = schemaFallbackValues(col.label);
+  const given = names.map(x => String(x || '').trim()).filter(Boolean);
   const n = Math.max(2, Math.min(+count || 0, 12));
+  const letterStyle = given.length ? /^(.*?) ([А-Я])$/.exec(given[given.length - 1]) : null;
+  const base = schemaFallbackValues(col.label);
   const out = [];
-  for (let i = 0; i < n; i++) out.push((names[i] && String(names[i]).trim()) || base[i % base.length].replace(/\s\d+$/, ' ' + (i + 1)));
+  for (let i = 0; i < n; i++) {
+    if (given[i]) { out.push(given[i]); continue; }
+    if (letterStyle) { out.push(`${letterStyle[1]} ${CAT_LETTERS[i % CAT_LETTERS.length]}`); continue; }
+    out.push(base[i % base.length].replace(/\s\d+$/, ' ' + (i + 1)));
+  }
   return out;
 }
 /* Меняет категории в скрытом наборе и пересчитывает строки тем же seed.
@@ -6383,6 +6409,25 @@ function guidedSetCats(ds, chart, count, names) {
   delete ds._maxCache;
   persistDs(ds);
   return { col: cur.col.key, old: cur.values, next };
+}
+
+/* У блоков со временем разрез — это сама дата, выбирать тут нечего.
+   Зато полезно менять шаг: день, неделя, месяц, квартал, год. */
+const GUIDED_GRAIN = { line: 'x_grain', area: 'x_grain', bar: 'x_grain', mixed: 'x_grain', heatmap: 'x_grain', table: 'time_grain' };
+function guidedIsTimeDim(ds, chart) {
+  const key = guidedDimKey(chart);
+  const col = key && dsCol(ds, key);
+  return !!(col && col.type === 'date' && GUIDED_GRAIN[chart.viz]);
+}
+function guidedGrainOf(chart) {
+  const p = chart.params || {};
+  return p[GUIDED_GRAIN[chart.viz]] || 'month';
+}
+function guidedSetGrain(chart, grain) {
+  const key = GUIDED_GRAIN[chart.viz];
+  if (!key) return false;
+  chart.params[key] = grain;
+  return true;
 }
 
 /* Разрез в макете — это подпись колонки: человеку всё равно, как она

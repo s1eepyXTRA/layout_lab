@@ -401,6 +401,19 @@ function renderDashboard(main, id, q) {
         `Показывает ${guidedWhat(ds, chart)} — разрез не меняется`));
       return bar;
     }
+    // Блок со временем: период вместо выбора колонки — колонка там всё равно одна
+    if (guidedIsTimeDim(ds, chart)) {
+      bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Период'),
+        selectEl(Object.entries(TIME_GRAINS), guidedGrainOf(chart), v => {
+          tuneTouch(it.chartId);
+          guidedSetGrain(chart, v);
+          guidedRetitle(ds, chart);
+          nameInp.value = chart.name;
+          if (cell.titleEl) cell.titleEl.textContent = chart.name;
+          drawChart(cell);
+        }, { 'aria-label': 'Шаг по времени' })));
+      return bar;
+    }
     const cats = mock ? guidedCats(ds, chart) : null;
     if (cats) {
       // В макете разрез — это просто его название: какая колонка под ним, человеку незачем
