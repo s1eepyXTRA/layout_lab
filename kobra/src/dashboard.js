@@ -769,6 +769,8 @@ function renderDashboard(main, id, q) {
     aiUi = renderAssistant(D, aiHost, {
       ds: aiDs,
       close: () => { aiOpen = false; paintAi(); paintHeadOnly(); },
+      // Название из брифа — это название дашборда: два разных человек не ведёт
+      renameDash: title => { D.title = title; D.updated = Date.now(); saveState(); paintHeadOnly(); },
       canRollback: () => !!aiSnap,
       rollback: () => {
         if (!aiSnap) return;

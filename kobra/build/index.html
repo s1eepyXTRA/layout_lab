@@ -293,6 +293,14 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .ai-offer { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-m); padding: 10px; font-size: 13px; display: grid; gap: 8px; }
 .ai-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .ai-input { font-size: 13px; }
+.ai-form { border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface-2); padding: 10px; display: grid; gap: 8px; }
+.ai-form-head b { font: 600 13.5px/1.2 var(--font-display); }
+.ai-form .field { margin: 0; }
+.ai-form .field label { font-size: 12.5px; }
+.ai-form .input, .ai-form .textarea { font-size: 13px; }
+.ai-form summary { cursor: pointer; font-size: 12.5px; color: var(--ink-2); }
+.ai-form details[open] summary { margin-bottom: 8px; }
+.ai-form details { display: grid; gap: 8px; }
 @media (max-width: 1100px) { .ai-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 40; box-shadow: var(--shadow-pop); } }
 .edit-banner svg { flex: none; }
 
@@ -3750,6 +3758,8 @@ function renderDashboard(main, id, q) {
     aiUi = renderAssistant(D, aiHost, {
       ds: aiDs,
       close: () => { aiOpen = false; paintAi(); paintHeadOnly(); },
+      // Название из брифа — это название дашборда: два разных человек не ведёт
+      renameDash: title => { D.title = title; D.updated = Date.now(); saveState(); paintHeadOnly(); },
       canRollback: () => !!aiSnap,
       rollback: () => {
         if (!aiSnap) return;
@@ -6425,11 +6435,42 @@ async function aiAsk(messages) {
   return String(text);
 }
 
+/* ---------- Бриф: первый диалог ----------
+   Четыре вопроса, которые заказчик и так держит в голове, плюс уточнения.
+   Форма необязательная — её закрывают, если макет уже начат и от помощника
+   нужно только дополнение. Ответы хранятся в дашборде и уходят с каждым
+   запросом отдельным разделом: модель перестаёт угадывать название,
+   показатели и разрезы. `tag` — короткая подпись для запроса: в форме вопрос
+   звучит по-человечески, а в промпте нужна одна строка без вопросительного знака. */
+const AI_BRIEF_FIELDS = [
+  { key: 'title', tag: 'Название дашборда', label: 'Название дашборда', ph: 'Продажи филиалов' },
+  { key: 'problem', tag: 'Какие проблемы решает', label: 'Какие проблемы поможет решить дашборд?', ph: 'Не видно, где падает выручка и из-за чего', area: true },
+  { key: 'metrics', tag: 'Показатели, за которыми следят', label: 'За какими показателями необходимо следить?', ph: 'Выручка, средний чек, доля возвратов' },
+  { key: 'docs', tag: 'Проваливаться до документов', label: 'Необходимо ли проваливаться до документов?', pick: ['да', 'нет'],
+    hint: 'Нижний уровень — таблица исходных строк: заказы, заявки, чеки' },
+  { key: 'dims', tag: 'Разрезы', label: 'В каких разрезах смотрите?', ph: 'Филиалы, категории, менеджеры', more: true },
+  { key: 'period', tag: 'Период и шаг', label: 'Период и шаг', ph: 'Последний год по месяцам', more: true },
+  { key: 'compare', tag: 'С чем сравнивать', label: 'С чем сравнивать', ph: 'План, прошлый год, норматив', more: true },
+  { key: 'who', tag: 'Кто смотрит и как часто', label: 'Кто смотрит и как часто', ph: 'Директор раз в неделю', more: true },
+];
+const aiBrief = D => (D && D.chatBrief) || null;
+const aiBriefFilled = b => !!b && AI_BRIEF_FIELDS.some(f => String(b[f.key] || '').trim());
+/* В запрос идёт только отвеченное: пустые пункты модель принимает за задачу
+   и начинает выспрашивать их вместо того, чтобы собирать дашборд. */
+function aiBriefLines(b) {
+  if (!b) return [];
+  return AI_BRIEF_FIELDS.map(f => {
+    const v = String(b[f.key] || '').trim();
+    return v ? f.tag + ': ' + v : null;
+  }).filter(Boolean);
+}
+
 /* ---------- Что уходит наружу ----------
    Единственное место сборки отправляемого: его целиком можно показать
    человеку и службе безопасности. Строк здесь нет, пока не разрешили. */
 function aiContext(D, ds, { samples } = {}) {
-  const out = { вопрос: null, набор: null, дашборд: null };
+  const out = { бриф: null, набор: null, дашборд: null };
+  if (aiBriefFilled(aiBrief(D))) out.бриф = aiBriefLines(aiBrief(D));
   if (ds) {
     out.набор = {
       название: ds.name,
@@ -6456,6 +6497,19 @@ function aiContext(D, ds, { samples } = {}) {
   return out;
 }
 
+/* Текст запроса: бриф и контекст разделены явными границами. Без них модель
+   путает ответы заказчика с описанием набора и отвечает на бриф, а не на
+   задачу. Собирается из того же `aiContext`, второго источника нет. */
+function aiPrompt(q, ctx) {
+  const rest = Object.assign({}, ctx);
+  const brief = rest.бриф;
+  delete rest.бриф;
+  const parts = ['Задача: ' + (String(q || '').trim() || '(опишите задачу)')];
+  if (brief && brief.length) parts.push('=== БРИФ (ответы заказчика) ===\n' + brief.join('\n') + '\n=== КОНЕЦ БРИФА ===');
+  parts.push('=== КОНТЕКСТ (набор и дашборд) ===\n' + JSON.stringify(rest, null, 1) + '\n=== КОНЕЦ КОНТЕКСТА ===');
+  return parts.join('\n\n');
+}
+
 /* ---------- Что помощник умеет вернуть ---------- */
 const AI_SYSTEM = [
   'Ты помогаешь собрать дашборд в конструкторе «Кобра». Отвечай по-русски и только JSON, без пояснений вокруг.',
@@ -6463,6 +6517,8 @@ const AI_SYSTEM = [
   'Блок: {"вид": "line|bar|pie|area|table|treemap|heatmap|funnel|pivot|big_number_trend", "название": "...", "зачем": "на какой вопрос отвечает"}.',
   'Набор (только если человек просит придумать данные): {"колонки": [{"подпись": "Дата заявки", "тип": "date|string|number", "значения": ["..."], "от": 1, "до": 1000}], "строк": 2000}.',
   'Строки данных не придумывай и не присылай: их сгенерирует Кобра по описанию колонок.',
+  'Раздел БРИФ — требования заказчика, а не задача: выполняй то, что в «Задача», опираясь на бриф.',
+  'Из брифа бери название и подписи блоков под его показатели, категории — под его разрезы. «Проваливаться до документов: да» значит, что нужен блок с таблицей исходных строк.',
   'Если запрос не про дашборд и не про данные, верни только «ответ».',
 ].join('\n');
 
@@ -6567,7 +6623,56 @@ function renderAssistant(D, host, api) {
   let pending = null;      // последнее предложение, которого ещё не применили
   let samples = false;     // согласие приложить примеры строк — на один запрос
   let busy = false;
+  // Бриф показываем первым, пока на него не ответили и не закрыли
+  let briefOpen = !aiBriefFilled(aiBrief(D)) && !D.chatBriefSkipped && !aiLog(D).length;
   const ds = () => api.ds();
+
+  /* Форма брифа. Живёт в переписке и закрывается крестиком: человек, который
+     уже собрал половину макета, не должен отвечать на восемь вопросов, чтобы
+     попросить добавить один блок. */
+  const briefForm = () => {
+    const draft = Object.assign({ title: D.title || '' }, aiBrief(D) || {});
+    const box = h('div', { class: 'ai-form' });
+    box.appendChild(h('div', { class: 'ai-form-head' }, h('b', null, 'Коротко о дашборде'), h('div', { class: 'grow' }),
+      iconBtn('x', 'Закрыть форму', () => { briefOpen = false; D.chatBriefSkipped = true; saveSoon(); paint(); }, 'sm')));
+    box.appendChild(h('div', { class: 'ai-note' },
+      'Ответы уходят с каждым запросом отдельным разделом — помощник меньше придумывает от себя. Можно заполнить частью или закрыть.'));
+    const add = (to, f) => {
+      let ctl;
+      if (f.pick) ctl = selectEl([['', 'Не указано']].concat(f.pick.map(v => [v, v[0].toUpperCase() + v.slice(1)])),
+        draft[f.key] || '', v => { draft[f.key] = v; }, { 'aria-label': f.label });
+      else {
+        ctl = h(f.area ? 'textarea' : 'input', Object.assign({ class: f.area ? 'textarea' : 'input', placeholder: f.ph || '',
+          oninput: e => { draft[f.key] = e.target.value; } }, f.area ? { rows: 2 } : { type: 'text' }));
+        ctl.value = draft[f.key] || '';
+      }
+      to.appendChild(field(f.label, ctl, f.hint));
+    };
+    AI_BRIEF_FIELDS.filter(f => !f.more).forEach(f => add(box, f));
+    const more = h('details', null, h('summary', null, 'Уточнить ещё: разрезы, период, сравнение'));
+    AI_BRIEF_FIELDS.filter(f => f.more).forEach(f => add(more, f));
+    box.appendChild(more);
+
+    const keep = async fire => {
+      const b = {};
+      AI_BRIEF_FIELDS.forEach(f => { const v = String(draft[f.key] || '').trim(); if (v) b[f.key] = v; });
+      if (!aiBriefFilled(b)) { toast('Форма пустая: ответьте хотя бы на один вопрос или закройте её', true); return; }
+      D.chatBrief = b;
+      delete D.chatBriefSkipped;
+      if (b.title && b.title !== D.title && api.renameDash) api.renameDash(b.title);
+      saveState();
+      aiPush(D, 'system', 'Бриф сохранён:\n' + aiBriefLines(b).join('\n'));
+      briefOpen = false;
+      if (fire) { paint(); await send('Собери дашборд по брифу: уровни детализации по вкладкам и блоки под показатели.'); return; }
+      toast('Бриф сохранён — он уходит с каждым запросом');
+      paint();
+    };
+    box.appendChild(h('div', { class: 'ai-row' },
+      h('button', { class: 'btn sm primary', onclick: () => keep(true) }, ic('cobra'), 'Собрать по брифу'),
+      h('button', { class: 'btn sm', title: 'Запомнить ответы, запрос отправлю сам', onclick: () => keep(false) }, 'Сохранить'),
+      h('button', { class: 'btn sm', onclick: () => { briefOpen = false; D.chatBriefSkipped = true; saveSoon(); paint(); } }, 'Пропустить')));
+    return box;
+  };
 
   const paint = () => {
     clear(host);
@@ -6579,7 +6684,8 @@ function renderAssistant(D, host, api) {
 
     const log = h('div', { class: 'ai-log' });
     if (D.chatTrimmed) log.appendChild(h('div', { class: 'ai-note' }, 'Часть старых сообщений отброшена: переписка хранится не целиком.'));
-    if (!aiLog(D).length) log.appendChild(h('div', { class: 'ai-note' },
+    if (briefOpen) log.appendChild(briefForm());
+    else if (!aiLog(D).length) log.appendChild(h('div', { class: 'ai-note' },
       mock ? 'Опишите свой процесс словами — помощник придумает под него данные и предложит блоки. Например: «заявки на кредит: приходят в отделения, проходят скоринг, часть одобряем».'
         : 'Опишите, что хотите увидеть на дашборде. Помощник предложит блоки, а применять их или нет — решаете вы.'));
     aiLog(D).forEach(m => {
@@ -6617,19 +6723,19 @@ function renderAssistant(D, host, api) {
 
     // Ввод
     const ta = h('textarea', { class: 'textarea ai-input', rows: 3, placeholder: 'Что показать на дашборде?', 'aria-label': 'Запрос помощнику' });
-    const send = async () => {
-      const q = ta.value.trim();
+    const send = async forced => {
+      const q = String(forced || ta.value).trim();
       if (!q || busy) return;
       if (!aiReady()) { toast('Доступ к модели не настроен — воспользуйтесь переносом вручную', true); return; }
       busy = true; paint();
       aiPush(D, 'user', q);
       try {
-        const ctx = aiContext(D, ds(), { samples });
-        const text = await aiAsk([{ role: 'system', content: AI_SYSTEM }, { role: 'user', content: q + '\n\nКонтекст:\n' + JSON.stringify(ctx, null, 1) }]);
+        const text = await aiAsk([{ role: 'system', content: AI_SYSTEM },
+          { role: 'user', content: aiPrompt(q, aiContext(D, ds(), { samples })) }]);
         takeAnswer(text);
       } catch (e) {
         aiPush(D, 'system', 'Не получилось: ' + e.message + (e.kind === 'no_access' ? ' Проверьте настройки доступа.' : e.kind === 'network' ? ' Можно перенести запрос вручную.' : ''));
-        ta.value = q;   // введённое не теряем
+        if (!forced) ta.value = q;   // введённое не теряем
       }
       samples = false; busy = false; paint();
       if (ta.isConnected) ta.focus();
@@ -6653,10 +6759,9 @@ function renderAssistant(D, host, api) {
     const real = ds() && !isMockupDs(ds()) && !isSchemaDs(ds());
     const row = h('div', { class: 'ai-row' },
       h('button', { class: 'btn sm primary', disabled: busy, onclick: send }, busy ? 'Спрашиваю…' : 'Отправить'),
-      h('button', { class: 'btn sm', onclick: () => showTextModal('Что уходит наружу', JSON.stringify(aiContext(D, ds(), { samples }), null, 1)) }, 'Что уйдёт'),
+      h('button', { class: 'btn sm', onclick: () => showTextModal('Что уходит наружу', aiPrompt(ta.value, aiContext(D, ds(), { samples }))) }, 'Что уйдёт'),
       h('button', { class: 'btn sm', title: 'Скопировать готовый запрос для внешнего чата', onclick: async () => {
-        const q = ta.value.trim() || '(опишите задачу)';
-        const txt = AI_SYSTEM + '\n\nЗадача: ' + q + '\n\nКонтекст:\n' + JSON.stringify(aiContext(D, ds(), { samples }), null, 1);
+        const txt = AI_SYSTEM + '\n\n' + aiPrompt(ta.value, aiContext(D, ds(), { samples }));
         try { await navigator.clipboard.writeText(txt); toast('Запрос скопирован: вставьте во внешний чат'); }
         catch (e) { showTextModal('Запрос для внешнего чата', txt); }
       } }, 'Скопировать запрос'),
@@ -6666,6 +6771,8 @@ function renderAssistant(D, host, api) {
           foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена'),
             h('button', { class: 'btn primary', onclick: () => { close(); takeAnswer(area.value); paint(); } }, 'Разобрать')] });
       } }, 'Вставить ответ'));
+    if (!briefOpen) row.appendChild(h('button', { class: 'btn sm', title: 'Ответы о дашборде, которые уходят с каждым запросом',
+      onclick: () => { briefOpen = true; paint(); } }, ic('edit'), aiBriefFilled(aiBrief(D)) ? 'Бриф' : 'Заполнить бриф'));
     host.appendChild(row);
     if (real) host.appendChild(checkbox('Приложить к запросу ' + AI_SAMPLE_ROWS + ' строк данных (на один раз)', samples, v => { samples = v; }));
     else host.appendChild(h('div', { class: 'ai-note' }, 'Данные придуманы, поэтому наружу уходят только названия полей и состав дашборда.'));
@@ -7221,6 +7328,14 @@ function buildSpecMd(dash, opts = {}) {
   L.push('', 'Метрики записаны так, как их считает Кобра: `АГРЕГАЦИЯ(Колонка)`, отношения — `числитель / знаменатель`. '
     + 'Отношения считаются на уровне группировки графика, а не делением готовых итогов. '
     + 'Относительные периоды («последние 12 месяцев») отсчитываются от последней даты в данных.', '');
+
+  // Бриф — это и есть «зачем» дашборда, аналитику он нужнее состава блоков
+  const brief = aiBriefLines(aiBrief(D));
+  if (brief.length) {
+    L.push('## Зачем этот дашборд', '');
+    brief.forEach(line => L.push('- ' + mdEsc(line)));
+    L.push('');
+  }
 
   if ((D.filters || []).length) {
     L.push('## Фильтры дашборда', '');
