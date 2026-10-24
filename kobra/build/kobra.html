@@ -254,6 +254,29 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .comp.used { opacity: .6; }
 .edit-banner { background: var(--accent-soft); color: var(--ink); padding: 8px 24px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
 .edit-banner.fake-banner { background: var(--primary-soft); color: var(--ink); }
+/* Вход и права */
+.signin { min-height: 100%; display: grid; place-items: center; padding: 32px 16px; background: var(--bg); }
+.signin-card { width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); box-shadow: var(--shadow); padding: 24px; display: flex; flex-direction: column; gap: 2px; }
+.signin-brand { display: flex; align-items: center; gap: 8px; color: var(--primary); font: 600 20px/1 var(--font-display); margin-bottom: 6px; }
+.signin-brand svg { width: 26px; height: 26px; }
+.signin-lead { margin: 0 0 10px; font-size: 13.5px; color: var(--ink-2); }
+.signin-way { font-size: 12.5px; color: var(--accent); background: var(--accent-soft); border-radius: var(--r-m); padding: 6px 10px; margin-bottom: 14px; }
+.signin-err { color: var(--danger); font-size: 13px; margin-bottom: 8px; }
+.signin-note { margin-top: 14px; font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+.signin-demo { margin-top: 10px; font-size: 12.5px; color: var(--ink-3); }
+.signin-demo summary { cursor: pointer; }
+.signin-demo ul { margin: 6px 0 0; padding-left: 18px; }
+.signin-demo b { color: var(--ink-2); }
+.who { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--bar-ink-2); background: transparent; color: var(--bar-ink); cursor: pointer; font-size: 13px; }
+.who:hover { background: rgba(255, 255, 255, .08); }
+.who .role { font-size: 11.5px; color: var(--bar-ink-2); }
+.share-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.share-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r-m); }
+.share-row b { font-size: 13.5px; }
+.share-row span { font-size: 12.5px; color: var(--ink-3); }
+.row-inline { display: flex; gap: 8px; align-items: center; }
+.row-inline .input { flex: 1; min-width: 0; }
+.owner-tag { font-size: 12px; color: var(--ink-3); }
 /* Каталог готовых шаблонов */
 .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 18px; }
 .tpl-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }
@@ -1554,6 +1577,386 @@ function loadScript(src) {
   return scriptCache[src];
 }
 
+/* =============================================================
+   Кобра · вход и права
+   Модель взята у Superset, чтобы макет обещал тот порядок доступа,
+   который компания получит в целевой системе: способ входа выбирается
+   настройкой (AUTH_TYPE), права даёт роль (Admin / Alpha / Gamma), группы
+   LDAP сопоставляются ролям, а у объекта есть владельцы.
+
+   Граница прототипа, о которой врать нельзя: сервера здесь нет. Состояние
+   лежит в localStorage, и его правит любой, кто открыл инструменты
+   разработчика. Эти правила ограничивают интерфейс, а не доступ к данным;
+   настоящая проверка возможна только в service/ на каждом запросе.
+   ============================================================= */
+
+const LS_AUTH_CFG = 'kobra.auth.cfg';
+const LS_AUTH_USERS = 'kobra.auth.users';
+const LS_AUTH_SESSION = 'kobra.auth.session';
+
+/* Роли Superset. Admin — всё; Alpha — видит чужие команды на просмотр;
+   Gamma — только своё, своей команды и то, чем поделились. */
+const AUTH_ROLES = {
+  Admin: { label: 'Admin', desc: 'Доступ ко всему, управление сотрудниками и входом' },
+  Alpha: { label: 'Alpha', desc: 'Видит шаблоны всех команд, правит свои и те, которыми поделились' },
+  Gamma: { label: 'Gamma', desc: 'Видит свою команду и то, чем поделились; правит свои' },
+};
+const AUTH_ROLE_ORDER = ['Admin', 'Alpha', 'Gamma'];
+
+/* Ключи повторяют superset_config.py: настройки переедут туда один в один */
+const AUTH_CFG_DEF = {
+  type: 'ldap',                       // AUTH_TYPE: 'db' | 'ldap'
+  defaultRole: 'Gamma',               // AUTH_USER_REGISTRATION_ROLE
+  ldap: {
+    server: 'ldap://ldap.company.local',   // AUTH_LDAP_SERVER
+    search: 'ou=people,dc=company,dc=local', // AUTH_LDAP_SEARCH
+    uidField: 'sAMAccountName',            // AUTH_LDAP_UID_FIELD
+    emailField: 'mail',                    // AUTH_LDAP_EMAIL_FIELD
+    teamField: 'department',               // подразделение = команда
+    groupField: 'memberOf',                // AUTH_LDAP_GROUP_FIELD
+  },
+  rolesMapping: {                     // AUTH_ROLES_MAPPING: группа → роль
+    'cn=kobra-admins,ou=groups,dc=company,dc=local': 'Admin',
+    'cn=kobra-analysts,ou=groups,dc=company,dc=local': 'Alpha',
+  },
+};
+
+/* Вымышленный справочник: в целевой системе его отдаёт LDAP. Пароли здесь
+   не живут намеренно — хранить их рядом с данными в localStorage незачем. */
+const AUTH_USERS_SEED = [
+  { login: 'i.petrov', name: 'Игорь Петров', email: 'i.petrov@company.ru', team: 'Отдел данных',
+    groups: ['cn=kobra-admins,ou=groups,dc=company,dc=local'], role: null },
+  { login: 'a.smirnova', name: 'Анна Смирнова', email: 'a.smirnova@company.ru', team: 'Продажи',
+    groups: ['cn=kobra-analysts,ou=groups,dc=company,dc=local'], role: null },
+  { login: 'd.orlov', name: 'Дмитрий Орлов', email: 'd.orlov@company.ru', team: 'Продажи', groups: [], role: null },
+  { login: 'e.kuznecova', name: 'Елена Кузнецова', email: 'e.kuznecova@company.ru', team: 'Поддержка', groups: [], role: null },
+  { login: 's.volkov', name: 'Сергей Волков', email: 's.volkov@company.ru', team: 'Поддержка', groups: [], role: null },
+];
+/* Владелец встроенного: демо видно всем, правит админ */
+const AUTH_SYSTEM = 'kobra';
+const AUTH_TEAM_ALL = '*';
+
+let AUTH = null;   // { user, users, cfg } — заполняется authInit()
+
+function authCfg() { return (AUTH && AUTH.cfg) || AUTH_CFG_DEF; }
+function authUsers() { return (AUTH && AUTH.users) || []; }
+function authUser() { return AUTH && AUTH.user; }
+function authIs(role) { const u = authUser(); return !!u && u.role === role; }
+function authIsAdmin() { return authIs('Admin'); }
+
+function authSaveCfg(cfg) { AUTH.cfg = cfg; lsSet(LS_AUTH_CFG, cfg); }
+function authSaveUsers() { lsSet(LS_AUTH_USERS, AUTH.users); }
+
+/* Роль сотрудника: выданная руками важнее, иначе — по группам LDAP, иначе
+   роль по умолчанию. Так же, как AUTH_ROLES_SYNC_AT_LOGIN в Superset. */
+function authRoleOf(u, cfg) {
+  if (!u) return null;
+  if (u.role && AUTH_ROLES[u.role]) return u.role;
+  const map = (cfg || authCfg()).rolesMapping || {};
+  const byGroup = (u.groups || []).map(g => map[g]).filter(r => AUTH_ROLES[r]);
+  if (byGroup.length) return AUTH_ROLE_ORDER.find(r => byGroup.includes(r));
+  return (cfg || authCfg()).defaultRole || 'Gamma';
+}
+function authFind(text) {
+  const q = String(text || '').trim().toLowerCase();
+  if (!q) return null;
+  return authUsers().find(u => u.login.toLowerCase() === q || (u.email || '').toLowerCase() === q) || null;
+}
+function authName(login) {
+  if (login === AUTH_SYSTEM) return 'Кобра';
+  const u = authUsers().find(x => x.login === login);
+  return u ? u.name : login;
+}
+function authLabel(u) { return `${u.name} (${u.login}${u.team ? ', ' + u.team : ''})`; }
+
+/* ---------- Сессия ---------- */
+function authInit() {
+  AUTH = {
+    cfg: lsGet(LS_AUTH_CFG) || clone(AUTH_CFG_DEF),
+    users: lsGet(LS_AUTH_USERS) || clone(AUTH_USERS_SEED),
+    user: null,
+  };
+  const login = lsGet(LS_AUTH_SESSION);
+  if (login) authSignIn(login, { silent: true });
+  return !!AUTH.user;
+}
+function authSignIn(login, { silent } = {}) {
+  const u = authUsers().find(x => x.login === String(login || '').trim().toLowerCase())
+    || authFind(login);
+  if (!u) { if (!silent) toast('Такого сотрудника нет в каталоге', true); return false; }
+  AUTH.user = Object.assign({}, u, { role: authRoleOf(u) });
+  lsSet(LS_AUTH_SESSION, u.login);
+  return true;
+}
+function authSignOut() {
+  AUTH.user = null;
+  try { localStorage.removeItem(LS_AUTH_SESSION); } catch (e) { }
+  location.hash = '';
+  location.reload();
+}
+
+/* ---------- Правила ---------- */
+/* Единственное место, где решается «можно ли». Экраны спрашивают только эти
+   три функции: иначе правило разъедется по файлам и не переедет на сервер. */
+/* Владелец-человек — ownerLogin: поле owner у набора уже занято ссылкой на
+   дашборд, которому набор принадлежит (см. «Макет без данных» в CLAUDE.md). */
+function authOwner(obj) { return (obj && obj.ownerLogin) || null; }
+function authShared(obj) { return (obj && obj.shared) || []; }
+function authIsOwn(obj) { const u = authUser(); return !!u && authOwner(obj) === u.login; }
+function authIsPublic(obj) { return !!obj && obj.team === AUTH_TEAM_ALL; }
+
+function canView(obj) {
+  const u = authUser();
+  if (!u || !obj) return false;
+  if (u.role === 'Admin' || authIsPublic(obj)) return true;
+  if (authOwner(obj) === u.login || authShared(obj).includes(u.login)) return true;
+  if (u.role === 'Alpha') return true;
+  return !!obj.team && obj.team === u.team;
+}
+function canEdit(obj) {
+  const u = authUser();
+  if (!u || !obj) return false;
+  if (u.role === 'Admin') return true;
+  return authOwner(obj) === u.login || authShared(obj).includes(u.login);
+}
+const canShare = obj => canEdit(obj);
+/* Почему нельзя — одной фразой, чтобы интерфейс не молчал */
+function whyReadOnly(obj) {
+  const own = authOwner(obj);
+  return own && own !== AUTH_SYSTEM
+    ? `Шаблон принадлежит ${authName(own)}. Попросите выдать доступ — тогда можно будет править.`
+    : 'Это общий объект: править его может администратор.';
+}
+
+/* Печать владельца объекта в новом объекте */
+function authStamp(obj) {
+  const u = authUser();
+  if (!u || !obj) return obj;
+  obj.ownerLogin = u.login;
+  obj.team = u.team;
+  obj.shared = [];
+  return obj;
+}
+/* Доступ выдан — объект виден и правится наравне с владельцем */
+function authShareWith(obj, login) {
+  if (!obj) return false;
+  obj.shared = authShared(obj).filter(l => l !== login);
+  if (login !== authOwner(obj)) obj.shared.push(login);
+  return true;
+}
+function authUnshare(obj, login) { obj.shared = authShared(obj).filter(l => l !== login); }
+
+/* ---------- Владельцы у старых объектов ---------- */
+/* Поднимать v нельзя: человек потеряет собранные шаблоны ради одного поля.
+   Поэтому объекты без владельца достаются первому вошедшему, а демо и
+   встроенные наборы — системе: их видно всем, правит администратор. */
+/* Зовётся из saveState(), поэтому владелец проставляется сам в любом пути
+   создания — шаблон, график, черновик, макет, импорт, — и новый путь не
+   придётся вспоминать. Демо и встроенные наборы достаются системе. */
+function authStampAll() {
+  const u = authUser();
+  if (!u || !STATE) return false;
+  let n = 0;
+  const stamp = (o, system) => {
+    if (!o || o.ownerLogin) return;
+    o.ownerLogin = system ? AUTH_SYSTEM : u.login;
+    o.team = system ? AUTH_TEAM_ALL : u.team;
+    o.shared = o.shared || [];
+    n++;
+  };
+  const demo = STATE.dashboards && STATE.dashboards.d_demo;
+  const demoCharts = new Set(demo ? demo.tabs.flatMap(t => t.items.map(i => i.chartId)).filter(Boolean) : []);
+  Object.values(STATE.dashboards || {}).forEach(d => stamp(d, d.id === 'd_demo'));
+  Object.values(STATE.charts || {}).forEach(c => stamp(c, demoCharts.has(c.id)));
+  Object.values(STATE.datasets || {}).forEach(d => stamp(d, false));
+  return n > 0;
+}
+
+/* ---------- Передача доступа ---------- */
+/* Логин вводится руками, и ошибка здесь тихая: a.ivanov и an.ivanov похожи,
+   а человек будет думать, что поделился. Поэтому сначала показываем, кого
+   нашли, и только по подтверждению выдаём доступ. */
+function openShareDialog(obj, what, onChange) {
+  if (!canShare(obj)) { toast('Делиться может владелец или тот, кому он дал доступ', true); return; }
+  const body = h('div');
+  const inp = h('input', { class: 'input', placeholder: 'Логин или почта, например a.smirnova' });
+  const save = () => { onChange && onChange(); paint(); };
+
+  const add = async () => {
+    const txt = inp.value.trim();
+    if (!txt) { toast('Введите логин или почту', true); return; }
+    const u = authFind(txt);
+    if (!u) { toast(`Сотрудник «${txt}» не найден в каталоге`, true); return; }
+    if (u.login === authOwner(obj)) { toast('Это владелец: доступ у него и так есть', true); return; }
+    if (authShared(obj).includes(u.login)) { toast('Доступ уже выдан', true); return; }
+    const ok = await confirmDialog('Выдать доступ',
+      `${u.name} (${u.login}, ${u.email}, ${u.team}) получит полный доступ к ${what} «${obj.title || obj.name}»: сможет править, удалять и делиться дальше. Выдать доступ?`,
+      'Выдать доступ', false);
+    if (!ok) return;
+    authShareWith(obj, u.login);
+    inp.value = '';
+    toast(`Доступ выдан: ${u.name}`);
+    save();
+  };
+
+  function paint() {
+    clear(body);
+    const own = authOwner(obj);
+    body.appendChild(h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } },
+      `Владелец — ${authName(own)}. Команда ${obj.team === AUTH_TEAM_ALL ? 'любая: объект общий' : '«' + (obj.team || '—') + '» видит это на просмотр'}.`));
+    const list = h('div', { class: 'share-list' });
+    const shared = authShared(obj);
+    if (!shared.length) list.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Пока никому не выдан доступ.'));
+    shared.forEach(login => {
+      const u = authUsers().find(x => x.login === login) || { login, name: login, team: '', email: '' };
+      list.appendChild(h('div', { class: 'share-row' },
+        h('div', { class: 'grow' }, h('b', null, u.name), h('span', null, ` ${u.login}${u.team ? ' · ' + u.team : ''}`)),
+        h('span', { class: 'pill' }, 'может править'),
+        iconBtn('x', 'Отозвать доступ', async () => {
+          if (!(await confirmDialog('Отозвать доступ', `${u.name} потеряет доступ к ${what} «${obj.title || obj.name}».`, 'Отозвать'))) return;
+          authUnshare(obj, login); toast('Доступ отозван'); save();
+        }, 'sm')));
+    });
+    body.appendChild(list);
+    body.appendChild(field('Кому выдать доступ', h('div', { class: 'row-inline' }, inp,
+      h('button', { class: 'btn', type: 'button', onclick: add }, ic('plus'), 'Выдать')),
+      'Сотрудник получит те же права, что у вас: править, удалять и делиться дальше.'));
+  }
+  paint();
+  openModal({ title: `Доступ к ${what}`, body, foot: close => [h('button', { class: 'btn primary', onclick: close }, 'Готово')] });
+}
+
+/* ---------- Экраны администратора ---------- */
+function openUsersDialog() {
+  if (!authIsAdmin()) { toast('Экран доступен роли Admin', true); return; }
+  const body = h('div');
+  const paint = () => {
+    clear(body);
+    body.appendChild(h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } },
+      'Список приходит из каталога LDAP. Роль по умолчанию даёт сопоставление групп (экран «Доступ»); здесь её можно переопределить вручную — как в Security → List Users.'));
+    const tbl = h('table', { class: 'list' },
+      h('thead', null, h('tr', null, h('th', null, 'Сотрудник'), h('th', null, 'Логин'), h('th', null, 'Команда'), h('th', null, 'Роль'))));
+    const tb = h('tbody');
+    authUsers().forEach(u => {
+      const cur = authRoleOf(u);
+      tb.appendChild(h('tr', null,
+        h('td', null, u.name, h('div', { class: 'muted', style: { fontSize: '12px' } }, u.email)),
+        h('td', null, u.login),
+        h('td', null, u.team),
+        h('td', null, selectEl([['', 'По группам: ' + cur], ...AUTH_ROLE_ORDER.map(r => [r, r])], u.role || '', v => {
+          u.role = v || null;
+          authSaveUsers();
+          if (authUser() && authUser().login === u.login) { AUTH.user.role = authRoleOf(u); toast('Ваша роль теперь ' + AUTH.user.role); route(); }
+          paint();
+        }, { 'aria-label': 'Роль ' + u.login }))));
+    });
+    tbl.appendChild(tb);
+    body.appendChild(h('div', { class: 'tbl-wrap' }, tbl));
+    body.appendChild(h('div', { class: 'ai-note', style: { marginTop: '12px' } },
+      Object.entries(AUTH_ROLES).map(([k, r]) => h('div', null, h('b', null, k), ' — ' + r.desc))));
+  };
+  paint();
+  openModal({ title: 'Сотрудники', wide: true, body, foot: close => [h('button', { class: 'btn primary', onclick: close }, 'Готово')] });
+}
+
+function openAuthCfgDialog() {
+  if (!authIsAdmin()) { toast('Экран доступен роли Admin', true); return; }
+  const cfg = clone(authCfg());
+  const body = h('div');
+  const paint = () => {
+    clear(body);
+    body.appendChild(h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } },
+      'Те же настройки, что в superset_config.py: способ входа, подключение к каталогу и сопоставление групп ролям.'));
+    body.appendChild(field('Способ входа (AUTH_TYPE)', selectEl(
+      [['db', 'По логину и паролю (AUTH_DB)'], ['ldap', 'По LDAP (AUTH_LDAP)']], cfg.type, v => { cfg.type = v; paint(); }),
+      cfg.type === 'ldap' ? 'Вход проверяется bind-ом в каталоге. В прототипе каталог вымышленный.' : 'Пароль хранится в базе приложения. В прототипе он не проверяется.'));
+    if (cfg.type === 'ldap') {
+      const row = (label, key, hint) => body.appendChild(field(label,
+        h('input', { class: 'input', value: cfg.ldap[key] || '', oninput: e => { cfg.ldap[key] = e.target.value; } }), hint));
+      row('AUTH_LDAP_SERVER', 'server');
+      row('AUTH_LDAP_SEARCH', 'search', 'Ветка, в которой ищем сотрудников');
+      row('AUTH_LDAP_UID_FIELD', 'uidField', 'Поле с логином: sAMAccountName в Active Directory, uid в OpenLDAP');
+      row('AUTH_LDAP_EMAIL_FIELD', 'emailField');
+      row('Поле с командой', 'teamField', 'Подразделение сотрудника — по нему команда видит работу друг друга');
+      row('AUTH_LDAP_GROUP_FIELD', 'groupField', 'Поле с группами, по которым выдаются роли');
+    }
+    const mapBox = h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'AUTH_ROLES_MAPPING: группа → роль'),
+      h('div', { class: 'hint', style: { marginBottom: '6px' } }, 'Так и назначаются администраторы: отдельного списка логинов в коде нет — админ это роль.'));
+    Object.entries(cfg.rolesMapping).forEach(([group, role]) => {
+      mapBox.appendChild(h('div', { class: 'share-row' },
+        h('code', { class: 'grow', style: { fontSize: '12px', wordBreak: 'break-all' } }, group),
+        selectEl(AUTH_ROLE_ORDER.map(r => [r, r]), role, v => { cfg.rolesMapping[group] = v; }, { 'aria-label': 'Роль для ' + group }),
+        iconBtn('x', 'Убрать сопоставление', () => { delete cfg.rolesMapping[group]; paint(); }, 'sm')));
+    });
+    const gInp = h('input', { class: 'input', placeholder: 'cn=kobra-admins,ou=groups,dc=company,dc=local' });
+    let newRole = 'Admin';
+    mapBox.appendChild(h('div', { class: 'row-inline', style: { marginTop: '6px' } }, gInp,
+      selectEl(AUTH_ROLE_ORDER.map(r => [r, r]), newRole, v => { newRole = v; }, { 'aria-label': 'Роль новой группы' }),
+      h('button', { class: 'btn', type: 'button', onclick: () => {
+        const g = gInp.value.trim();
+        if (!g) { toast('Введите группу', true); return; }
+        cfg.rolesMapping[g] = newRole; paint();
+      } }, ic('plus'), 'Добавить')));
+    body.appendChild(mapBox);
+    body.appendChild(field('Роль по умолчанию (AUTH_USER_REGISTRATION_ROLE)',
+      selectEl(AUTH_ROLE_ORDER.map(r => [r, r]), cfg.defaultRole, v => { cfg.defaultRole = v; }),
+      'Её получает сотрудник, не попавший ни в одну сопоставленную группу.'));
+  };
+  paint();
+  openModal({
+    title: 'Доступ', wide: true, body,
+    foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена'),
+      h('button', { class: 'btn primary', onclick: () => {
+        authSaveCfg(cfg);
+        const u = authUsers().find(x => x.login === authUser().login);
+        if (u) AUTH.user.role = authRoleOf(u, cfg);
+        close(); toast('Настройки входа сохранены'); route();
+      } }, ic('check'), 'Сохранить')],
+  });
+}
+
+/* ---------- Экран входа ---------- */
+/* Пока человек не вошёл, приложение не строится вовсе: ни шаблонов, ни
+   графиков, ни данных на экране нет. */
+function renderSignIn(onDone) {
+  const cfg = authCfg();
+  const app = document.getElementById('app') || document.body;
+  clear(app);
+  const ldap = cfg.type === 'ldap';
+  const loginInp = h('input', { class: 'input', placeholder: ldap ? 'Логин в домене' : 'Логин', autocomplete: 'username' });
+  const passInp = h('input', { class: 'input', type: 'password', placeholder: 'Пароль', autocomplete: 'current-password' });
+  const err = h('div', { class: 'signin-err', hidden: true });
+  const submit = () => {
+    const login = loginInp.value.trim();
+    if (!login) { err.hidden = false; err.textContent = 'Введите логин'; loginInp.focus(); return; }
+    if (!passInp.value) { err.hidden = false; err.textContent = 'Введите пароль'; passInp.focus(); return; }
+    const u = authFind(login) || authUsers().find(x => x.login === login.toLowerCase());
+    if (!u) {
+      err.hidden = false;
+      err.textContent = ldap ? 'Каталог не знает такого пользователя' : 'Неверный логин или пароль';
+      return;
+    }
+    authSignIn(u.login);
+    onDone();
+  };
+  const form = h('form', { class: 'signin-card', onsubmit: e => { e.preventDefault(); submit(); } },
+    h('div', { class: 'signin-brand' }, ic('cobra'), h('b', null, 'Кобра')),
+    h('p', { class: 'signin-lead' }, 'Конструктор шаблонов дашбордов. Войдите, чтобы увидеть свои шаблоны и шаблоны своей команды.'),
+    h('div', { class: 'signin-way' }, ldap ? 'Вход по LDAP · ' + cfg.ldap.server : 'Вход по логину и паролю'),
+    field('Логин', loginInp),
+    field('Пароль', passInp),
+    err,
+    h('button', { class: 'btn primary', type: 'submit', style: { width: '100%' } }, 'Войти'),
+    h('div', { class: 'signin-note' },
+      h('b', null, 'Это прототип: пароль не проверяется.'),
+      ' Права здесь показывают порядок доступа, а не защищают данные — всё состояние лежит в этом браузере. Настоящая проверка появится вместе с сервером.'),
+    h('details', { class: 'signin-demo' }, h('summary', null, 'Кого можно попробовать'),
+      h('ul', null, authUsers().map(u => h('li', null,
+        h('b', null, u.login), ` — ${u.name}, ${u.team}, роль ${authRoleOf(u)}`)))));
+  app.appendChild(h('div', { class: 'signin' }, form));
+  setTimeout(() => loginInp.focus(), 30);
+}
+
 /* ============================================================
    Кобра · визуализации
    ============================================================ */
@@ -2629,7 +3032,13 @@ function buildChartFilters(ds, params, extra) {
    Кобра · состояние, демо, роутер
    ============================================================ */
 let STATE = null;
-function saveState() { STATE.savedAt = Date.now(); return lsSet(LS_KEY, STATE); }
+function saveState() {
+  // Владельца новым объектам проставляем здесь: через saveState проходит любой
+  // путь создания, а помнить про каждый из них — верный способ что-то забыть
+  authStampAll();
+  STATE.savedAt = Date.now();
+  return lsSet(LS_KEY, STATE);
+}
 const saveSoon = debounce(saveState, 300);
 
 /* ---------- Демо-наполнение ---------- */
@@ -2706,7 +3115,8 @@ function seedState() {
 /* ---------- Наборы данных ---------- */
 function registerBuiltins() {
   BUILTIN_DATASETS.forEach(b => {
-    DS[b.id] = { id: b.id, name: b.name, builtin: true, description: b.description, mainDttm: b.mainDttm, columns: clone(b.columns), metrics: clone(b.metrics), rows: b.generate() };
+    DS[b.id] = { id: b.id, name: b.name, builtin: true, ownerLogin: AUTH_SYSTEM, team: AUTH_TEAM_ALL, shared: [],
+      description: b.description, mainDttm: b.mainDttm, columns: clone(b.columns), metrics: clone(b.metrics), rows: b.generate() };
   });
 }
 function applyDsOverrides() {
@@ -2729,7 +3139,7 @@ function dropOwnedDatasets() {
   return n;
 }
 /* Наборы, видимые человеку: скрытые макетные и временные примеры не в счёт */
-const visibleDatasets = () => Object.values(DS).filter(d => !d.owner && !d.preview);
+const visibleDatasets = () => Object.values(DS).filter(d => !d.owner && !d.preview && canView(d));
 
 async function loadUploaded() {
   const ids = Object.keys(STATE.datasets || {});
@@ -2798,13 +3208,24 @@ function renderShell() {
     { label: 'Вернуть демо-шаблон', icon: 'reset', onClick: restoreDemo },
     { label: 'Сбросить всё к начальному состоянию', icon: 'trash', danger: true, onClick: resetAll },
   ]));
+  const me = authUser();
+  const whoBtn = h('button', { class: 'who', title: 'Сотрудник и доступ' },
+    h('span', null, me.name), h('span', { class: 'role' }, me.role));
+  whoBtn.addEventListener('click', () => openMenu(whoBtn, [
+    { label: `${me.login} · ${me.team}`, icon: 'eye', onClick: () => toast(`${me.name}: роль ${me.role}, команда ${me.team}`) },
+    authIsAdmin() ? '-' : null,
+    authIsAdmin() ? { label: 'Сотрудники', icon: 'settings', onClick: openUsersDialog } : null,
+    authIsAdmin() ? { label: 'Доступ: вход и роли', icon: 'link', onClick: openAuthCfgDialog } : null,
+    '-',
+    { label: 'Выйти', icon: 'back', onClick: authSignOut },
+  ]));
   app.appendChild(h('header', { class: 'topbar' },
     h('a', { class: 'brand', href: '#/dashboards', 'aria-label': 'Кобра — на главную' }, ic('cobra'), h('b', null, 'Кобра')),
     h('nav', { class: 'nav' },
       h('a', { href: '#/dashboards', 'data-sec': 'dashboards' }, 'Шаблоны'),
       h('a', { href: '#/charts', 'data-sec': 'charts' }, 'Графики'),
       h('a', { href: '#/data', 'data-sec': 'data' }, 'Данные')),
-    h('div', { class: 'spacer' }), themeBtn, settingsBtn));
+    h('div', { class: 'spacer' }), whoBtn, themeBtn, settingsBtn));
   app.appendChild(h('main', { class: 'main' }));
   window._themeBtn = themeBtn;
 }
@@ -2893,8 +3314,8 @@ function startChoice(ids) {
 function renderDashboardList(main) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
-  const list = Object.values(STATE.dashboards).filter(d => !d.preview).sort((a, b) => (b.updated || 0) - (a.updated || 0));
-  // Свой дашборд — любой, кроме демо: пока их нет, показываем выбор пути
+  const list = Object.values(STATE.dashboards).filter(d => !d.preview && canView(d)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  // Свой шаблон — любой, кроме демо: пока их нет, показываем выбор пути
   const own = list.filter(d => d.id !== 'd_demo');
   if (!own.length) {
     page.appendChild(h('div', { class: 'page-head' },
@@ -2925,14 +3346,16 @@ function dashGrid(list) {
         { label: 'Открыть', icon: 'eye', onClick: () => go('#/d/' + d.id) },
         { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(d.id) },
         { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(d.id) },
-        '-',
-        { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteDashboard(d.id) },
+        canShare(d) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(d, 'шаблону', () => { saveState(); route(); }) } : null,
+        canEdit(d) ? '-' : null,
+        canEdit(d) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteDashboard(d.id) } : null,
       ]);
     });
     grid.appendChild(h('div', { class: 'dash-card', tabindex: 0, role: 'link', onclick: () => go('#/d/' + d.id), onkeydown: e => { if (e.key === 'Enter') go('#/d/' + d.id); } },
       dashThumb(d),
       h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
-        h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`)), more)));
+        h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`),
+        ownerTag(d)), more)));
   });
   grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый шаблон'));
   return grid;
@@ -2974,8 +3397,19 @@ function duplicateDashboard(id) {
   toast('Шаблон скопирован');
   route();
 }
+/* Чей объект — пишем только у чужого: у своих это шум на каждой карточке */
+function ownerTag(obj) {
+  const me = authUser();
+  if (!me || !obj || authIsOwn(obj)) return null;
+  const own = authOwner(obj);
+  const mine = authShared(obj).includes(me.login);
+  return h('span', { class: 'owner-tag' },
+    own === AUTH_SYSTEM ? 'Общий' : `Владелец: ${authName(own)}`,
+    mine ? ' · вам дали доступ' : canEdit(obj) ? '' : ' · только просмотр');
+}
 async function deleteDashboard(id) {
   const d = STATE.dashboards[id];
+  if (!canEdit(d)) { toast(whyReadOnly(d), true); return; }
   if (!(await confirmDialog('Удалить шаблон', `Шаблон «${d.title}» будет удалён. Графики останутся в разделе «Графики».`))) return;
   delete STATE.dashboards[id];
   dropOwnedDatasets();
@@ -3002,7 +3436,7 @@ function renderChartList(main) {
   search.addEventListener('input', debounce(() => paint(), 150));
   function paint() {
     const q = search.value.trim().toLowerCase();
-    const list = Object.values(STATE.charts).filter(c => (!q || c.name.toLowerCase().includes(q)) && (!vizF.value || c.viz === vizF.value)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    const list = Object.values(STATE.charts).filter(c => canView(c) && (!q || c.name.toLowerCase().includes(q)) && (!vizF.value || c.viz === vizF.value)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
     clear(wrap);
     if (!list.length) { wrap.appendChild(h('div', { class: 'empty' }, h('b', null, Object.keys(STATE.charts).length ? 'Ничего не найдено' : 'Графиков пока нет'), 'Создайте первый график из набора данных.', h('br'), h('button', { class: 'btn primary', onclick: () => newChartDialog() }, ic('plus'), 'Новый график'))); return; }
     wrap.appendChild(h('table', { class: 'list' },
@@ -3011,15 +3445,18 @@ function renderChartList(main) {
         const used = chartUsage(c.id);
         const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с графиком' }, ic('dots'));
         more.addEventListener('click', e => { e.stopPropagation(); openMenu(more, [
-          { label: 'Редактировать', icon: 'edit', onClick: () => go('#/explore/' + c.id) },
-          { label: 'Дублировать', icon: 'copy', onClick: () => { const n = clone(c); n.id = uid('c_'); n.name += ' (копия)'; n.updated = Date.now(); STATE.charts[n.id] = n; saveState(); paint(); } },
-          '-', { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteChart(c.id).then(ok => ok && paint()) },
+          { label: canEdit(c) ? 'Редактировать' : 'Открыть', icon: canEdit(c) ? 'edit' : 'eye', onClick: () => go('#/explore/' + c.id) },
+          { label: 'Дублировать', icon: 'copy', onClick: () => { const n = clone(c); n.id = uid('c_'); n.name += ' (копия)'; n.updated = Date.now(); delete n.ownerLogin; delete n.shared; STATE.charts[n.id] = n; saveState(); paint(); } },
+          canShare(c) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(c, 'графику', () => { saveState(); paint(); }) } : null,
+          canEdit(c) ? '-' : null,
+          canEdit(c) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteChart(c.id).then(ok => ok && paint()) } : null,
         ]); });
         const nSpec = specFilledCount(c);
         const question = specValue(c, 'question');
         return h('tr', { class: 'click', onclick: () => go('#/explore/' + c.id) },
           h('td', null, h('b', { style: { fontWeight: 500 } }, c.name),
-            question ? h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '2px' } }, question) : null),
+            question ? h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '2px' } }, question) : null,
+            authIsOwn(c) ? null : h('div', null, ownerTag(c))),
           h('td', null, h('span', { class: 'vt' }, ic(VIZ[c.viz].icon), VIZ[c.viz].label)),
           h('td', null, (DS[c.datasetId] || {}).name || h('span', { class: 'pill acc' }, 'нет данных')),
           h('td', null, nSpec
@@ -3033,6 +3470,7 @@ function renderChartList(main) {
   paint();
 }
 async function deleteChart(id) {
+  if (!canEdit(STATE.charts[id])) { toast('График принадлежит другому сотруднику: попросите доступ', true); return false; }
   const c = STATE.charts[id];
   const used = chartUsage(id);
   const txt = used.length ? `График «${c.name}» будет удалён и исчезнет из ${used.length} ${plural(used.length, 'шаблона', 'шаблонов', 'шаблонов')}: ${used.map(d => d.title).join(', ')}.` : `График «${c.name}» будет удалён.`;
@@ -3079,11 +3517,23 @@ async function boot() {
   }
   registerBuiltins();
   STATE = lsGet(LS_KEY);
-  if (!STATE || STATE.v !== 2 || !STATE.charts) { STATE = seedState(); saveState(); }
+  if (!STATE || STATE.v !== 2 || !STATE.charts) { STATE = seedState(); }
   STATE.datasets = STATE.datasets || {}; STATE.dsMetrics = STATE.dsMetrics || {};
   applyDsOverrides();
   await loadUploaded();
-  if (dropOwnedDatasets()) saveState();
+  dropOwnedDatasets();
+  // Пока человек не вошёл, приложения нет: ни шаблонов, ни графиков, ни данных
+  authInit();
+  document.querySelectorAll('.loading').forEach(el => el.remove());
+  if (!authUser()) { renderSignIn(startApp); return; }
+  startApp();
+}
+/* Всё, что дальше, уже знает, кто вошёл */
+function startApp() {
+  // Объекты, собранные до появления владельцев, достаются вошедшему: это его
+  // браузер и его работа, терять её ради одного поля незачем
+  authStampAll();
+  saveState();
   renderShell();
   let lastNav = { h: null, t: 0 };
   const onNav = () => { if (lastNav.h === location.hash && Date.now() - lastNav.t < 150) return; lastNav = { h: location.hash, t: Date.now() }; route(); };
@@ -3149,8 +3599,11 @@ function renderDashboard(main, id, q) {
     main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Шаблон не найден'), 'Возможно, его удалили.', h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем шаблонам'))));
     return () => { };
   }
-  const editing = q.edit === '1';
-  const tuning = !editing && q.tune === '1';   // простая правка: только подписи и разрезы
+  // Без права правки режимы правки не открываются даже по прямой ссылке
+  const mayEdit = canEdit(saved);
+  if (!mayEdit && (q.edit === '1' || q.tune === '1')) toast(whyReadOnly(saved), true);
+  const editing = q.edit === '1' && mayEdit;
+  const tuning = !editing && q.tune === '1' && mayEdit;   // простая правка: только подписи и разрезы
   const tuneBackup = {};                        // chartId → каким график был до правки
   let tuneDsBackup = null;                      // и каким был придуманный набор
   const tuneTouch = cid => { if (!tuneBackup[cid] && STATE.charts[cid]) tuneBackup[cid] = clone(STATE.charts[cid]); };
@@ -3315,19 +3768,22 @@ function renderDashboard(main, id, q) {
     } else head.appendChild(h('h1', null, D.title,
       isMockupDs(dsGet((D.fromTemplate || {}).datasetId))
         ? h('span', { class: 'pill acc', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: 'Цифры придуманы: это макет, а не отчёт' }, 'Макет')
-        : null));
+        : null,
+      mayEdit ? null
+        : h('span', { class: 'pill', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: whyReadOnly(saved) }, 'Только просмотр')));
     head.appendChild(h('div', { class: 'grow' }));
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
       tuning ? { label: aiOpen ? 'Скрыть AI-ассистента' : 'Спросить AI-ассистента', icon: 'wand', onClick: aiToggle } : null,
-      { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
-      { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
-      { label: 'Свойства шаблона', icon: 'settings', onClick: openProps },
+      mayEdit ? { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor } : null,
+      mayEdit ? { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } } : null,
+      mayEdit ? { label: 'Свойства шаблона', icon: 'settings', onClick: openProps } : null,
       { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(id) },
       { label: 'Выгрузить ТЗ в Markdown…', icon: 'text', onClick: () => openSpecDialog(D) },
+      canShare(saved) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(saved, 'шаблону', () => { saveState(); paintHeadOnly(); }) } : null,
       !editing ? '-' : null,
       !editing ? { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(id) } : null,
-      !editing ? { label: 'Удалить шаблон', icon: 'trash', danger: true, onClick: () => deleteDashboard(id) } : null,
+      !editing && mayEdit ? { label: 'Удалить шаблон', icon: 'trash', danger: true, onClick: () => deleteDashboard(id) } : null,
     ]));
     if (tuning) {
       head.append(
@@ -3339,6 +3795,10 @@ function renderDashboard(main, id, q) {
       head.append(
         h('button', { class: 'btn', onclick: cancelEdit }, 'Отменить'),
         h('button', { class: 'btn primary', onclick: saveEdit }, ic('check'), 'Сохранить'), more);
+    } else if (!mayEdit) {
+      head.append(
+        h('button', { class: 'btn', title: 'Обновить все графики', 'aria-label': 'Обновить все графики', onclick: () => refreshCharts() }, ic('refresh')),
+        h('button', { class: 'btn', title: whyReadOnly(saved), onclick: () => toast(whyReadOnly(saved)) }, ic('eye'), 'Почему нельзя править'), more);
     } else {
       head.append(aiBtn(),
         h('button', { class: 'btn', title: 'Поменять названия и разрезы прямо на блоках', onclick: () => go('#/d/' + id + '?tune=1') }, ic('edit'), 'Названия и разрезы'),
@@ -3516,7 +3976,7 @@ function renderDashboard(main, id, q) {
         h('br'),
         editing
           ? (aiOpen ? null : h('button', { class: 'btn ai', onclick: aiToggle }, 'Спросить AI-ассистента'))
-          : h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'));
+          : mayEdit ? h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать') : null);
       return h('div', { class: 'grid-wrap' }, empty);
     }
     compactLayout(t.items);
@@ -4545,18 +5005,21 @@ function renderExplore(main, parts, q) {
   /* ---- Сохранение ---- */
   function openSave() {
     let name = chart.name.trim() || 'Без названия';
-    let mode = chart.id ? 'overwrite' : 'new';
+    const mayOverwrite = !chart.id || canEdit(STATE.charts[chart.id] || chart);
+    let mode = chart.id && mayOverwrite ? 'overwrite' : 'new';
     let dashId = back || '';
     const dashes = Object.values(STATE.dashboards);
     const body = h('div');
     const paint = () => {
       clear(body);
-      if (chart.id) body.appendChild(h('div', { class: 'field' }, h('div', { class: 'seg', style: { alignSelf: 'flex-start' } },
+      if (chart.id && mayOverwrite) body.appendChild(h('div', { class: 'field' }, h('div', { class: 'seg', style: { alignSelf: 'flex-start' } },
         h('button', { class: mode === 'overwrite' ? 'on' : '', onclick: () => { mode = 'overwrite'; paint(); } }, 'Сохранить изменения'),
         h('button', { class: mode === 'new' ? 'on' : '', onclick: () => { mode = 'new'; paint(); } }, 'Сохранить как новый'))));
+      if (chart.id && !mayOverwrite) body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', marginTop: 0 } },
+        `График принадлежит ${authName(authOwner(STATE.charts[chart.id]))}: правка сохранится как новый график, чужой не изменится.`));
       body.appendChild(field('Название графика', h('input', { class: 'input', value: name, oninput: e => { name = e.target.value; } })));
       const already = chart.id && mode === 'overwrite' ? chartUsage(chart.id).map(d => d.id) : [];
-      body.appendChild(field('Добавить в шаблон', selectEl([['', '— не добавлять —'], ...dashes.map(d => [d.id, d.title + (already.includes(d.id) ? ' (уже есть)' : '')]), ['__new', '+ Новый шаблон']], dashId, v => { dashId = v; }),
+      body.appendChild(field('Добавить в шаблон', selectEl([['', '— не добавлять —'], ...dashes.filter(d => canEdit(d)).map(d => [d.id, d.title + (already.includes(d.id) ? ' (уже есть)' : '')]), ['__new', '+ Новый шаблон']], dashId, v => { dashId = v; }),
         'График появится внизу открытой вкладки выбранного шаблона.'));
     };
     paint();
@@ -4567,7 +5030,7 @@ function renderExplore(main, parts, q) {
   }
   function doSave(name, mode, dashId) {
     chart.name = name;
-    if (mode === 'new' || !chart.id) chart.id = uid('c_');
+    if (mode === 'new' || !chart.id) { chart.id = uid('c_'); delete chart.ownerLogin; delete chart.shared; }
     chart.updated = Date.now();
     STATE.charts[chart.id] = clone(chart);
     let target = null;
@@ -4636,7 +5099,7 @@ function renderDatasetPage(main, id) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
   if (!d) { page.appendChild(h('div', { class: 'empty' }, h('b', null, 'Набор данных не найден'), h('a', { class: 'btn', href: '#/data' }, 'Ко всем наборам'))); return; }
-  const editable = !d.builtin;
+  const editable = !d.builtin && canEdit(d);
   const nameEl = editable ? h('input', { class: 'input', value: d.name, style: { font: '600 22px/1.2 var(--font-display)', height: '44px', maxWidth: '520px' }, 'aria-label': 'Название набора', onchange: e => { d.name = e.target.value.trim() || d.name; persistDs(d); toast('Название сохранено'); } }) : h('h1', null, d.name);
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('a', { href: '#/data', style: { fontSize: '13px', textDecoration: 'none' } }, '← Все наборы'), h('div', { style: { marginTop: '8px' } }, nameEl),
@@ -4644,7 +5107,10 @@ function renderDatasetPage(main, id) {
     isSchemaDs(d) ? h('button', { class: 'btn', onclick: () => openSchemaDialog(d.id) }, ic('schema'), 'Изменить схему') : null,
     h('button', { class: 'btn', onclick: () => newChartDialog({ datasetId: d.id }) }, ic('plus'), 'Создать график'),
     h('button', { class: 'btn primary', onclick: () => openAutoDashDialog(d.id) }, ic('wand'), 'Собрать черновик шаблона'),
+    canShare(d) ? h('button', { class: 'btn', onclick: () => openShareDialog(d, 'набору данных', () => { persistDs(d); route(); }) }, ic('link'), 'Поделиться') : null,
     editable ? h('button', { class: 'btn danger', onclick: () => deleteDataset(d) }, ic('trash'), 'Удалить набор') : null));
+  if (!d.builtin && !canEdit(d)) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
+    ic('eye'), `Набор принадлежит ${authName(authOwner(d))}: вы можете строить по нему графики, но не менять его.`));
   if (d.missingRows) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
     d.fromTemplate ? 'Набор приехал из шаблона без данных. Загрузите файл с такими же колонками — графики оживут сами.'
       : 'Строки этого набора не найдены в хранилище браузера. Загрузите файл заново.'));
@@ -4754,6 +5220,7 @@ function editSavedMetric(d, m, done) {
 }
 
 async function deleteDataset(d) {
+  if (!canEdit(d)) { toast('Набор принадлежит другому сотруднику: попросите доступ', true); return; }
   const charts = Object.values(STATE.charts).filter(c => c.datasetId === d.id);
   const txt = charts.length ? `Вместе с набором «${d.name}» удалятся ${charts.length} ${plural(charts.length, 'график', 'графика', 'графиков')}, построенных на нём.` : `Набор «${d.name}» будет удалён из браузера.`;
   if (!(await confirmDialog('Удалить набор данных', txt))) return;
@@ -7119,7 +7586,7 @@ function exportFileName(dashIds, withData) {
 
 /* ---------- Диалог экспорта ---------- */
 function openExportDialog(presetDashId) {
-  const all = Object.values(STATE.dashboards).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  const all = Object.values(STATE.dashboards).filter(d => canView(d)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   const picked = new Set(presetDashId && STATE.dashboards[presetDashId] ? [presetDashId] : all.map(d => d.id));
   let withData = false, fakeData = true, includeLoose = false;
   let author = lsGet(LS_AUTHOR) || '';
@@ -7209,7 +7676,9 @@ async function importPayload(p, mode) {
     const id = (mode === 'copy' && collide) ? uid('ds_') : d.id;
     dsMap[d.id] = id;
     const meta = {
+      // Владелец не переезжает с файлом: объект достаётся тому, кто загрузил
       id, name: d.name, kind: d.kind === 'schema' ? 'schema' : 'upload', fileName: d.fileName || '',
+      ownerLogin: undefined, shared: [], team: undefined,
       columns: clone(d.columns || []), metrics: clone(d.metrics || []), mainDttm: d.mainDttm || null,
       description: d.description || '', created: Date.now(),
     };
@@ -7233,6 +7702,7 @@ async function importPayload(p, mode) {
     const id = (mode === 'copy' && collide) ? uid('c_') : c.id;
     chMap[c.id] = id;
     STATE.charts[id] = Object.assign(clone(c), { id, datasetId: dsMap[c.datasetId] || c.datasetId, updated: Date.now() });
+    authStamp(STATE.charts[id]);
   });
   // Дашборды
   const newDashIds = [];
@@ -7242,6 +7712,7 @@ async function importPayload(p, mode) {
     const nd = clone(d);
     nd.id = id;
     nd.updated = Date.now();
+    authStamp(nd);
     if (mode === 'copy' && collide) nd.title = d.title + ' (импорт)';
     nd.tabs.forEach(t => t.items.forEach(i => { if (i.chartId) i.chartId = chMap[i.chartId] || i.chartId; }));
     nd.filters = (nd.filters || []).map(f => Object.assign({}, f, { datasetId: dsMap[f.datasetId] || f.datasetId }));

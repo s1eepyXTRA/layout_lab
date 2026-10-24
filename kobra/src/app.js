@@ -2,7 +2,13 @@
    Кобра · состояние, демо, роутер
    ============================================================ */
 let STATE = null;
-function saveState() { STATE.savedAt = Date.now(); return lsSet(LS_KEY, STATE); }
+function saveState() {
+  // Владельца новым объектам проставляем здесь: через saveState проходит любой
+  // путь создания, а помнить про каждый из них — верный способ что-то забыть
+  authStampAll();
+  STATE.savedAt = Date.now();
+  return lsSet(LS_KEY, STATE);
+}
 const saveSoon = debounce(saveState, 300);
 
 /* ---------- Демо-наполнение ---------- */
@@ -79,7 +85,8 @@ function seedState() {
 /* ---------- Наборы данных ---------- */
 function registerBuiltins() {
   BUILTIN_DATASETS.forEach(b => {
-    DS[b.id] = { id: b.id, name: b.name, builtin: true, description: b.description, mainDttm: b.mainDttm, columns: clone(b.columns), metrics: clone(b.metrics), rows: b.generate() };
+    DS[b.id] = { id: b.id, name: b.name, builtin: true, ownerLogin: AUTH_SYSTEM, team: AUTH_TEAM_ALL, shared: [],
+      description: b.description, mainDttm: b.mainDttm, columns: clone(b.columns), metrics: clone(b.metrics), rows: b.generate() };
   });
 }
 function applyDsOverrides() {
@@ -102,7 +109,7 @@ function dropOwnedDatasets() {
   return n;
 }
 /* Наборы, видимые человеку: скрытые макетные и временные примеры не в счёт */
-const visibleDatasets = () => Object.values(DS).filter(d => !d.owner && !d.preview);
+const visibleDatasets = () => Object.values(DS).filter(d => !d.owner && !d.preview && canView(d));
 
 async function loadUploaded() {
   const ids = Object.keys(STATE.datasets || {});
@@ -171,13 +178,24 @@ function renderShell() {
     { label: 'Вернуть демо-шаблон', icon: 'reset', onClick: restoreDemo },
     { label: 'Сбросить всё к начальному состоянию', icon: 'trash', danger: true, onClick: resetAll },
   ]));
+  const me = authUser();
+  const whoBtn = h('button', { class: 'who', title: 'Сотрудник и доступ' },
+    h('span', null, me.name), h('span', { class: 'role' }, me.role));
+  whoBtn.addEventListener('click', () => openMenu(whoBtn, [
+    { label: `${me.login} · ${me.team}`, icon: 'eye', onClick: () => toast(`${me.name}: роль ${me.role}, команда ${me.team}`) },
+    authIsAdmin() ? '-' : null,
+    authIsAdmin() ? { label: 'Сотрудники', icon: 'settings', onClick: openUsersDialog } : null,
+    authIsAdmin() ? { label: 'Доступ: вход и роли', icon: 'link', onClick: openAuthCfgDialog } : null,
+    '-',
+    { label: 'Выйти', icon: 'back', onClick: authSignOut },
+  ]));
   app.appendChild(h('header', { class: 'topbar' },
     h('a', { class: 'brand', href: '#/dashboards', 'aria-label': 'Кобра — на главную' }, ic('cobra'), h('b', null, 'Кобра')),
     h('nav', { class: 'nav' },
       h('a', { href: '#/dashboards', 'data-sec': 'dashboards' }, 'Шаблоны'),
       h('a', { href: '#/charts', 'data-sec': 'charts' }, 'Графики'),
       h('a', { href: '#/data', 'data-sec': 'data' }, 'Данные')),
-    h('div', { class: 'spacer' }), themeBtn, settingsBtn));
+    h('div', { class: 'spacer' }), whoBtn, themeBtn, settingsBtn));
   app.appendChild(h('main', { class: 'main' }));
   window._themeBtn = themeBtn;
 }
@@ -266,8 +284,8 @@ function startChoice(ids) {
 function renderDashboardList(main) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
-  const list = Object.values(STATE.dashboards).filter(d => !d.preview).sort((a, b) => (b.updated || 0) - (a.updated || 0));
-  // Свой дашборд — любой, кроме демо: пока их нет, показываем выбор пути
+  const list = Object.values(STATE.dashboards).filter(d => !d.preview && canView(d)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  // Свой шаблон — любой, кроме демо: пока их нет, показываем выбор пути
   const own = list.filter(d => d.id !== 'd_demo');
   if (!own.length) {
     page.appendChild(h('div', { class: 'page-head' },
@@ -298,14 +316,16 @@ function dashGrid(list) {
         { label: 'Открыть', icon: 'eye', onClick: () => go('#/d/' + d.id) },
         { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(d.id) },
         { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(d.id) },
-        '-',
-        { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteDashboard(d.id) },
+        canShare(d) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(d, 'шаблону', () => { saveState(); route(); }) } : null,
+        canEdit(d) ? '-' : null,
+        canEdit(d) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteDashboard(d.id) } : null,
       ]);
     });
     grid.appendChild(h('div', { class: 'dash-card', tabindex: 0, role: 'link', onclick: () => go('#/d/' + d.id), onkeydown: e => { if (e.key === 'Enter') go('#/d/' + d.id); } },
       dashThumb(d),
       h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
-        h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`)), more)));
+        h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`),
+        ownerTag(d)), more)));
   });
   grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый шаблон'));
   return grid;
@@ -347,8 +367,19 @@ function duplicateDashboard(id) {
   toast('Шаблон скопирован');
   route();
 }
+/* Чей объект — пишем только у чужого: у своих это шум на каждой карточке */
+function ownerTag(obj) {
+  const me = authUser();
+  if (!me || !obj || authIsOwn(obj)) return null;
+  const own = authOwner(obj);
+  const mine = authShared(obj).includes(me.login);
+  return h('span', { class: 'owner-tag' },
+    own === AUTH_SYSTEM ? 'Общий' : `Владелец: ${authName(own)}`,
+    mine ? ' · вам дали доступ' : canEdit(obj) ? '' : ' · только просмотр');
+}
 async function deleteDashboard(id) {
   const d = STATE.dashboards[id];
+  if (!canEdit(d)) { toast(whyReadOnly(d), true); return; }
   if (!(await confirmDialog('Удалить шаблон', `Шаблон «${d.title}» будет удалён. Графики останутся в разделе «Графики».`))) return;
   delete STATE.dashboards[id];
   dropOwnedDatasets();
@@ -375,7 +406,7 @@ function renderChartList(main) {
   search.addEventListener('input', debounce(() => paint(), 150));
   function paint() {
     const q = search.value.trim().toLowerCase();
-    const list = Object.values(STATE.charts).filter(c => (!q || c.name.toLowerCase().includes(q)) && (!vizF.value || c.viz === vizF.value)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    const list = Object.values(STATE.charts).filter(c => canView(c) && (!q || c.name.toLowerCase().includes(q)) && (!vizF.value || c.viz === vizF.value)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
     clear(wrap);
     if (!list.length) { wrap.appendChild(h('div', { class: 'empty' }, h('b', null, Object.keys(STATE.charts).length ? 'Ничего не найдено' : 'Графиков пока нет'), 'Создайте первый график из набора данных.', h('br'), h('button', { class: 'btn primary', onclick: () => newChartDialog() }, ic('plus'), 'Новый график'))); return; }
     wrap.appendChild(h('table', { class: 'list' },
@@ -384,15 +415,18 @@ function renderChartList(main) {
         const used = chartUsage(c.id);
         const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с графиком' }, ic('dots'));
         more.addEventListener('click', e => { e.stopPropagation(); openMenu(more, [
-          { label: 'Редактировать', icon: 'edit', onClick: () => go('#/explore/' + c.id) },
-          { label: 'Дублировать', icon: 'copy', onClick: () => { const n = clone(c); n.id = uid('c_'); n.name += ' (копия)'; n.updated = Date.now(); STATE.charts[n.id] = n; saveState(); paint(); } },
-          '-', { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteChart(c.id).then(ok => ok && paint()) },
+          { label: canEdit(c) ? 'Редактировать' : 'Открыть', icon: canEdit(c) ? 'edit' : 'eye', onClick: () => go('#/explore/' + c.id) },
+          { label: 'Дублировать', icon: 'copy', onClick: () => { const n = clone(c); n.id = uid('c_'); n.name += ' (копия)'; n.updated = Date.now(); delete n.ownerLogin; delete n.shared; STATE.charts[n.id] = n; saveState(); paint(); } },
+          canShare(c) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(c, 'графику', () => { saveState(); paint(); }) } : null,
+          canEdit(c) ? '-' : null,
+          canEdit(c) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteChart(c.id).then(ok => ok && paint()) } : null,
         ]); });
         const nSpec = specFilledCount(c);
         const question = specValue(c, 'question');
         return h('tr', { class: 'click', onclick: () => go('#/explore/' + c.id) },
           h('td', null, h('b', { style: { fontWeight: 500 } }, c.name),
-            question ? h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '2px' } }, question) : null),
+            question ? h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '2px' } }, question) : null,
+            authIsOwn(c) ? null : h('div', null, ownerTag(c))),
           h('td', null, h('span', { class: 'vt' }, ic(VIZ[c.viz].icon), VIZ[c.viz].label)),
           h('td', null, (DS[c.datasetId] || {}).name || h('span', { class: 'pill acc' }, 'нет данных')),
           h('td', null, nSpec
@@ -406,6 +440,7 @@ function renderChartList(main) {
   paint();
 }
 async function deleteChart(id) {
+  if (!canEdit(STATE.charts[id])) { toast('График принадлежит другому сотруднику: попросите доступ', true); return false; }
   const c = STATE.charts[id];
   const used = chartUsage(id);
   const txt = used.length ? `График «${c.name}» будет удалён и исчезнет из ${used.length} ${plural(used.length, 'шаблона', 'шаблонов', 'шаблонов')}: ${used.map(d => d.title).join(', ')}.` : `График «${c.name}» будет удалён.`;
@@ -452,11 +487,23 @@ async function boot() {
   }
   registerBuiltins();
   STATE = lsGet(LS_KEY);
-  if (!STATE || STATE.v !== 2 || !STATE.charts) { STATE = seedState(); saveState(); }
+  if (!STATE || STATE.v !== 2 || !STATE.charts) { STATE = seedState(); }
   STATE.datasets = STATE.datasets || {}; STATE.dsMetrics = STATE.dsMetrics || {};
   applyDsOverrides();
   await loadUploaded();
-  if (dropOwnedDatasets()) saveState();
+  dropOwnedDatasets();
+  // Пока человек не вошёл, приложения нет: ни шаблонов, ни графиков, ни данных
+  authInit();
+  document.querySelectorAll('.loading').forEach(el => el.remove());
+  if (!authUser()) { renderSignIn(startApp); return; }
+  startApp();
+}
+/* Всё, что дальше, уже знает, кто вошёл */
+function startApp() {
+  // Объекты, собранные до появления владельцев, достаются вошедшему: это его
+  // браузер и его работа, терять её ради одного поля незачем
+  authStampAll();
+  saveState();
   renderShell();
   let lastNav = { h: null, t: 0 };
   const onNav = () => { if (lastNav.h === location.hash && Date.now() - lastNav.t < 150) return; lastNav = { h: location.hash, t: Date.now() }; route(); };

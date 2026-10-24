@@ -73,7 +73,7 @@ function exportFileName(dashIds, withData) {
 
 /* ---------- Диалог экспорта ---------- */
 function openExportDialog(presetDashId) {
-  const all = Object.values(STATE.dashboards).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  const all = Object.values(STATE.dashboards).filter(d => canView(d)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   const picked = new Set(presetDashId && STATE.dashboards[presetDashId] ? [presetDashId] : all.map(d => d.id));
   let withData = false, fakeData = true, includeLoose = false;
   let author = lsGet(LS_AUTHOR) || '';
@@ -163,7 +163,9 @@ async function importPayload(p, mode) {
     const id = (mode === 'copy' && collide) ? uid('ds_') : d.id;
     dsMap[d.id] = id;
     const meta = {
+      // Владелец не переезжает с файлом: объект достаётся тому, кто загрузил
       id, name: d.name, kind: d.kind === 'schema' ? 'schema' : 'upload', fileName: d.fileName || '',
+      ownerLogin: undefined, shared: [], team: undefined,
       columns: clone(d.columns || []), metrics: clone(d.metrics || []), mainDttm: d.mainDttm || null,
       description: d.description || '', created: Date.now(),
     };
@@ -187,6 +189,7 @@ async function importPayload(p, mode) {
     const id = (mode === 'copy' && collide) ? uid('c_') : c.id;
     chMap[c.id] = id;
     STATE.charts[id] = Object.assign(clone(c), { id, datasetId: dsMap[c.datasetId] || c.datasetId, updated: Date.now() });
+    authStamp(STATE.charts[id]);
   });
   // Дашборды
   const newDashIds = [];
@@ -196,6 +199,7 @@ async function importPayload(p, mode) {
     const nd = clone(d);
     nd.id = id;
     nd.updated = Date.now();
+    authStamp(nd);
     if (mode === 'copy' && collide) nd.title = d.title + ' (импорт)';
     nd.tabs.forEach(t => t.items.forEach(i => { if (i.chartId) i.chartId = chMap[i.chartId] || i.chartId; }));
     nd.filters = (nd.filters || []).map(f => Object.assign({}, f, { datasetId: dsMap[f.datasetId] || f.datasetId }));

@@ -32,7 +32,7 @@ function renderDatasetPage(main, id) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
   if (!d) { page.appendChild(h('div', { class: 'empty' }, h('b', null, 'Набор данных не найден'), h('a', { class: 'btn', href: '#/data' }, 'Ко всем наборам'))); return; }
-  const editable = !d.builtin;
+  const editable = !d.builtin && canEdit(d);
   const nameEl = editable ? h('input', { class: 'input', value: d.name, style: { font: '600 22px/1.2 var(--font-display)', height: '44px', maxWidth: '520px' }, 'aria-label': 'Название набора', onchange: e => { d.name = e.target.value.trim() || d.name; persistDs(d); toast('Название сохранено'); } }) : h('h1', null, d.name);
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('a', { href: '#/data', style: { fontSize: '13px', textDecoration: 'none' } }, '← Все наборы'), h('div', { style: { marginTop: '8px' } }, nameEl),
@@ -40,7 +40,10 @@ function renderDatasetPage(main, id) {
     isSchemaDs(d) ? h('button', { class: 'btn', onclick: () => openSchemaDialog(d.id) }, ic('schema'), 'Изменить схему') : null,
     h('button', { class: 'btn', onclick: () => newChartDialog({ datasetId: d.id }) }, ic('plus'), 'Создать график'),
     h('button', { class: 'btn primary', onclick: () => openAutoDashDialog(d.id) }, ic('wand'), 'Собрать черновик шаблона'),
+    canShare(d) ? h('button', { class: 'btn', onclick: () => openShareDialog(d, 'набору данных', () => { persistDs(d); route(); }) }, ic('link'), 'Поделиться') : null,
     editable ? h('button', { class: 'btn danger', onclick: () => deleteDataset(d) }, ic('trash'), 'Удалить набор') : null));
+  if (!d.builtin && !canEdit(d)) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
+    ic('eye'), `Набор принадлежит ${authName(authOwner(d))}: вы можете строить по нему графики, но не менять его.`));
   if (d.missingRows) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
     d.fromTemplate ? 'Набор приехал из шаблона без данных. Загрузите файл с такими же колонками — графики оживут сами.'
       : 'Строки этого набора не найдены в хранилище браузера. Загрузите файл заново.'));
@@ -150,6 +153,7 @@ function editSavedMetric(d, m, done) {
 }
 
 async function deleteDataset(d) {
+  if (!canEdit(d)) { toast('Набор принадлежит другому сотруднику: попросите доступ', true); return; }
   const charts = Object.values(STATE.charts).filter(c => c.datasetId === d.id);
   const txt = charts.length ? `Вместе с набором «${d.name}» удалятся ${charts.length} ${plural(charts.length, 'график', 'графика', 'графиков')}, построенных на нём.` : `Набор «${d.name}» будет удалён из браузера.`;
   if (!(await confirmDialog('Удалить набор данных', txt))) return;

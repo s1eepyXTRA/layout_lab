@@ -45,11 +45,18 @@ def now():
 
 
 class User(Base):
+    """Сотрудник. При AUTH_TYPE=ldap пароль не хранится (bind в каталоге),
+    команда и группы приходят из LDAP, роль — из AUTH_ROLES_MAPPING."""
+
     __tablename__ = "kobra_users"
     id = Column(Integer, primary_key=True)
     username = Column(String(120), unique=True, nullable=False)
-    password_hash = Column(String(200), nullable=False)
-    role = Column(String(20), nullable=False, default="viewer")
+    password_hash = Column(String(200), nullable=False, default="")
+    email = Column(String(200), default="")
+    full_name = Column(String(200), default="")
+    team = Column(String(200), default="")  # подразделение: команда видит работу друг друга
+    role = Column(String(20), nullable=False, default="Gamma")  # Admin | Alpha | Gamma
+    groups = Column(JSON, default=list)  # группы LDAP, по которым выдана роль
     created_at = Column(DateTime(timezone=True), default=now)
 
 
@@ -74,6 +81,9 @@ class Dataset(Base):
     sql = Column(Text)
     columns = Column(JSON, default=list)
     metrics = Column(JSON, default=list)
+    owner_login = Column(String(120))  # владелец: тот, кто создал
+    team = Column(String(200), default="")  # команда владельца на момент создания
+    shared = Column(JSON, default=list)  # логины соправителей (owners в Superset)
     main_dttm = Column(String(200))
     time_anchor = Column(String(10), default="now")  # now | data
     stats = Column(JSON, default=dict)
@@ -89,6 +99,9 @@ class Chart(Base):
     viz = Column(String(40), nullable=False)
     dataset_id = Column(String(64), nullable=False)
     params = Column(JSON, default=dict)
+    owner_login = Column(String(120))  # владелец: тот, кто создал
+    team = Column(String(200), default="")  # команда владельца на момент создания
+    shared = Column(JSON, default=list)  # логины соправителей (owners в Superset)
     updated_at = Column(DateTime(timezone=True), default=now, onupdate=now)
     updated_by = Column(String(120))
 
@@ -98,6 +111,9 @@ class Dashboard(Base):
     id = Column(String(64), primary_key=True)
     title = Column(String(300), nullable=False)
     body = Column(JSON, default=dict)
+    owner_login = Column(String(120))  # владелец: тот, кто создал
+    team = Column(String(200), default="")  # команда владельца на момент создания
+    shared = Column(JSON, default=list)  # логины соправителей (owners в Superset)
     updated_at = Column(DateTime(timezone=True), default=now, onupdate=now)
     updated_by = Column(String(120))
 

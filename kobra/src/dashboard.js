@@ -41,8 +41,11 @@ function renderDashboard(main, id, q) {
     main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Шаблон не найден'), 'Возможно, его удалили.', h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем шаблонам'))));
     return () => { };
   }
-  const editing = q.edit === '1';
-  const tuning = !editing && q.tune === '1';   // простая правка: только подписи и разрезы
+  // Без права правки режимы правки не открываются даже по прямой ссылке
+  const mayEdit = canEdit(saved);
+  if (!mayEdit && (q.edit === '1' || q.tune === '1')) toast(whyReadOnly(saved), true);
+  const editing = q.edit === '1' && mayEdit;
+  const tuning = !editing && q.tune === '1' && mayEdit;   // простая правка: только подписи и разрезы
   const tuneBackup = {};                        // chartId → каким график был до правки
   let tuneDsBackup = null;                      // и каким был придуманный набор
   const tuneTouch = cid => { if (!tuneBackup[cid] && STATE.charts[cid]) tuneBackup[cid] = clone(STATE.charts[cid]); };
@@ -207,19 +210,22 @@ function renderDashboard(main, id, q) {
     } else head.appendChild(h('h1', null, D.title,
       isMockupDs(dsGet((D.fromTemplate || {}).datasetId))
         ? h('span', { class: 'pill acc', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: 'Цифры придуманы: это макет, а не отчёт' }, 'Макет')
-        : null));
+        : null,
+      mayEdit ? null
+        : h('span', { class: 'pill', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: whyReadOnly(saved) }, 'Только просмотр')));
     head.appendChild(h('div', { class: 'grow' }));
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
       tuning ? { label: aiOpen ? 'Скрыть AI-ассистента' : 'Спросить AI-ассистента', icon: 'wand', onClick: aiToggle } : null,
-      { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
-      { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
-      { label: 'Свойства шаблона', icon: 'settings', onClick: openProps },
+      mayEdit ? { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor } : null,
+      mayEdit ? { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } } : null,
+      mayEdit ? { label: 'Свойства шаблона', icon: 'settings', onClick: openProps } : null,
       { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(id) },
       { label: 'Выгрузить ТЗ в Markdown…', icon: 'text', onClick: () => openSpecDialog(D) },
+      canShare(saved) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(saved, 'шаблону', () => { saveState(); paintHeadOnly(); }) } : null,
       !editing ? '-' : null,
       !editing ? { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(id) } : null,
-      !editing ? { label: 'Удалить шаблон', icon: 'trash', danger: true, onClick: () => deleteDashboard(id) } : null,
+      !editing && mayEdit ? { label: 'Удалить шаблон', icon: 'trash', danger: true, onClick: () => deleteDashboard(id) } : null,
     ]));
     if (tuning) {
       head.append(
@@ -231,6 +237,10 @@ function renderDashboard(main, id, q) {
       head.append(
         h('button', { class: 'btn', onclick: cancelEdit }, 'Отменить'),
         h('button', { class: 'btn primary', onclick: saveEdit }, ic('check'), 'Сохранить'), more);
+    } else if (!mayEdit) {
+      head.append(
+        h('button', { class: 'btn', title: 'Обновить все графики', 'aria-label': 'Обновить все графики', onclick: () => refreshCharts() }, ic('refresh')),
+        h('button', { class: 'btn', title: whyReadOnly(saved), onclick: () => toast(whyReadOnly(saved)) }, ic('eye'), 'Почему нельзя править'), more);
     } else {
       head.append(aiBtn(),
         h('button', { class: 'btn', title: 'Поменять названия и разрезы прямо на блоках', onclick: () => go('#/d/' + id + '?tune=1') }, ic('edit'), 'Названия и разрезы'),
@@ -408,7 +418,7 @@ function renderDashboard(main, id, q) {
         h('br'),
         editing
           ? (aiOpen ? null : h('button', { class: 'btn ai', onclick: aiToggle }, 'Спросить AI-ассистента'))
-          : h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'));
+          : mayEdit ? h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать') : null);
       return h('div', { class: 'grid-wrap' }, empty);
     }
     compactLayout(t.items);

@@ -346,18 +346,21 @@ function renderExplore(main, parts, q) {
   /* ---- Сохранение ---- */
   function openSave() {
     let name = chart.name.trim() || 'Без названия';
-    let mode = chart.id ? 'overwrite' : 'new';
+    const mayOverwrite = !chart.id || canEdit(STATE.charts[chart.id] || chart);
+    let mode = chart.id && mayOverwrite ? 'overwrite' : 'new';
     let dashId = back || '';
     const dashes = Object.values(STATE.dashboards);
     const body = h('div');
     const paint = () => {
       clear(body);
-      if (chart.id) body.appendChild(h('div', { class: 'field' }, h('div', { class: 'seg', style: { alignSelf: 'flex-start' } },
+      if (chart.id && mayOverwrite) body.appendChild(h('div', { class: 'field' }, h('div', { class: 'seg', style: { alignSelf: 'flex-start' } },
         h('button', { class: mode === 'overwrite' ? 'on' : '', onclick: () => { mode = 'overwrite'; paint(); } }, 'Сохранить изменения'),
         h('button', { class: mode === 'new' ? 'on' : '', onclick: () => { mode = 'new'; paint(); } }, 'Сохранить как новый'))));
+      if (chart.id && !mayOverwrite) body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', marginTop: 0 } },
+        `График принадлежит ${authName(authOwner(STATE.charts[chart.id]))}: правка сохранится как новый график, чужой не изменится.`));
       body.appendChild(field('Название графика', h('input', { class: 'input', value: name, oninput: e => { name = e.target.value; } })));
       const already = chart.id && mode === 'overwrite' ? chartUsage(chart.id).map(d => d.id) : [];
-      body.appendChild(field('Добавить в шаблон', selectEl([['', '— не добавлять —'], ...dashes.map(d => [d.id, d.title + (already.includes(d.id) ? ' (уже есть)' : '')]), ['__new', '+ Новый шаблон']], dashId, v => { dashId = v; }),
+      body.appendChild(field('Добавить в шаблон', selectEl([['', '— не добавлять —'], ...dashes.filter(d => canEdit(d)).map(d => [d.id, d.title + (already.includes(d.id) ? ' (уже есть)' : '')]), ['__new', '+ Новый шаблон']], dashId, v => { dashId = v; }),
         'График появится внизу открытой вкладки выбранного шаблона.'));
     };
     paint();
@@ -368,7 +371,7 @@ function renderExplore(main, parts, q) {
   }
   function doSave(name, mode, dashId) {
     chart.name = name;
-    if (mode === 'new' || !chart.id) chart.id = uid('c_');
+    if (mode === 'new' || !chart.id) { chart.id = uid('c_'); delete chart.ownerLogin; delete chart.shared; }
     chart.updated = Date.now();
     STATE.charts[chart.id] = clone(chart);
     let target = null;
