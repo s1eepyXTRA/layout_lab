@@ -43,7 +43,7 @@ function seedState() {
     id: 'd_demo', title: 'Продажи розничной сети', updated: Date.now(), crossFilter: true, scheme: null,
     tabs: [
       { id: 't1', title: 'Обзор', items: [
-        { i: uid('i'), type: 'markdown', x: 0, y: 0, w: 12, h: 3, text: '**Прототип дашборда продаж.** Данные вымышленные: розничная сеть, январь 2024 — август 2026. Кликните по столбцу, сектору или строке — остальные графики отфильтруются.' },
+        { i: uid('i'), type: 'markdown', x: 0, y: 0, w: 12, h: 3, text: '**Шаблон продаж.** Данные вымышленные: розничная сеть, январь 2024 — август 2026. Кликните по столбцу, сектору или строке — остальные графики отфильтруются.' },
         ch('c_rev', 0, 3, 3, 7), ch('c_orders', 3, 3, 3, 7), ch('c_check', 6, 3, 3, 7), ch('c_marg', 9, 3, 3, 7),
         ch('c_mixed', 0, 10, 8, 13), ch('c_channel', 8, 10, 4, 13),
         ch('c_cat_bar', 0, 23, 6, 13), ch('c_cat_area', 6, 23, 6, 13),
@@ -150,9 +150,9 @@ function route() {
     else pageCleanup = renderDashboardList(main);
   } catch (e) {
     console.error(e);
-    main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Не удалось открыть страницу'), e.message, h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'К дашбордам'))));
+    main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Не удалось открыть страницу'), e.message, h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'К шаблонам'))));
   }
-  document.title = 'Кобра — ' + ({ d: (STATE.dashboards[parts[1]] || {}).title || 'Дашборд', charts: 'Графики', explore: 'Конструктор графика', data: 'Данные', templates: 'Готовые шаблоны' }[sec] || 'Дашборды');
+  document.title = 'Кобра — ' + ({ d: (STATE.dashboards[parts[1]] || {}).title || 'Шаблон', charts: 'Графики', explore: 'Конструктор графика', data: 'Данные', templates: 'Готовые шаблоны' }[sec] || 'Шаблоны');
 }
 
 /* ---------- Каркас ---------- */
@@ -168,13 +168,13 @@ function renderShell() {
     { label: 'Экспорт в файл…', icon: 'download', onClick: () => openExportDialog() },
     { label: 'Импорт из файла…', icon: 'upload', onClick: openImportDialog },
     '-',
-    { label: 'Вернуть демо-дашборд', icon: 'reset', onClick: restoreDemo },
+    { label: 'Вернуть демо-шаблон', icon: 'reset', onClick: restoreDemo },
     { label: 'Сбросить всё к начальному состоянию', icon: 'trash', danger: true, onClick: resetAll },
   ]));
   app.appendChild(h('header', { class: 'topbar' },
     h('a', { class: 'brand', href: '#/dashboards', 'aria-label': 'Кобра — на главную' }, ic('cobra'), h('b', null, 'Кобра')),
     h('nav', { class: 'nav' },
-      h('a', { href: '#/dashboards', 'data-sec': 'dashboards' }, 'Дашборды'),
+      h('a', { href: '#/dashboards', 'data-sec': 'dashboards' }, 'Шаблоны'),
       h('a', { href: '#/charts', 'data-sec': 'charts' }, 'Графики'),
       h('a', { href: '#/data', 'data-sec': 'data' }, 'Данные')),
     h('div', { class: 'spacer' }), themeBtn, settingsBtn));
@@ -197,15 +197,15 @@ async function restoreDemo() {
   const seed = seedState();
   let n = 0;
   Object.values(seed.charts).forEach(c => { if (!STATE.charts[c.id]) { STATE.charts[c.id] = c; n++; } });
-  if (STATE.dashboards.d_demo && !(await confirmDialog('Вернуть демо-дашборд', 'Демо-дашборд «Продажи розничной сети» уже есть. Заменить его исходной версией? Ваши изменения в нём пропадут.', 'Заменить', false))) return;
+  if (STATE.dashboards.d_demo && !(await confirmDialog('Вернуть демо-шаблон', 'Демо-шаблон «Продажи розничной сети» уже есть. Заменить его исходной версией? Ваши изменения в нём пропадут.', 'Заменить', false))) return;
   STATE.dashboards.d_demo = seed.dashboards.d_demo;
   Object.values(seed.charts).forEach(c => { STATE.charts[c.id] = c; });
   saveState();
-  toast('Демо-дашборд восстановлен');
+  toast('Демо-шаблон восстановлен');
   go('#/d/d_demo');
 }
 async function resetAll() {
-  if (!(await confirmDialog('Сбросить всё', 'Удалятся все ваши дашборды, графики и загруженные наборы данных. Останется только демо. Действие нельзя отменить.', 'Сбросить всё'))) return;
+  if (!(await confirmDialog('Сбросить всё', 'Удалятся все ваши шаблоны, графики и загруженные наборы данных. Останется только демо. Действие нельзя отменить.', 'Сбросить всё'))) return;
   for (const id of Object.keys(STATE.datasets || {})) { await idb.del('rows:' + id); delete DS[id]; }
   STATE = seedState();
   applyDsOverrides();
@@ -243,10 +243,10 @@ function fmtWhen(ts) {
 const START_WAYS = [
   { id: 'tpl', icon: 'schema', rec: true, title: 'Готовый шаблон',
     desc: 'Заготовленные отчёты: выбираете подходящий, а дальше при необходимости дорабатываете. Кобра соберёт его на придуманных данных и разложит по уровням — общая картина, разбор, исходные строки.',
-    note: 'Зачастую подходит именно это: состав и оформление сделаны по стандартам визуализации, а названия блоков, показателей и категорий правятся прямо на дашборде.',
+    note: 'Зачастую подходит именно это: состав и оформление сделаны по стандартам визуализации, а названия блоков, показателей и категорий правятся прямо в шаблоне.',
     act: () => go('#/templates') },
   { id: 'blank', icon: 'plus', title: 'Начать с нуля',
-    desc: 'Пустой дашборд, в котором вы сами накидаете блоки, графики и вкладки. Данные под них Кобра придумает — выбирать набор не нужно.',
+    desc: 'Пустой шаблон, в котором вы сами накидаете блоки, графики и вкладки. Данные под них Кобра придумает — выбирать набор не нужно.',
     act: () => createBlankDashboard() },
   { id: 'own', icon: 'upload', title: 'Мои данные', btn: 'Загрузить файл',
     desc: 'Загружаете CSV или Excel и строите по своим цифрам: то же самое, но на настоящих данных вашей выгрузки.',
@@ -272,26 +272,26 @@ function renderDashboardList(main) {
   if (!own.length) {
     page.appendChild(h('div', { class: 'page-head' },
       h('div', { class: 'grow' }, h('h1', null, 'С чего начнём'),
-        h('p', null, 'Кобра собирает дашборды по вашим данным. Выберите, как удобнее начать — потом всё можно поправить.')),
+        h('p', null, 'Кобра собирает шаблоны по вашим данным. Выберите, как удобнее начать — потом всё можно поправить.')),
       h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла')));
     page.appendChild(startChoice());
     if (list.length) {
-      page.appendChild(h('h2', { style: { fontSize: '17px', margin: '28px 0 10px' } }, 'Демо-дашборд'));
+      page.appendChild(h('h2', { style: { fontSize: '17px', margin: '28px 0 10px' } }, 'Демо-шаблон'));
       page.appendChild(dashGrid(list));
     }
     return;
   }
   page.appendChild(h('div', { class: 'page-head' },
-    h('div', { class: 'grow' }, h('h1', null, 'Дашборды'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
+    h('div', { class: 'grow' }, h('h1', null, 'Шаблоны'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
     h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
-    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый дашборд')));
+    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый шаблон')));
   page.appendChild(dashGrid(list));
 }
 function dashGrid(list) {
   const grid = h('div', { class: 'dash-grid' });
   list.forEach(d => {
     const nCharts = d.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
-    const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с дашбордом' }, ic('dots'));
+    const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с шаблоном' }, ic('dots'));
     more.addEventListener('click', e => {
       e.stopPropagation();
       openMenu(more, [
@@ -307,7 +307,7 @@ function dashGrid(list) {
       h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
         h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`)), more)));
   });
-  grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый дашборд'));
+  grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый шаблон'));
   return grid;
 }
 // Пустые дашборды, созданные кнопкой «Новый дашборд»: если с такого ушли,
@@ -319,21 +319,21 @@ const freshDashboards = new Set();
 function createDashboard() {
   const host = h('div', { class: 'start-choice tight' });
   const m = openModal({
-    title: 'Новый дашборд', wide: true,
+    title: 'Новый шаблон', wide: true,
     body: h('div', null,
       h('p', { class: 'muted', style: { margin: '0 0 14px', fontSize: '13.5px' } },
-        'Оба пути ведут к одному: дашборд потом правится как угодно.'), host),
+        'Оба пути ведут к одному: шаблон потом правится как угодно.'), host),
     foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена')],
   });
   START_WAYS.filter(w => w.id !== 'own').forEach(w => host.appendChild(startCard(w, m.close)));
 }
 function createBlankDashboard() {
   // Пустой дашборд — тоже макет: под блоки нужны данные, и Кобра их придумает
-  const mid = createMockup(null, { title: 'Новый макет' });
+  const mid = createMockup(null, { title: 'Новый шаблон' });
   if (mid) { freshDashboards.add(mid); go('#/d/' + mid + '?edit=1'); return; }
   const id = uid('d_');
   freshDashboards.add(id);
-  STATE.dashboards[id] = { id, title: 'Новый дашборд', updated: Date.now(), crossFilter: true, scheme: null, tabs: [{ id: uid('t'), title: 'Вкладка 1', items: [] }], filters: [] };
+  STATE.dashboards[id] = { id, title: 'Новый шаблон', updated: Date.now(), crossFilter: true, scheme: null, tabs: [{ id: uid('t'), title: 'Вкладка 1', items: [] }], filters: [] };
   saveState();
   go('#/d/' + id + '?edit=1');
 }
@@ -344,16 +344,16 @@ function duplicateDashboard(id) {
   copy.id = nid; copy.title = src.title + ' (копия)'; copy.updated = Date.now();
   STATE.dashboards[nid] = copy;
   saveState();
-  toast('Дашборд скопирован');
+  toast('Шаблон скопирован');
   route();
 }
 async function deleteDashboard(id) {
   const d = STATE.dashboards[id];
-  if (!(await confirmDialog('Удалить дашборд', `Дашборд «${d.title}» будет удалён. Графики останутся в разделе «Графики».`))) return;
+  if (!(await confirmDialog('Удалить шаблон', `Шаблон «${d.title}» будет удалён. Графики останутся в разделе «Графики».`))) return;
   delete STATE.dashboards[id];
   dropOwnedDatasets();
   saveState();
-  toast('Дашборд удалён');
+  toast('Шаблон удалён');
   go('#/dashboards');
 }
 
@@ -365,7 +365,7 @@ function renderChartList(main) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
   page.appendChild(h('div', { class: 'page-head' },
-    h('div', { class: 'grow' }, h('h1', null, 'Графики'), h('p', null, 'Каждый график можно добавить на один или несколько дашбордов.')),
+    h('div', { class: 'grow' }, h('h1', null, 'Графики'), h('p', null, 'Каждый график можно добавить в один или несколько шаблонов.')),
     h('button', { class: 'btn primary', onclick: () => newChartDialog() }, ic('plus'), 'Новый график')));
   const search = h('input', { class: 'input', type: 'search', placeholder: 'Найти график', 'aria-label': 'Поиск графиков' });
   const vizF = selectEl([['', 'Все типы'], ...VIZ_ORDER.map(k => [k, VIZ[k].label])], '', () => paint(), { style: { maxWidth: '240px' }, 'aria-label': 'Тип графика' });
@@ -379,7 +379,7 @@ function renderChartList(main) {
     clear(wrap);
     if (!list.length) { wrap.appendChild(h('div', { class: 'empty' }, h('b', null, Object.keys(STATE.charts).length ? 'Ничего не найдено' : 'Графиков пока нет'), 'Создайте первый график из набора данных.', h('br'), h('button', { class: 'btn primary', onclick: () => newChartDialog() }, ic('plus'), 'Новый график'))); return; }
     wrap.appendChild(h('table', { class: 'list' },
-      h('thead', null, h('tr', null, h('th', null, 'Название'), h('th', null, 'Тип'), h('th', null, 'Набор данных'), h('th', null, 'ТЗ'), h('th', null, 'На дашбордах'), h('th', null, 'Изменён'), h('th'))),
+      h('thead', null, h('tr', null, h('th', null, 'Название'), h('th', null, 'Тип'), h('th', null, 'Набор данных'), h('th', null, 'ТЗ'), h('th', null, 'В шаблонах'), h('th', null, 'Изменён'), h('th'))),
       h('tbody', null, list.map(c => {
         const used = chartUsage(c.id);
         const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с графиком' }, ic('dots'));
@@ -408,7 +408,7 @@ function renderChartList(main) {
 async function deleteChart(id) {
   const c = STATE.charts[id];
   const used = chartUsage(id);
-  const txt = used.length ? `График «${c.name}» будет удалён и исчезнет с ${used.length} ${plural(used.length, 'дашборда', 'дашбордов', 'дашбордов')}: ${used.map(d => d.title).join(', ')}.` : `График «${c.name}» будет удалён.`;
+  const txt = used.length ? `График «${c.name}» будет удалён и исчезнет из ${used.length} ${plural(used.length, 'шаблона', 'шаблонов', 'шаблонов')}: ${used.map(d => d.title).join(', ')}.` : `График «${c.name}» будет удалён.`;
   if (!(await confirmDialog('Удалить график', txt))) return false;
   delete STATE.charts[id];
   used.forEach(d => d.tabs.forEach(t => { t.items = t.items.filter(i => i.chartId !== id); }));

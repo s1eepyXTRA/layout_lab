@@ -302,7 +302,7 @@ function renderExplore(main, parts, q) {
     const name = h('input', { class: 'name', value: chart.name, 'aria-label': 'Название графика',
       oninput: e => { chart.name = e.target.value; chart.autoName = false; } });
     const headBtns = [];
-    if (back) headBtns.push(h('button', { class: 'btn ghost', onclick: () => leave('#/d/' + back) }, ic('back'), 'К дашборду'));
+    if (back) headBtns.push(h('button', { class: 'btn ghost', onclick: () => leave('#/d/' + back) }, ic('back'), 'К шаблону'));
     const nSpec = specFilledCount(chart);
     headBtns.push(h('button', { class: 'btn', title: 'Бизнес-вопрос, источник данных, периодичность — попадут в выгрузку ТЗ', onclick: () => openSpecEditor(chart, spec => {
       if (spec) chart.spec = spec; else delete chart.spec;
@@ -357,8 +357,8 @@ function renderExplore(main, parts, q) {
         h('button', { class: mode === 'new' ? 'on' : '', onclick: () => { mode = 'new'; paint(); } }, 'Сохранить как новый'))));
       body.appendChild(field('Название графика', h('input', { class: 'input', value: name, oninput: e => { name = e.target.value; } })));
       const already = chart.id && mode === 'overwrite' ? chartUsage(chart.id).map(d => d.id) : [];
-      body.appendChild(field('Добавить на дашборд', selectEl([['', '— не добавлять —'], ...dashes.map(d => [d.id, d.title + (already.includes(d.id) ? ' (уже есть)' : '')]), ['__new', '+ Новый дашборд']], dashId, v => { dashId = v; }),
-        'График появится внизу открытой вкладки выбранного дашборда.'));
+      body.appendChild(field('Добавить в шаблон', selectEl([['', '— не добавлять —'], ...dashes.map(d => [d.id, d.title + (already.includes(d.id) ? ' (уже есть)' : '')]), ['__new', '+ Новый шаблон']], dashId, v => { dashId = v; }),
+        'График появится внизу открытой вкладки выбранного шаблона.'));
     };
     paint();
     openModal({
@@ -374,7 +374,7 @@ function renderExplore(main, parts, q) {
     let target = null;
     if (dashId === '__new') {
       const nid = uid('d_');
-      STATE.dashboards[nid] = { id: nid, title: 'Новый дашборд', updated: Date.now(), crossFilter: true, scheme: null, tabs: [{ id: uid('t'), title: 'Вкладка 1', items: [] }], filters: [] };
+      STATE.dashboards[nid] = { id: nid, title: 'Новый шаблон', updated: Date.now(), crossFilter: true, scheme: null, tabs: [{ id: uid('t'), title: 'Вкладка 1', items: [] }], filters: [] };
       target = STATE.dashboards[nid];
     } else if (dashId) target = STATE.dashboards[dashId];
     if (target && !target.tabs.some(t => t.items.some(i => i.chartId === chart.id))) {

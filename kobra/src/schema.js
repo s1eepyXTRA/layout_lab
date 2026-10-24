@@ -312,7 +312,7 @@ function openSchemaDialog(existingId) {
           h('td', { class: 'act' }, iconBtn('trash', 'Убрать колонку', () => { cols.splice(i, 1); paint(); }, 'sm'))))));
       body.appendChild(h('div', { class: 'tbl-wrap', style: { marginBottom: '14px' } }, tbl));
     } else {
-      body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px' } }, 'Пока ни одной колонки. Для дашборда обычно хватает одной даты, одного-двух текстовых разрезов и одного числа.'));
+      body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px' } }, 'Пока ни одной колонки. Для шаблона обычно хватает одной даты, одного-двух текстовых разрезов и одного числа.'));
     }
 
     body.appendChild(h('div', { class: 'row2' },

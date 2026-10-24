@@ -82,12 +82,12 @@ function openExportDialog(presetDashId) {
   const size = h('div', { class: 'muted', style: { fontSize: '12.5px' } });
 
   const recount = () => {
-    if (!picked.size && !includeLoose) { size.textContent = 'Не выбрано ни одного дашборда.'; return; }
+    if (!picked.size && !includeLoose) { size.textContent = 'Не выбрано ни одного шаблона.'; return; }
     try {
       const json = JSON.stringify(buildExport({ dashIds: [...picked], includeLoose, withData, fakeData, author, note }));
       const kb = new Blob([json]).size / 1024;
       const { charts, dsIds } = collectRefs([...picked], includeLoose);
-      size.textContent = `В файле: ${picked.size} ${plural(picked.size, 'дашборд', 'дашборда', 'дашбордов')}, `
+      size.textContent = `В файле: ${picked.size} ${plural(picked.size, 'шаблон', 'шаблона', 'шаблонов')}, `
         + `${Object.keys(charts).length} ${plural(Object.keys(charts).length, 'график', 'графика', 'графиков')}, `
         + `${dsIds.length} ${plural(dsIds.length, 'набор', 'набора', 'наборов')} данных. Размер — `
         + (kb > 1024 ? (kb / 1024).toFixed(1) + ' МБ' : Math.max(1, Math.round(kb)) + ' КБ') + '.';
@@ -98,18 +98,18 @@ function openExportDialog(presetDashId) {
     clear(body);
     body.appendChild(h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Что вкладываем'),
       h('div', { class: 'seg' },
-        h('button', { class: withData ? '' : 'on', onclick: () => { withData = false; paint(); } }, 'Шаблон для передачи — без данных'),
-        h('button', { class: withData ? 'on' : '', onclick: () => { withData = true; paint(); } }, 'Проект — с данными')),
+        h('button', { class: withData ? '' : 'on', onclick: () => { withData = false; paint(); } }, 'Без данных — только структура'),
+        h('button', { class: withData ? 'on' : '', onclick: () => { withData = true; paint(); } }, 'Со строками данных')),
       h('div', { class: 'hint' }, withData
         ? 'Строки загруженных наборов попадут в файл. Не отправляйте его по открытым каналам, если данные чувствительные.'
-        : 'Только структура: дашборды, графики, метрики и описания наборов. Строки загруженных файлов не вкладываются.')));
+        : 'Только структура: шаблоны, графики, метрики и описания наборов. Строки загруженных файлов не вкладываются.')));
     if (!withData) body.appendChild(checkbox('Подставить вымышленные данные, чтобы графики не были пустыми', fakeData, v => { fakeData = v; recount(); }));
 
     const list = h('div', { style: { display: 'grid', gap: '4px', marginTop: '4px' } });
     all.forEach(d => list.appendChild(checkbox(d.title, picked.has(d.id), v => { v ? picked.add(d.id) : picked.delete(d.id); recount(); })));
-    body.appendChild(h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Дашборды'),
-      all.length ? list : h('p', { class: 'muted', style: { fontSize: '13px', margin: 0 } }, 'Дашбордов пока нет.')));
-    body.appendChild(checkbox('Добавить графики, которых нет ни на одном дашборде', includeLoose, v => { includeLoose = v; recount(); }));
+    body.appendChild(h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Шаблоны'),
+      all.length ? list : h('p', { class: 'muted', style: { fontSize: '13px', margin: 0 } }, 'Шаблонов пока нет.')));
+    body.appendChild(checkbox('Добавить графики, которых нет ни в одном шаблоне', includeLoose, v => { includeLoose = v; recount(); }));
 
     body.appendChild(h('div', { class: 'row2', style: { marginTop: '12px' } },
       field('Автор', h('input', { class: 'input', value: author, placeholder: 'Кто отправляет', oninput: e => { author = e.target.value; } })),
@@ -126,12 +126,12 @@ function openExportDialog(presetDashId) {
       h('button', {
         class: 'btn primary', onclick: () => {
           const dashIds = [...picked];
-          if (!dashIds.length && !includeLoose) { toast('Выберите хотя бы один дашборд', true); return; }
+          if (!dashIds.length && !includeLoose) { toast('Выберите хотя бы один шаблон', true); return; }
           const payload = buildExport({ dashIds, includeLoose, withData, fakeData, author, note });
           if (author.trim()) lsSet(LS_AUTHOR, author.trim());
           if (downloadFile(exportFileName(dashIds, withData), JSON.stringify(payload, null, 1))) {
             close();
-            toast(withData ? 'Проект сохранён в файл' : 'Шаблон для передачи сохранён в файл');
+            toast(withData ? 'Файл со строками данных сохранён' : 'Файл без данных сохранён');
           }
         },
       }, ic('download'), 'Скачать файл')],
@@ -142,7 +142,7 @@ function openExportDialog(presetDashId) {
 function validatePayload(p) {
   if (!p || typeof p !== 'object') throw new Error('это не файл Кобры');
   if (p.kobra !== KOBRA_FILE_V) throw new Error(p.kobra ? `версия файла ${p.kobra} не поддерживается` : 'в файле нет пометки Кобры');
-  if (!p.dashboards || !p.charts) throw new Error('в файле нет дашбордов и графиков');
+  if (!p.dashboards || !p.charts) throw new Error('в файле нет шаблонов и графиков');
   return p;
 }
 
@@ -245,11 +245,11 @@ function openImportPreview(file, p) {
     clear(body);
     body.appendChild(h('table', { class: 'list' }, h('tbody', null, [
       ['Файл', file.name],
-      ['Вид', p.kind === 'project' ? 'Проект со строками данных' : 'Шаблон для передачи, без данных'],
+      ['Вид', p.kind === 'project' ? 'Со строками данных' : 'Без данных, только структура'],
       ['Сохранён', p.exportedAt ? fmtDate(Date.parse(p.exportedAt)) : '—'],
       p.author ? ['Автор', p.author] : null,
       p.note ? ['Комментарий', p.note] : null,
-      ['Дашборды', dashes.map(d => d.title).join(', ') || '—'],
+      ['Шаблоны', dashes.map(d => d.title).join(', ') || '—'],
       ['Графики', String(charts.length)],
       ['Наборы данных', `${dsList.length}` + (withRows ? `, со строками — ${withRows}` : '') + (fake ? `, по схеме — ${fake}` : '') + (noRows ? `, без строк — ${noRows}` : '')],
     ].filter(Boolean).map(([k, v]) => h('tr', null, h('td', { class: 'muted', style: { width: '150px' } }, k), h('td', null, v))))));
@@ -262,7 +262,7 @@ function openImportPreview(file, p) {
           h('button', { class: mode === 'replace' ? 'on' : '', onclick: () => { mode = 'replace'; paint(); } }, 'Заменить мои версии')),
         h('div', { class: 'hint' }, mode === 'copy'
           ? 'Ничего не потеряется: совпавшее приедет рядом, с пометкой «импорт».'
-          : 'Мои дашборды и графики с теми же идентификаторами будут перезаписаны версией из файла.')));
+          : 'Мои шаблоны и графики с теми же идентификаторами будут перезаписаны версией из файла.')));
     }
   };
   paint();

@@ -228,7 +228,7 @@ function dashSpecDatasets(D) {
    чтобы ТЗ совпадало с тем, что человек видит на экране. */
 function buildSpecMd(dash, opts = {}) {
   const D = typeof dash === 'string' ? STATE.dashboards[dash] : dash;
-  if (!D) throw new Error('Дашборд не найден');
+  if (!D) throw new Error('Шаблон не найден');
   const L = [];
   const dsIds = dashSpecDatasets(D);
   const nCharts = D.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
@@ -304,7 +304,7 @@ function specFileName(D) {
 /* ---------- Диалог выгрузки ---------- */
 function openSpecDialog(dash) {
   const D = typeof dash === 'string' ? STATE.dashboards[dash] : dash;
-  if (!D) { toast('Дашборд не найден', true); return; }
+  if (!D) { toast('Шаблон не найден', true); return; }
   let author = lsGet(LS_SPEC_AUTHOR) || '';
   let note = '';
   const nCharts = D.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
@@ -312,14 +312,14 @@ function openSpecDialog(dash) {
   const filled = charts.filter(c => specValue(c, 'question')).length;
   const body = h('div');
   body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 14px' } },
-    'Кобра соберёт из дашборда готовое задание: по каждому графику — тип, набор данных, метрики с формулами, разрезы, фильтры и лимиты, плюс поля ТЗ. '
+    'Кобра соберёт из шаблона готовое задание: по каждому графику — тип, набор данных, метрики с формулами, разрезы, фильтры и лимиты, плюс поля ТЗ. '
     + 'Цифры и подписи в файле те же, что на экране.'));
   body.appendChild(h('div', { class: 'row2' },
     field('Автор', h('input', { class: 'input', value: author, placeholder: 'Кто составил ТЗ', oninput: e => { author = e.target.value; } })),
     field('Комментарий', h('input', { class: 'input', value: note, placeholder: 'Например: на согласование с дирекцией', oninput: e => { note = e.target.value; } }))));
   body.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: 0 } },
     `В файле: ${D.tabs.length} ${plural(D.tabs.length, 'вкладка', 'вкладки', 'вкладок')}, ${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, `
-    + `${(D.filters || []).length} ${plural((D.filters || []).length, 'фильтр', 'фильтра', 'фильтров')} дашборда. `
+    + `${(D.filters || []).length} ${plural((D.filters || []).length, 'фильтр', 'фильтра', 'фильтров')} шаблона. `
     + (nCharts ? `Бизнес-вопрос заполнен у ${filled} из ${nCharts}.` : '')));
 
   const make = () => buildSpecMd(D, { author: author.trim(), note: note.trim() });

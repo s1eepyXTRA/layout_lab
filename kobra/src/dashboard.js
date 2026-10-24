@@ -38,7 +38,7 @@ function itemDefaultSize(type, chart) {
 function renderDashboard(main, id, q) {
   const saved = STATE.dashboards[id];
   if (!saved) {
-    main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Дашборд не найден'), 'Возможно, его удалили.', h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем дашбордам'))));
+    main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Шаблон не найден'), 'Возможно, его удалили.', h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем шаблонам'))));
     return () => { };
   }
   const editing = q.edit === '1';
@@ -63,7 +63,7 @@ function renderDashboard(main, id, q) {
 
   const dash = h('div', { class: 'dash' });
   main.appendChild(dash);
-  const fbar = h('aside', { class: 'fbar' + (fbarOpen ? '' : ' closed'), 'aria-label': 'Фильтры дашборда' });
+  const fbar = h('aside', { class: 'fbar' + (fbarOpen ? '' : ' closed'), 'aria-label': 'Фильтры шаблона' });
   const dmain = h('div', { class: 'dash-main' });
   const panel = editing ? h('aside', { class: 'edit-panel', 'aria-label': 'Добавление элементов' }) : null;
   const aiHost = h('aside', { class: 'ai-panel', 'aria-label': 'AI-ассистент' });
@@ -103,7 +103,7 @@ function renderDashboard(main, id, q) {
       return;
     }
     const body = h('div', { class: 'fbar-body' });
-    if (!D.filters.length) body.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'На дашборде пока нет фильтров.', h('br'), h('button', { class: 'btn sm', style: { marginTop: '10px' }, onclick: openFilterEditor }, ic('plus'), 'Добавить фильтр')));
+    if (!D.filters.length) body.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'В шаблоне пока нет фильтров.', h('br'), h('button', { class: 'btn sm', style: { marginTop: '10px' }, onclick: openFilterEditor }, ic('plus'), 'Добавить фильтр')));
     D.filters.forEach(f => {
       const ds = dsGet(f.datasetId);
       const applied = !!filterToQuery(f, f.value);
@@ -202,7 +202,7 @@ function renderDashboard(main, id, q) {
       return head;
     }
     if (editing) {
-      const inp = h('input', { class: 'title-input', value: D.title, 'aria-label': 'Название дашборда', oninput: e => { D.title = e.target.value; } });
+      const inp = h('input', { class: 'title-input', value: D.title, 'aria-label': 'Название шаблона', oninput: e => { D.title = e.target.value; } });
       head.appendChild(inp);
     } else head.appendChild(h('h1', null, D.title,
       isMockupDs(dsGet((D.fromTemplate || {}).datasetId))
@@ -214,12 +214,12 @@ function renderDashboard(main, id, q) {
       tuning ? { label: aiOpen ? 'Скрыть AI-ассистента' : 'Спросить AI-ассистента', icon: 'wand', onClick: aiToggle } : null,
       { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
       { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
-      { label: 'Свойства дашборда', icon: 'settings', onClick: openProps },
+      { label: 'Свойства шаблона', icon: 'settings', onClick: openProps },
       { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(id) },
       { label: 'Выгрузить ТЗ в Markdown…', icon: 'text', onClick: () => openSpecDialog(D) },
       !editing ? '-' : null,
       !editing ? { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(id) } : null,
-      !editing ? { label: 'Удалить дашборд', icon: 'trash', danger: true, onClick: () => deleteDashboard(id) } : null,
+      !editing ? { label: 'Удалить шаблон', icon: 'trash', danger: true, onClick: () => deleteDashboard(id) } : null,
     ]));
     if (tuning) {
       head.append(
@@ -262,11 +262,11 @@ function renderDashboard(main, id, q) {
     D.title = (D.title || '').trim() || 'Без названия';
     STATE.dashboards[id] = D;
     saveState();
-    toast('Дашборд сохранён');
+    toast('Шаблон сохранён');
     go('#/d/' + id);
   }
   async function cancelEdit() {
-    if (JSON.stringify(D) !== original && !(await confirmDialog('Отменить изменения', 'Несохранённые изменения дашборда пропадут.', 'Отменить изменения'))) return;
+    if (JSON.stringify(D) !== original && !(await confirmDialog('Отменить изменения', 'Несохранённые изменения шаблона пропадут.', 'Отменить изменения'))) return;
     draftHandled = true;
     // Графики и придуманные данные живут вне черновика: сам он пропадёт, а они
     // останутся, если их не убрать. Снимок есть только у работы AI-ассистента —
@@ -283,10 +283,10 @@ function renderDashboard(main, id, q) {
   function openProps() {
     let title = D.title, scheme = D.scheme || '', crossF = D.crossFilter;
     openModal({
-      title: 'Свойства дашборда',
+      title: 'Свойства шаблона',
       body: h('div', null,
         field('Название', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })),
-        field('Цветовая схема', selectEl([['', 'Как в настройках графиков'], ...Object.entries(COLOR_SCHEMES).map(([k, v]) => [k, v.label])], scheme, v => { scheme = v; }), 'Схема дашборда заменяет схемы отдельных графиков.'),
+        field('Цветовая схема', selectEl([['', 'Как в настройках графиков'], ...Object.entries(COLOR_SCHEMES).map(([k, v]) => [k, v.label])], scheme, v => { scheme = v; }), 'Схема шаблона заменяет схемы отдельных графиков.'),
         checkbox('Кросс-фильтрация: клик по графику фильтрует остальные', crossF, v => { crossF = v; })),
       foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена'), h('button', { class: 'btn primary', onclick: () => {
         D.title = title.trim() || D.title; D.scheme = scheme || null; D.crossFilter = crossF;
@@ -312,7 +312,7 @@ function renderDashboard(main, id, q) {
         if (i > 0) tab.appendChild(iconBtn('chevL', 'Переместить влево', () => { D.tabs.splice(i, 1); D.tabs.splice(i - 1, 0, t); paintBody(); }));
         if (i < D.tabs.length - 1) tab.appendChild(iconBtn('chevR', 'Переместить вправо', () => { D.tabs.splice(i, 1); D.tabs.splice(i + 1, 0, t); paintBody(); }));
         if (D.tabs.length > 1) tab.appendChild(iconBtn('x', 'Удалить вкладку', async () => {
-          if (t.items.length && !(await confirmDialog('Удалить вкладку', `Вкладка «${t.title}» и все ${t.items.length} ${plural(t.items.length, 'элемент', 'элемента', 'элементов')} на ней будут удалены с дашборда.`))) return;
+          if (t.items.length && !(await confirmDialog('Удалить вкладку', `Вкладка «${t.title}» и все ${t.items.length} ${plural(t.items.length, 'элемент', 'элемента', 'элементов')} на ней будут удалены из шаблона.`))) return;
           D.tabs = D.tabs.filter(x => x !== t); tabId = D.tabs[Math.max(0, i - 1)].id; paintBody();
         }));
       } else tab.appendChild(document.createTextNode(t.title));
@@ -547,7 +547,7 @@ function renderDashboard(main, id, q) {
       const n = ds ? ex.filter(f => dsCol(ds, f.col)).length : 0;
       clear(c.badge);
       c.badge.style.display = n ? '' : 'none';
-      if (n) { c.badge.appendChild(ic('filter')); c.badge.appendChild(document.createTextNode(n)); c.badge.title = `Применено фильтров дашборда: ${n}`; }
+      if (n) { c.badge.appendChild(ic('filter')); c.badge.appendChild(document.createTextNode(n)); c.badge.title = `Применено фильтров шаблона: ${n}`; }
     }
   }
   function refreshCharts() { cells.forEach(c => { if (c.chartId) drawChart(c); }); }
@@ -558,7 +558,7 @@ function renderDashboard(main, id, q) {
     cells.set(it.i, cell);
     const tools = editing ? h('div', { class: 'item-tools' }) : null;
     const dragBtn = () => { const b = h('button', { class: 'iconbtn sm drag-h', title: 'Перетащить', 'aria-label': 'Перетащить' }, ic('drag')); b.addEventListener('pointerdown', e => startDrag(e, it)); return b; };
-    const delBtn = () => iconBtn('trash', 'Убрать с дашборда', () => removeItem(it), 'sm');
+    const delBtn = () => iconBtn('trash', 'Убрать из шаблона', () => removeItem(it), 'sm');
     const moveBtn = () => D.tabs.length > 1 ? iconBtn('chevR', 'Перенести на другую вкладку', e => openMenu(e.currentTarget, D.tabs.filter(t => t.id !== tabId).map(t => ({ label: 'На вкладку «' + t.title + '»', onClick: () => moveItemToTab(it, t) }))), 'sm') : null;
     if (it.type === 'chart') {
       const chart = STATE.charts[it.chartId];
@@ -573,7 +573,7 @@ function renderDashboard(main, id, q) {
           { label: 'Посмотреть данные', icon: 'table', onClick: () => showDataModal(chart ? chart.name : 'Данные', root._lastData) },
           chart ? { label: 'На весь экран', icon: 'expand', onClick: () => fullscreenChart(chart) } : null,
           editing ? '-' : null,
-          editing ? { label: 'Убрать с дашборда', icon: 'trash', danger: true, onClick: () => removeItem(it) } : null,
+          editing ? { label: 'Убрать из шаблона', icon: 'trash', danger: true, onClick: () => removeItem(it) } : null,
         ]);
       });
       const titleEl = h('div', { class: 't', title: chart ? chart.name : '' }, chart ? chart.name : 'График удалён');
@@ -778,7 +778,7 @@ function renderDashboard(main, id, q) {
         const charts = Object.values(STATE.charts).filter(c => !qq || c.name.toLowerCase().includes(qq)).sort((a, b) => (onDash.has(a.id) - onDash.has(b.id)) || (b.updated || 0) - (a.updated || 0));
         if (!charts.length) list.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Графиков не найдено'));
         charts.forEach(c => list.appendChild(h('button', { class: 'comp' + (onDash.has(c.id) ? ' used' : ''), title: 'Добавить на текущую вкладку', onclick: () => addItem({ type: 'chart', chartId: c.id }) },
-          ic(VIZ[c.viz].icon), h('div', { class: 'grow' }, h('b', null, c.name), h('span', null, VIZ[c.viz].label + (onDash.has(c.id) ? ' · уже на дашборде' : ''))), ic('plus'))));
+          ic(VIZ[c.viz].icon), h('div', { class: 'grow' }, h('b', null, c.name), h('span', null, VIZ[c.viz].label + (onDash.has(c.id) ? ' · уже в шаблоне' : ''))), ic('plus'))));
       };
       search.addEventListener('input', paintList);
       body.append(
@@ -791,7 +791,7 @@ function renderDashboard(main, id, q) {
         comp('heading', 'Заголовок', 'Подпись раздела', () => addItem({ type: 'header', text: 'Новый раздел', size: 'l' })),
         comp('text', 'Текст', 'Markdown: пояснения, списки, ссылки', () => addItem({ type: 'markdown', text: '### Заголовок\nТекст с **выделением** и списком:\n- первый пункт\n- второй пункт' })),
         comp('divider', 'Разделитель', 'Горизонтальная линия', () => addItem({ type: 'divider' })),
-        comp('dash', 'Вкладка', 'Новая вкладка дашборда', addTab),
+        comp('dash', 'Вкладка', 'Новая вкладка шаблона', addTab),
         h('p', { class: 'muted', style: { fontSize: '12.5px', marginTop: '14px' } }, 'Перетаскивайте элементы за заголовок или значок ', h('span', { class: 'kbd' }, '⋮⋮'), ', размер меняйте за правый нижний угол. Текст редактируется двойным щелчком.'));
     }
   }
@@ -973,7 +973,7 @@ function renderDashboard(main, id, q) {
     // Спрашивать здесь уже поздно — переход состоялся, — поэтому сохраняем молча
     // и говорим тостом, как это делал уход в конструктор графика.
     // «Отменить» и «Сохранить» ставят draftHandled сами, так что откат работает.
-    if (!draftHandled && JSON.stringify(D) !== original) { stash(); toast('Изменения дашборда сохранены'); }
+    if (!draftHandled && JSON.stringify(D) !== original) { stash(); toast('Изменения шаблона сохранены'); }
     // Пустой «Новый дашборд», с которого ушли, не оставляем в списке. Проверяем
     // именно запись в STATE: если человек успел дать название или завести фильтр,
     // работа уже есть — такой дашборд остаётся.
@@ -1058,7 +1058,7 @@ function openFilterEditorModal(D, onSave) {
     const scopeBox = h('div', { class: 'scope-list' });
     const paintScope = () => {
       clear(scopeBox);
-      if (f.scope === 'all' || !f.scope) { scopeBox.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Фильтр действует на все графики дашборда.')); return; }
+      if (f.scope === 'all' || !f.scope) { scopeBox.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Фильтр действует на все графики шаблона.')); return; }
       chartsOnDash.forEach(g => {
         if (!g.charts.length) return;
         scopeBox.appendChild(h('div', { style: { fontSize: '12px', fontWeight: 600, color: 'var(--ink-3)', margin: '4px 0 6px' } }, g.tab.title));
@@ -1079,7 +1079,7 @@ function openFilterEditorModal(D, onSave) {
   }
   paintList(); paintForm();
   openModal({
-    title: 'Фильтры дашборда', wide: true,
+    title: 'Фильтры шаблона', wide: true,
     body: h('div', { class: 'fedit', style: { margin: '-18px -20px' } }, listEl, form),
     foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена'), h('button', { class: 'btn primary', onclick: () => {
       if (list.some(f => !f.col)) { toast('У каждого фильтра должна быть колонка', true); return; }

@@ -609,7 +609,7 @@ VIZ.big_number = {
   controls: [
     { title: 'Запрос', tab: 'data', controls: [
       { key: 'metric', type: 'metric', label: 'Метрика' }, C_TIME, C_FILTERS,
-      { key: 'compare', type: 'select', label: 'Сравнение', options: [['none', 'Без сравнения'], ['prev_period', 'С предыдущим периодом такой же длины'], ['prev_year', 'С тем же периодом год назад']], hint: 'Нужен фильтр периода на графике или дашборде' },
+      { key: 'compare', type: 'select', label: 'Сравнение', options: [['none', 'Без сравнения'], ['prev_period', 'С предыдущим периодом такой же длины'], ['prev_year', 'С тем же периодом год назад']], hint: 'Нужен фильтр периода на графике или шаблоне' },
     ] },
     { title: 'Оформление', tab: 'view', controls: [
       { key: 'subheader', type: 'text', label: 'Подпись под числом' }, C_FORMAT('Формат числа'),
@@ -986,7 +986,7 @@ VIZ.treemap = {
       C_SCHEME, C_FORMAT('Формат чисел'),
       { key: 'show_values', type: 'check', label: 'Значения в подписях', def: true },
       { key: 'show_pct', type: 'check', label: 'Доля в подписях' },
-      { key: 'drill', type: 'check', label: 'Приближение по клику', def: true, hint: 'Когда включена кросс-фильтрация, клик фильтрует дашборд' },
+      { key: 'drill', type: 'check', label: 'Приближение по клику', def: true, hint: 'Когда включена кросс-фильтрация, клик фильтрует шаблон' },
     ] },
   ],
   defaults: ds => ({ groupby: [firstStringCol(ds)], metric: firstMetric(ds), row_limit: 200, show_values: true, show_pct: false, drill: true, color_scheme: 'kobra', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),

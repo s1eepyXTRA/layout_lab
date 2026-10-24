@@ -2080,7 +2080,7 @@ VIZ.big_number = {
   controls: [
     { title: 'Запрос', tab: 'data', controls: [
       { key: 'metric', type: 'metric', label: 'Метрика' }, C_TIME, C_FILTERS,
-      { key: 'compare', type: 'select', label: 'Сравнение', options: [['none', 'Без сравнения'], ['prev_period', 'С предыдущим периодом такой же длины'], ['prev_year', 'С тем же периодом год назад']], hint: 'Нужен фильтр периода на графике или дашборде' },
+      { key: 'compare', type: 'select', label: 'Сравнение', options: [['none', 'Без сравнения'], ['prev_period', 'С предыдущим периодом такой же длины'], ['prev_year', 'С тем же периодом год назад']], hint: 'Нужен фильтр периода на графике или шаблоне' },
     ] },
     { title: 'Оформление', tab: 'view', controls: [
       { key: 'subheader', type: 'text', label: 'Подпись под числом' }, C_FORMAT('Формат числа'),
@@ -2457,7 +2457,7 @@ VIZ.treemap = {
       C_SCHEME, C_FORMAT('Формат чисел'),
       { key: 'show_values', type: 'check', label: 'Значения в подписях', def: true },
       { key: 'show_pct', type: 'check', label: 'Доля в подписях' },
-      { key: 'drill', type: 'check', label: 'Приближение по клику', def: true, hint: 'Когда включена кросс-фильтрация, клик фильтрует дашборд' },
+      { key: 'drill', type: 'check', label: 'Приближение по клику', def: true, hint: 'Когда включена кросс-фильтрация, клик фильтрует шаблон' },
     ] },
   ],
   defaults: ds => ({ groupby: [firstStringCol(ds)], metric: firstMetric(ds), row_limit: 200, show_values: true, show_pct: false, drill: true, color_scheme: 'kobra', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
@@ -2585,7 +2585,7 @@ function seedState() {
     id: 'd_demo', title: 'Продажи розничной сети', updated: Date.now(), crossFilter: true, scheme: null,
     tabs: [
       { id: 't1', title: 'Обзор', items: [
-        { i: uid('i'), type: 'markdown', x: 0, y: 0, w: 12, h: 3, text: '**Прототип дашборда продаж.** Данные вымышленные: розничная сеть, январь 2024 — август 2026. Кликните по столбцу, сектору или строке — остальные графики отфильтруются.' },
+        { i: uid('i'), type: 'markdown', x: 0, y: 0, w: 12, h: 3, text: '**Шаблон продаж.** Данные вымышленные: розничная сеть, январь 2024 — август 2026. Кликните по столбцу, сектору или строке — остальные графики отфильтруются.' },
         ch('c_rev', 0, 3, 3, 7), ch('c_orders', 3, 3, 3, 7), ch('c_check', 6, 3, 3, 7), ch('c_marg', 9, 3, 3, 7),
         ch('c_mixed', 0, 10, 8, 13), ch('c_channel', 8, 10, 4, 13),
         ch('c_cat_bar', 0, 23, 6, 13), ch('c_cat_area', 6, 23, 6, 13),
@@ -2692,9 +2692,9 @@ function route() {
     else pageCleanup = renderDashboardList(main);
   } catch (e) {
     console.error(e);
-    main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Не удалось открыть страницу'), e.message, h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'К дашбордам'))));
+    main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Не удалось открыть страницу'), e.message, h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'К шаблонам'))));
   }
-  document.title = 'Кобра — ' + ({ d: (STATE.dashboards[parts[1]] || {}).title || 'Дашборд', charts: 'Графики', explore: 'Конструктор графика', data: 'Данные', templates: 'Готовые шаблоны' }[sec] || 'Дашборды');
+  document.title = 'Кобра — ' + ({ d: (STATE.dashboards[parts[1]] || {}).title || 'Шаблон', charts: 'Графики', explore: 'Конструктор графика', data: 'Данные', templates: 'Готовые шаблоны' }[sec] || 'Шаблоны');
 }
 
 /* ---------- Каркас ---------- */
@@ -2710,13 +2710,13 @@ function renderShell() {
     { label: 'Экспорт в файл…', icon: 'download', onClick: () => openExportDialog() },
     { label: 'Импорт из файла…', icon: 'upload', onClick: openImportDialog },
     '-',
-    { label: 'Вернуть демо-дашборд', icon: 'reset', onClick: restoreDemo },
+    { label: 'Вернуть демо-шаблон', icon: 'reset', onClick: restoreDemo },
     { label: 'Сбросить всё к начальному состоянию', icon: 'trash', danger: true, onClick: resetAll },
   ]));
   app.appendChild(h('header', { class: 'topbar' },
     h('a', { class: 'brand', href: '#/dashboards', 'aria-label': 'Кобра — на главную' }, ic('cobra'), h('b', null, 'Кобра')),
     h('nav', { class: 'nav' },
-      h('a', { href: '#/dashboards', 'data-sec': 'dashboards' }, 'Дашборды'),
+      h('a', { href: '#/dashboards', 'data-sec': 'dashboards' }, 'Шаблоны'),
       h('a', { href: '#/charts', 'data-sec': 'charts' }, 'Графики'),
       h('a', { href: '#/data', 'data-sec': 'data' }, 'Данные')),
     h('div', { class: 'spacer' }), themeBtn, settingsBtn));
@@ -2739,15 +2739,15 @@ async function restoreDemo() {
   const seed = seedState();
   let n = 0;
   Object.values(seed.charts).forEach(c => { if (!STATE.charts[c.id]) { STATE.charts[c.id] = c; n++; } });
-  if (STATE.dashboards.d_demo && !(await confirmDialog('Вернуть демо-дашборд', 'Демо-дашборд «Продажи розничной сети» уже есть. Заменить его исходной версией? Ваши изменения в нём пропадут.', 'Заменить', false))) return;
+  if (STATE.dashboards.d_demo && !(await confirmDialog('Вернуть демо-шаблон', 'Демо-шаблон «Продажи розничной сети» уже есть. Заменить его исходной версией? Ваши изменения в нём пропадут.', 'Заменить', false))) return;
   STATE.dashboards.d_demo = seed.dashboards.d_demo;
   Object.values(seed.charts).forEach(c => { STATE.charts[c.id] = c; });
   saveState();
-  toast('Демо-дашборд восстановлен');
+  toast('Демо-шаблон восстановлен');
   go('#/d/d_demo');
 }
 async function resetAll() {
-  if (!(await confirmDialog('Сбросить всё', 'Удалятся все ваши дашборды, графики и загруженные наборы данных. Останется только демо. Действие нельзя отменить.', 'Сбросить всё'))) return;
+  if (!(await confirmDialog('Сбросить всё', 'Удалятся все ваши шаблоны, графики и загруженные наборы данных. Останется только демо. Действие нельзя отменить.', 'Сбросить всё'))) return;
   for (const id of Object.keys(STATE.datasets || {})) { await idb.del('rows:' + id); delete DS[id]; }
   STATE = seedState();
   applyDsOverrides();
@@ -2785,10 +2785,10 @@ function fmtWhen(ts) {
 const START_WAYS = [
   { id: 'tpl', icon: 'schema', rec: true, title: 'Готовый шаблон',
     desc: 'Заготовленные отчёты: выбираете подходящий, а дальше при необходимости дорабатываете. Кобра соберёт его на придуманных данных и разложит по уровням — общая картина, разбор, исходные строки.',
-    note: 'Зачастую подходит именно это: состав и оформление сделаны по стандартам визуализации, а названия блоков, показателей и категорий правятся прямо на дашборде.',
+    note: 'Зачастую подходит именно это: состав и оформление сделаны по стандартам визуализации, а названия блоков, показателей и категорий правятся прямо в шаблоне.',
     act: () => go('#/templates') },
   { id: 'blank', icon: 'plus', title: 'Начать с нуля',
-    desc: 'Пустой дашборд, в котором вы сами накидаете блоки, графики и вкладки. Данные под них Кобра придумает — выбирать набор не нужно.',
+    desc: 'Пустой шаблон, в котором вы сами накидаете блоки, графики и вкладки. Данные под них Кобра придумает — выбирать набор не нужно.',
     act: () => createBlankDashboard() },
   { id: 'own', icon: 'upload', title: 'Мои данные', btn: 'Загрузить файл',
     desc: 'Загружаете CSV или Excel и строите по своим цифрам: то же самое, но на настоящих данных вашей выгрузки.',
@@ -2814,26 +2814,26 @@ function renderDashboardList(main) {
   if (!own.length) {
     page.appendChild(h('div', { class: 'page-head' },
       h('div', { class: 'grow' }, h('h1', null, 'С чего начнём'),
-        h('p', null, 'Кобра собирает дашборды по вашим данным. Выберите, как удобнее начать — потом всё можно поправить.')),
+        h('p', null, 'Кобра собирает шаблоны по вашим данным. Выберите, как удобнее начать — потом всё можно поправить.')),
       h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла')));
     page.appendChild(startChoice());
     if (list.length) {
-      page.appendChild(h('h2', { style: { fontSize: '17px', margin: '28px 0 10px' } }, 'Демо-дашборд'));
+      page.appendChild(h('h2', { style: { fontSize: '17px', margin: '28px 0 10px' } }, 'Демо-шаблон'));
       page.appendChild(dashGrid(list));
     }
     return;
   }
   page.appendChild(h('div', { class: 'page-head' },
-    h('div', { class: 'grow' }, h('h1', null, 'Дашборды'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
+    h('div', { class: 'grow' }, h('h1', null, 'Шаблоны'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
     h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
-    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый дашборд')));
+    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый шаблон')));
   page.appendChild(dashGrid(list));
 }
 function dashGrid(list) {
   const grid = h('div', { class: 'dash-grid' });
   list.forEach(d => {
     const nCharts = d.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
-    const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с дашбордом' }, ic('dots'));
+    const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с шаблоном' }, ic('dots'));
     more.addEventListener('click', e => {
       e.stopPropagation();
       openMenu(more, [
@@ -2849,7 +2849,7 @@ function dashGrid(list) {
       h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
         h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`)), more)));
   });
-  grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый дашборд'));
+  grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый шаблон'));
   return grid;
 }
 // Пустые дашборды, созданные кнопкой «Новый дашборд»: если с такого ушли,
@@ -2861,21 +2861,21 @@ const freshDashboards = new Set();
 function createDashboard() {
   const host = h('div', { class: 'start-choice tight' });
   const m = openModal({
-    title: 'Новый дашборд', wide: true,
+    title: 'Новый шаблон', wide: true,
     body: h('div', null,
       h('p', { class: 'muted', style: { margin: '0 0 14px', fontSize: '13.5px' } },
-        'Оба пути ведут к одному: дашборд потом правится как угодно.'), host),
+        'Оба пути ведут к одному: шаблон потом правится как угодно.'), host),
     foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена')],
   });
   START_WAYS.filter(w => w.id !== 'own').forEach(w => host.appendChild(startCard(w, m.close)));
 }
 function createBlankDashboard() {
   // Пустой дашборд — тоже макет: под блоки нужны данные, и Кобра их придумает
-  const mid = createMockup(null, { title: 'Новый макет' });
+  const mid = createMockup(null, { title: 'Новый шаблон' });
   if (mid) { freshDashboards.add(mid); go('#/d/' + mid + '?edit=1'); return; }
   const id = uid('d_');
   freshDashboards.add(id);
-  STATE.dashboards[id] = { id, title: 'Новый дашборд', updated: Date.now(), crossFilter: true, scheme: null, tabs: [{ id: uid('t'), title: 'Вкладка 1', items: [] }], filters: [] };
+  STATE.dashboards[id] = { id, title: 'Новый шаблон', updated: Date.now(), crossFilter: true, scheme: null, tabs: [{ id: uid('t'), title: 'Вкладка 1', items: [] }], filters: [] };
   saveState();
   go('#/d/' + id + '?edit=1');
 }
@@ -2886,16 +2886,16 @@ function duplicateDashboard(id) {
   copy.id = nid; copy.title = src.title + ' (копия)'; copy.updated = Date.now();
   STATE.dashboards[nid] = copy;
   saveState();
-  toast('Дашборд скопирован');
+  toast('Шаблон скопирован');
   route();
 }
 async function deleteDashboard(id) {
   const d = STATE.dashboards[id];
-  if (!(await confirmDialog('Удалить дашборд', `Дашборд «${d.title}» будет удалён. Графики останутся в разделе «Графики».`))) return;
+  if (!(await confirmDialog('Удалить шаблон', `Шаблон «${d.title}» будет удалён. Графики останутся в разделе «Графики».`))) return;
   delete STATE.dashboards[id];
   dropOwnedDatasets();
   saveState();
-  toast('Дашборд удалён');
+  toast('Шаблон удалён');
   go('#/dashboards');
 }
 
@@ -2907,7 +2907,7 @@ function renderChartList(main) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
   page.appendChild(h('div', { class: 'page-head' },
-    h('div', { class: 'grow' }, h('h1', null, 'Графики'), h('p', null, 'Каждый график можно добавить на один или несколько дашбордов.')),
+    h('div', { class: 'grow' }, h('h1', null, 'Графики'), h('p', null, 'Каждый график можно добавить в один или несколько шаблонов.')),
     h('button', { class: 'btn primary', onclick: () => newChartDialog() }, ic('plus'), 'Новый график')));
   const search = h('input', { class: 'input', type: 'search', placeholder: 'Найти график', 'aria-label': 'Поиск графиков' });
   const vizF = selectEl([['', 'Все типы'], ...VIZ_ORDER.map(k => [k, VIZ[k].label])], '', () => paint(), { style: { maxWidth: '240px' }, 'aria-label': 'Тип графика' });
@@ -2921,7 +2921,7 @@ function renderChartList(main) {
     clear(wrap);
     if (!list.length) { wrap.appendChild(h('div', { class: 'empty' }, h('b', null, Object.keys(STATE.charts).length ? 'Ничего не найдено' : 'Графиков пока нет'), 'Создайте первый график из набора данных.', h('br'), h('button', { class: 'btn primary', onclick: () => newChartDialog() }, ic('plus'), 'Новый график'))); return; }
     wrap.appendChild(h('table', { class: 'list' },
-      h('thead', null, h('tr', null, h('th', null, 'Название'), h('th', null, 'Тип'), h('th', null, 'Набор данных'), h('th', null, 'ТЗ'), h('th', null, 'На дашбордах'), h('th', null, 'Изменён'), h('th'))),
+      h('thead', null, h('tr', null, h('th', null, 'Название'), h('th', null, 'Тип'), h('th', null, 'Набор данных'), h('th', null, 'ТЗ'), h('th', null, 'В шаблонах'), h('th', null, 'Изменён'), h('th'))),
       h('tbody', null, list.map(c => {
         const used = chartUsage(c.id);
         const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с графиком' }, ic('dots'));
@@ -2950,7 +2950,7 @@ function renderChartList(main) {
 async function deleteChart(id) {
   const c = STATE.charts[id];
   const used = chartUsage(id);
-  const txt = used.length ? `График «${c.name}» будет удалён и исчезнет с ${used.length} ${plural(used.length, 'дашборда', 'дашбордов', 'дашбордов')}: ${used.map(d => d.title).join(', ')}.` : `График «${c.name}» будет удалён.`;
+  const txt = used.length ? `График «${c.name}» будет удалён и исчезнет из ${used.length} ${plural(used.length, 'шаблона', 'шаблонов', 'шаблонов')}: ${used.map(d => d.title).join(', ')}.` : `График «${c.name}» будет удалён.`;
   if (!(await confirmDialog('Удалить график', txt))) return false;
   delete STATE.charts[id];
   used.forEach(d => d.tabs.forEach(t => { t.items = t.items.filter(i => i.chartId !== id); }));
@@ -3061,7 +3061,7 @@ function itemDefaultSize(type, chart) {
 function renderDashboard(main, id, q) {
   const saved = STATE.dashboards[id];
   if (!saved) {
-    main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Дашборд не найден'), 'Возможно, его удалили.', h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем дашбордам'))));
+    main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Шаблон не найден'), 'Возможно, его удалили.', h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем шаблонам'))));
     return () => { };
   }
   const editing = q.edit === '1';
@@ -3086,7 +3086,7 @@ function renderDashboard(main, id, q) {
 
   const dash = h('div', { class: 'dash' });
   main.appendChild(dash);
-  const fbar = h('aside', { class: 'fbar' + (fbarOpen ? '' : ' closed'), 'aria-label': 'Фильтры дашборда' });
+  const fbar = h('aside', { class: 'fbar' + (fbarOpen ? '' : ' closed'), 'aria-label': 'Фильтры шаблона' });
   const dmain = h('div', { class: 'dash-main' });
   const panel = editing ? h('aside', { class: 'edit-panel', 'aria-label': 'Добавление элементов' }) : null;
   const aiHost = h('aside', { class: 'ai-panel', 'aria-label': 'AI-ассистент' });
@@ -3126,7 +3126,7 @@ function renderDashboard(main, id, q) {
       return;
     }
     const body = h('div', { class: 'fbar-body' });
-    if (!D.filters.length) body.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'На дашборде пока нет фильтров.', h('br'), h('button', { class: 'btn sm', style: { marginTop: '10px' }, onclick: openFilterEditor }, ic('plus'), 'Добавить фильтр')));
+    if (!D.filters.length) body.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'В шаблоне пока нет фильтров.', h('br'), h('button', { class: 'btn sm', style: { marginTop: '10px' }, onclick: openFilterEditor }, ic('plus'), 'Добавить фильтр')));
     D.filters.forEach(f => {
       const ds = dsGet(f.datasetId);
       const applied = !!filterToQuery(f, f.value);
@@ -3225,7 +3225,7 @@ function renderDashboard(main, id, q) {
       return head;
     }
     if (editing) {
-      const inp = h('input', { class: 'title-input', value: D.title, 'aria-label': 'Название дашборда', oninput: e => { D.title = e.target.value; } });
+      const inp = h('input', { class: 'title-input', value: D.title, 'aria-label': 'Название шаблона', oninput: e => { D.title = e.target.value; } });
       head.appendChild(inp);
     } else head.appendChild(h('h1', null, D.title,
       isMockupDs(dsGet((D.fromTemplate || {}).datasetId))
@@ -3237,12 +3237,12 @@ function renderDashboard(main, id, q) {
       tuning ? { label: aiOpen ? 'Скрыть AI-ассистента' : 'Спросить AI-ассистента', icon: 'wand', onClick: aiToggle } : null,
       { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
       { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
-      { label: 'Свойства дашборда', icon: 'settings', onClick: openProps },
+      { label: 'Свойства шаблона', icon: 'settings', onClick: openProps },
       { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(id) },
       { label: 'Выгрузить ТЗ в Markdown…', icon: 'text', onClick: () => openSpecDialog(D) },
       !editing ? '-' : null,
       !editing ? { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(id) } : null,
-      !editing ? { label: 'Удалить дашборд', icon: 'trash', danger: true, onClick: () => deleteDashboard(id) } : null,
+      !editing ? { label: 'Удалить шаблон', icon: 'trash', danger: true, onClick: () => deleteDashboard(id) } : null,
     ]));
     if (tuning) {
       head.append(
@@ -3285,11 +3285,11 @@ function renderDashboard(main, id, q) {
     D.title = (D.title || '').trim() || 'Без названия';
     STATE.dashboards[id] = D;
     saveState();
-    toast('Дашборд сохранён');
+    toast('Шаблон сохранён');
     go('#/d/' + id);
   }
   async function cancelEdit() {
-    if (JSON.stringify(D) !== original && !(await confirmDialog('Отменить изменения', 'Несохранённые изменения дашборда пропадут.', 'Отменить изменения'))) return;
+    if (JSON.stringify(D) !== original && !(await confirmDialog('Отменить изменения', 'Несохранённые изменения шаблона пропадут.', 'Отменить изменения'))) return;
     draftHandled = true;
     // Графики и придуманные данные живут вне черновика: сам он пропадёт, а они
     // останутся, если их не убрать. Снимок есть только у работы AI-ассистента —
@@ -3306,10 +3306,10 @@ function renderDashboard(main, id, q) {
   function openProps() {
     let title = D.title, scheme = D.scheme || '', crossF = D.crossFilter;
     openModal({
-      title: 'Свойства дашборда',
+      title: 'Свойства шаблона',
       body: h('div', null,
         field('Название', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })),
-        field('Цветовая схема', selectEl([['', 'Как в настройках графиков'], ...Object.entries(COLOR_SCHEMES).map(([k, v]) => [k, v.label])], scheme, v => { scheme = v; }), 'Схема дашборда заменяет схемы отдельных графиков.'),
+        field('Цветовая схема', selectEl([['', 'Как в настройках графиков'], ...Object.entries(COLOR_SCHEMES).map(([k, v]) => [k, v.label])], scheme, v => { scheme = v; }), 'Схема шаблона заменяет схемы отдельных графиков.'),
         checkbox('Кросс-фильтрация: клик по графику фильтрует остальные', crossF, v => { crossF = v; })),
       foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена'), h('button', { class: 'btn primary', onclick: () => {
         D.title = title.trim() || D.title; D.scheme = scheme || null; D.crossFilter = crossF;
@@ -3335,7 +3335,7 @@ function renderDashboard(main, id, q) {
         if (i > 0) tab.appendChild(iconBtn('chevL', 'Переместить влево', () => { D.tabs.splice(i, 1); D.tabs.splice(i - 1, 0, t); paintBody(); }));
         if (i < D.tabs.length - 1) tab.appendChild(iconBtn('chevR', 'Переместить вправо', () => { D.tabs.splice(i, 1); D.tabs.splice(i + 1, 0, t); paintBody(); }));
         if (D.tabs.length > 1) tab.appendChild(iconBtn('x', 'Удалить вкладку', async () => {
-          if (t.items.length && !(await confirmDialog('Удалить вкладку', `Вкладка «${t.title}» и все ${t.items.length} ${plural(t.items.length, 'элемент', 'элемента', 'элементов')} на ней будут удалены с дашборда.`))) return;
+          if (t.items.length && !(await confirmDialog('Удалить вкладку', `Вкладка «${t.title}» и все ${t.items.length} ${plural(t.items.length, 'элемент', 'элемента', 'элементов')} на ней будут удалены из шаблона.`))) return;
           D.tabs = D.tabs.filter(x => x !== t); tabId = D.tabs[Math.max(0, i - 1)].id; paintBody();
         }));
       } else tab.appendChild(document.createTextNode(t.title));
@@ -3570,7 +3570,7 @@ function renderDashboard(main, id, q) {
       const n = ds ? ex.filter(f => dsCol(ds, f.col)).length : 0;
       clear(c.badge);
       c.badge.style.display = n ? '' : 'none';
-      if (n) { c.badge.appendChild(ic('filter')); c.badge.appendChild(document.createTextNode(n)); c.badge.title = `Применено фильтров дашборда: ${n}`; }
+      if (n) { c.badge.appendChild(ic('filter')); c.badge.appendChild(document.createTextNode(n)); c.badge.title = `Применено фильтров шаблона: ${n}`; }
     }
   }
   function refreshCharts() { cells.forEach(c => { if (c.chartId) drawChart(c); }); }
@@ -3581,7 +3581,7 @@ function renderDashboard(main, id, q) {
     cells.set(it.i, cell);
     const tools = editing ? h('div', { class: 'item-tools' }) : null;
     const dragBtn = () => { const b = h('button', { class: 'iconbtn sm drag-h', title: 'Перетащить', 'aria-label': 'Перетащить' }, ic('drag')); b.addEventListener('pointerdown', e => startDrag(e, it)); return b; };
-    const delBtn = () => iconBtn('trash', 'Убрать с дашборда', () => removeItem(it), 'sm');
+    const delBtn = () => iconBtn('trash', 'Убрать из шаблона', () => removeItem(it), 'sm');
     const moveBtn = () => D.tabs.length > 1 ? iconBtn('chevR', 'Перенести на другую вкладку', e => openMenu(e.currentTarget, D.tabs.filter(t => t.id !== tabId).map(t => ({ label: 'На вкладку «' + t.title + '»', onClick: () => moveItemToTab(it, t) }))), 'sm') : null;
     if (it.type === 'chart') {
       const chart = STATE.charts[it.chartId];
@@ -3596,7 +3596,7 @@ function renderDashboard(main, id, q) {
           { label: 'Посмотреть данные', icon: 'table', onClick: () => showDataModal(chart ? chart.name : 'Данные', root._lastData) },
           chart ? { label: 'На весь экран', icon: 'expand', onClick: () => fullscreenChart(chart) } : null,
           editing ? '-' : null,
-          editing ? { label: 'Убрать с дашборда', icon: 'trash', danger: true, onClick: () => removeItem(it) } : null,
+          editing ? { label: 'Убрать из шаблона', icon: 'trash', danger: true, onClick: () => removeItem(it) } : null,
         ]);
       });
       const titleEl = h('div', { class: 't', title: chart ? chart.name : '' }, chart ? chart.name : 'График удалён');
@@ -3801,7 +3801,7 @@ function renderDashboard(main, id, q) {
         const charts = Object.values(STATE.charts).filter(c => !qq || c.name.toLowerCase().includes(qq)).sort((a, b) => (onDash.has(a.id) - onDash.has(b.id)) || (b.updated || 0) - (a.updated || 0));
         if (!charts.length) list.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Графиков не найдено'));
         charts.forEach(c => list.appendChild(h('button', { class: 'comp' + (onDash.has(c.id) ? ' used' : ''), title: 'Добавить на текущую вкладку', onclick: () => addItem({ type: 'chart', chartId: c.id }) },
-          ic(VIZ[c.viz].icon), h('div', { class: 'grow' }, h('b', null, c.name), h('span', null, VIZ[c.viz].label + (onDash.has(c.id) ? ' · уже на дашборде' : ''))), ic('plus'))));
+          ic(VIZ[c.viz].icon), h('div', { class: 'grow' }, h('b', null, c.name), h('span', null, VIZ[c.viz].label + (onDash.has(c.id) ? ' · уже в шаблоне' : ''))), ic('plus'))));
       };
       search.addEventListener('input', paintList);
       body.append(
@@ -3814,7 +3814,7 @@ function renderDashboard(main, id, q) {
         comp('heading', 'Заголовок', 'Подпись раздела', () => addItem({ type: 'header', text: 'Новый раздел', size: 'l' })),
         comp('text', 'Текст', 'Markdown: пояснения, списки, ссылки', () => addItem({ type: 'markdown', text: '### Заголовок\nТекст с **выделением** и списком:\n- первый пункт\n- второй пункт' })),
         comp('divider', 'Разделитель', 'Горизонтальная линия', () => addItem({ type: 'divider' })),
-        comp('dash', 'Вкладка', 'Новая вкладка дашборда', addTab),
+        comp('dash', 'Вкладка', 'Новая вкладка шаблона', addTab),
         h('p', { class: 'muted', style: { fontSize: '12.5px', marginTop: '14px' } }, 'Перетаскивайте элементы за заголовок или значок ', h('span', { class: 'kbd' }, '⋮⋮'), ', размер меняйте за правый нижний угол. Текст редактируется двойным щелчком.'));
     }
   }
@@ -3996,7 +3996,7 @@ function renderDashboard(main, id, q) {
     // Спрашивать здесь уже поздно — переход состоялся, — поэтому сохраняем молча
     // и говорим тостом, как это делал уход в конструктор графика.
     // «Отменить» и «Сохранить» ставят draftHandled сами, так что откат работает.
-    if (!draftHandled && JSON.stringify(D) !== original) { stash(); toast('Изменения дашборда сохранены'); }
+    if (!draftHandled && JSON.stringify(D) !== original) { stash(); toast('Изменения шаблона сохранены'); }
     // Пустой «Новый дашборд», с которого ушли, не оставляем в списке. Проверяем
     // именно запись в STATE: если человек успел дать название или завести фильтр,
     // работа уже есть — такой дашборд остаётся.
@@ -4081,7 +4081,7 @@ function openFilterEditorModal(D, onSave) {
     const scopeBox = h('div', { class: 'scope-list' });
     const paintScope = () => {
       clear(scopeBox);
-      if (f.scope === 'all' || !f.scope) { scopeBox.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Фильтр действует на все графики дашборда.')); return; }
+      if (f.scope === 'all' || !f.scope) { scopeBox.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Фильтр действует на все графики шаблона.')); return; }
       chartsOnDash.forEach(g => {
         if (!g.charts.length) return;
         scopeBox.appendChild(h('div', { style: { fontSize: '12px', fontWeight: 600, color: 'var(--ink-3)', margin: '4px 0 6px' } }, g.tab.title));
@@ -4102,7 +4102,7 @@ function openFilterEditorModal(D, onSave) {
   }
   paintList(); paintForm();
   openModal({
-    title: 'Фильтры дашборда', wide: true,
+    title: 'Фильтры шаблона', wide: true,
     body: h('div', { class: 'fedit', style: { margin: '-18px -20px' } }, listEl, form),
     foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена'), h('button', { class: 'btn primary', onclick: () => {
       if (list.some(f => !f.col)) { toast('У каждого фильтра должна быть колонка', true); return; }
@@ -4416,7 +4416,7 @@ function renderExplore(main, parts, q) {
     const name = h('input', { class: 'name', value: chart.name, 'aria-label': 'Название графика',
       oninput: e => { chart.name = e.target.value; chart.autoName = false; } });
     const headBtns = [];
-    if (back) headBtns.push(h('button', { class: 'btn ghost', onclick: () => leave('#/d/' + back) }, ic('back'), 'К дашборду'));
+    if (back) headBtns.push(h('button', { class: 'btn ghost', onclick: () => leave('#/d/' + back) }, ic('back'), 'К шаблону'));
     const nSpec = specFilledCount(chart);
     headBtns.push(h('button', { class: 'btn', title: 'Бизнес-вопрос, источник данных, периодичность — попадут в выгрузку ТЗ', onclick: () => openSpecEditor(chart, spec => {
       if (spec) chart.spec = spec; else delete chart.spec;
@@ -4471,8 +4471,8 @@ function renderExplore(main, parts, q) {
         h('button', { class: mode === 'new' ? 'on' : '', onclick: () => { mode = 'new'; paint(); } }, 'Сохранить как новый'))));
       body.appendChild(field('Название графика', h('input', { class: 'input', value: name, oninput: e => { name = e.target.value; } })));
       const already = chart.id && mode === 'overwrite' ? chartUsage(chart.id).map(d => d.id) : [];
-      body.appendChild(field('Добавить на дашборд', selectEl([['', '— не добавлять —'], ...dashes.map(d => [d.id, d.title + (already.includes(d.id) ? ' (уже есть)' : '')]), ['__new', '+ Новый дашборд']], dashId, v => { dashId = v; }),
-        'График появится внизу открытой вкладки выбранного дашборда.'));
+      body.appendChild(field('Добавить в шаблон', selectEl([['', '— не добавлять —'], ...dashes.map(d => [d.id, d.title + (already.includes(d.id) ? ' (уже есть)' : '')]), ['__new', '+ Новый шаблон']], dashId, v => { dashId = v; }),
+        'График появится внизу открытой вкладки выбранного шаблона.'));
     };
     paint();
     openModal({
@@ -4488,7 +4488,7 @@ function renderExplore(main, parts, q) {
     let target = null;
     if (dashId === '__new') {
       const nid = uid('d_');
-      STATE.dashboards[nid] = { id: nid, title: 'Новый дашборд', updated: Date.now(), crossFilter: true, scheme: null, tabs: [{ id: uid('t'), title: 'Вкладка 1', items: [] }], filters: [] };
+      STATE.dashboards[nid] = { id: nid, title: 'Новый шаблон', updated: Date.now(), crossFilter: true, scheme: null, tabs: [{ id: uid('t'), title: 'Вкладка 1', items: [] }], filters: [] };
       target = STATE.dashboards[nid];
     } else if (dashId) target = STATE.dashboards[dashId];
     if (target && !target.tabs.some(t => t.items.some(i => i.chartId === chart.id))) {
@@ -4558,7 +4558,7 @@ function renderDatasetPage(main, id) {
       h('p', null, d.description || `Загружен из файла ${d.fileName || ''}. ${fmtNum(d.rows.length, 'int')} ${plural(d.rows.length, 'строка', 'строки', 'строк')}.`)),
     isSchemaDs(d) ? h('button', { class: 'btn', onclick: () => openSchemaDialog(d.id) }, ic('schema'), 'Изменить схему') : null,
     h('button', { class: 'btn', onclick: () => newChartDialog({ datasetId: d.id }) }, ic('plus'), 'Создать график'),
-    h('button', { class: 'btn primary', onclick: () => openAutoDashDialog(d.id) }, ic('wand'), 'Собрать черновик дашборда'),
+    h('button', { class: 'btn primary', onclick: () => openAutoDashDialog(d.id) }, ic('wand'), 'Собрать черновик шаблона'),
     editable ? h('button', { class: 'btn danger', onclick: () => deleteDataset(d) }, ic('trash'), 'Удалить набор') : null));
   if (d.missingRows) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
     d.fromTemplate ? 'Набор приехал из шаблона без данных. Загрузите файл с такими же колонками — графики оживут сами.'
@@ -5175,7 +5175,7 @@ function openSchemaDialog(existingId) {
           h('td', { class: 'act' }, iconBtn('trash', 'Убрать колонку', () => { cols.splice(i, 1); paint(); }, 'sm'))))));
       body.appendChild(h('div', { class: 'tbl-wrap', style: { marginBottom: '14px' } }, tbl));
     } else {
-      body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px' } }, 'Пока ни одной колонки. Для дашборда обычно хватает одной даты, одного-двух текстовых разрезов и одного числа.'));
+      body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px' } }, 'Пока ни одной колонки. Для шаблона обычно хватает одной даты, одного-двух текстовых разрезов и одного числа.'));
     }
 
     body.appendChild(h('div', { class: 'row2' },
@@ -5486,14 +5486,14 @@ function createAutoDash(ds, title, opts = {}) {
 function openAutoDashDialog(dsId) {
   const ds = DS[dsId];
   if (!ds) return;
-  if (!ds.rows.length) { toast('В наборе нет строк: собирать дашборд не из чего', true); return; }
+  if (!ds.rows.length) { toast('В наборе нет строк: собирать шаблон не из чего', true); return; }
   let title = ds.name;
   const opts = { kpi: true, trend: true, breakdown: true, table: true };
   const plan = buildAutoDash(ds, opts);
   const dt = plan.dt;
   const dimsTxt = plan.dims.length ? plan.dims.map(d => d.label).join(', ') : 'не нашлись';
   const body = h('div', null,
-    field('Название дашборда', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })),
+    field('Название шаблона', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })),
     h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Что собрать'),
       checkbox('Плитки с главными числами', opts.kpi, v => { opts.kpi = v; }),
       checkbox('Динамику по месяцам', opts.trend, v => { opts.trend = v; }),
@@ -5505,7 +5505,7 @@ function openAutoDashDialog(dsId) {
     h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '6px 0 0' } },
       'Это черновик: графики, фильтры и раскладку можно править как обычно, а лишнее — удалить.'));
   openModal({
-    title: 'Собрать черновик дашборда', body,
+    title: 'Собрать черновик шаблона', body,
     foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена'),
       h('button', { class: 'btn primary', onclick: () => {
         if (!opts.kpi && !opts.trend && !opts.breakdown && !opts.table) { toast('Отметьте хотя бы один блок', true); return; }
@@ -5780,7 +5780,7 @@ const TEMPLATES = [
 ];
 const tplById = id => TEMPLATES.find(t => t.id === id) || null;
 /* Название для собранного дашборда: отчётное, а не название приёма */
-const tplDashName = tpl => (tpl && (tpl.dash || tpl.name)) || 'Макет';
+const tplDashName = tpl => (tpl && (tpl.dash || tpl.name)) || 'Шаблон';
 
 /* ---------- Сборка дашборда из шаблона ---------- */
 /* Роль показателя → метрика графика. Производные уже созданы в наборе. */
@@ -5959,7 +5959,7 @@ function tplLayout(charts, ds, intro, preview) {
 
 /* Макет: данных нет, набор порождается под дашборд и прячется за ним */
 function createMockup(tpl, { title, levels } = {}) {
-  const name = (title || (tpl ? tplDashName(tpl) : 'Макет')).trim() || 'Макет';
+  const name = (title || (tpl ? tplDashName(tpl) : 'Шаблон')).trim() || 'Шаблон';
   const dashId = uid('d_');
   const dsId = saveSchemaDataset({ name: `Данные макета «${name}»`, schema: mockupSchema(tpl), owner: dashId });
   if (!tpl) { emptyMockup(dashId, dsId, name); return dashId; }
@@ -5991,7 +5991,7 @@ function createFromTemplate(tpl, ds, { title, roles, levels, preview, dashId }) 
     : '';
   const intro = `**${tplDashName(tpl)}.** ${TPL_LEVELS[plan.levels[0].id].q[0].toUpperCase() + TPL_LEVELS[plan.levels[0].id].q.slice(1)}.`
     + deeper + ' '
-    + (isSchemaDs(ds) ? SCHEMA_NOTE : 'Дашборд собран по готовому шаблону: правьте названия, разрезы и состав как обычно.');
+    + (isSchemaDs(ds) ? SCHEMA_NOTE : 'Собрано по готовому шаблону: правьте названия, разрезы и состав как обычно.');
   const tabs = plan.levels.map((lv, i) => ({
     id: uid('t'), title: lv.title, level: lv.id,
     items: tplLayout(lv.charts, ds, i === 0 ? intro : null, preview),
@@ -6072,10 +6072,10 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
 
   const paint = () => {
     clear(body);
-    body.appendChild(field('Название дашборда', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })));
+    body.appendChild(field('Название шаблона', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })));
 
     if (mockup) body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 12px' } },
-      'Данные Кобра придумает сама. Названия блоков, показателей и категорий поменяете прямо на дашборде.'));
+      'Данные Кобра придумает сама. Названия блоков, показателей и категорий поменяете прямо в шаблоне.'));
     // Роли
     const rolesBox = h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Какие поля во что идут'),
       h('div', { class: 'hint', style: { marginBottom: '6px' } }, 'Кобра подобрала их сама — поменяйте, если взяла не то.'));
@@ -6142,9 +6142,9 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
         }
         if (!id) return;
         close();
-        toast(mockup ? 'Макет собран: правьте названия прямо на блоках' : 'Дашборд собран');
+        toast('Шаблон собран' + (mockup ? ': правьте названия прямо на блоках' : ''));
         go('#/d/' + id);
-      } }, ic('check'), 'Создать дашборд')],
+      } }, ic('check'), 'Создать шаблон')],
   });
 }
 
@@ -6262,8 +6262,8 @@ function renderTemplateList(main, q) {
     h('div', { class: 'grow' }, h('h1', null, 'Готовые шаблоны'),
       h('p', null, ownData
         ? `Выберите шаблон и приложите к набору «${DS[ownData].name}». Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.`
-        : 'Выберите шаблон: Кобра соберёт по нему дашборд на придуманных данных, а вы переименуете блоки и категории под свой процесс. Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.')),
-    h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем дашбордам')));
+        : 'Выберите готовый шаблон: Кобра соберёт его на придуманных данных, а вы переименуете блоки и категории под свой процесс. Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.')),
+    h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем шаблонам')));
 
   const grid = h('div', { class: 'tpl-grid' });
   const paint = () => {
@@ -6289,7 +6289,7 @@ function renderTemplateList(main, q) {
           const id = templatePreview(tpl, dsId);
           if (id) go('#/d/' + id);
         } }, ic('eye'), 'Посмотреть пример') : null,
-        h('button', { class: 'btn sm primary', disabled: !fit.ok, onclick: () => openTemplateDialog(tpl, dsId) }, ds ? 'Взять этот' : 'Сделать макет')));
+        h('button', { class: 'btn sm primary', disabled: !fit.ok, onclick: () => openTemplateDialog(tpl, dsId) }, ds ? 'Взять этот' : 'Сделать шаблон')));
       grid.appendChild(card);
     });
     // Запасной путь: ни один скелет не подошёл
@@ -6299,13 +6299,13 @@ function renderTemplateList(main, q) {
       own.appendChild(h('p', null, 'Ни один готовый не подошёл? Кобра посмотрит на колонки набора и соберёт черновик одной вкладкой.'));
       own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => openAutoDashDialog(dsId) }, ic('wand'), 'Собрать черновик')));
     } else {
-      own.appendChild(h('div', { class: 'tpl-head' }, h('b', null, 'Пустой макет')));
+      own.appendChild(h('div', { class: 'tpl-head' }, h('b', null, 'Пустой шаблон')));
       own.appendChild(h('p', null, 'Ни один готовый не подошёл? Начните с чистого листа и добавляйте блоки сами — данные Кобра тоже придумает.'));
       own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => {
-        const id = createMockup(null, { title: 'Новый макет', levels: ['sum'] });
+        const id = createMockup(null, { title: 'Новый шаблон', levels: ['sum'] });
         // Помечаем как только что созданный: брошенную пустышку уберут при уходе
         if (id) { freshDashboards.add(id); go('#/d/' + id + '?edit=1'); }
-      } }, ic('plus'), 'Пустой макет')));
+      } }, ic('plus'), 'Пустой шаблон')));
     }
     grid.appendChild(own);
   };
@@ -6618,8 +6618,8 @@ async function aiAsk(messages) {
    показатели и разрезы. `tag` — короткая подпись для запроса: в форме вопрос
    звучит по-человечески, а в промпте нужна одна строка без вопросительного знака. */
 const AI_BRIEF_FIELDS = [
-  { key: 'title', tag: 'Название дашборда', label: 'Название дашборда', ph: 'Продажи филиалов' },
-  { key: 'problem', tag: 'Какие проблемы решает', label: 'Какие проблемы поможет решить дашборд?', ph: 'Не видно, где падает выручка и из-за чего', area: true },
+  { key: 'title', tag: 'Название шаблона', label: 'Название шаблона', ph: 'Продажи филиалов' },
+  { key: 'problem', tag: 'Какие проблемы решает', label: 'Какие проблемы поможет решить шаблон?', ph: 'Не видно, где падает выручка и из-за чего', area: true },
   { key: 'metrics', tag: 'Показатели, за которыми следят', label: 'За какими показателями необходимо следить?', ph: 'Выручка, средний чек, доля возвратов' },
   { key: 'docs', tag: 'Проваливаться до документов', label: 'Необходимо ли проваливаться до документов?', pick: ['да', 'нет'],
     hint: 'Нижний уровень — таблица исходных строк: заказы, заявки, чеки' },
@@ -6681,20 +6681,20 @@ function aiPrompt(q, ctx) {
   delete rest.бриф;
   const parts = ['Задача: ' + (String(q || '').trim() || '(опишите задачу)')];
   if (brief && brief.length) parts.push('=== БРИФ (ответы заказчика) ===\n' + brief.join('\n') + '\n=== КОНЕЦ БРИФА ===');
-  parts.push('=== КОНТЕКСТ (набор и дашборд) ===\n' + JSON.stringify(rest, null, 1) + '\n=== КОНЕЦ КОНТЕКСТА ===');
+  parts.push('=== КОНТЕКСТ (набор и шаблон) ===\n' + JSON.stringify(rest, null, 1) + '\n=== КОНЕЦ КОНТЕКСТА ===');
   return parts.join('\n\n');
 }
 
 /* ---------- Что AI-ассистент умеет вернуть ---------- */
 const AI_SYSTEM = [
-  'Ты помогаешь собрать дашборд в конструкторе «Кобра». Отвечай по-русски и только JSON, без пояснений вокруг.',
+  'Ты помогаешь собрать шаблон в конструкторе «Кобра». Отвечай по-русски и только JSON, без пояснений вокруг.',
   'Формат ответа: {"ответ": "<текст человеку>", "блоки": [...], "набор": {...}}. Поля «блоки» и «набор» необязательны.',
   'Блок: {"вид": "line|bar|pie|area|table|treemap|heatmap|funnel|pivot|big_number_trend", "название": "...", "зачем": "на какой вопрос отвечает"}.',
   'Набор (только если человек просит придумать данные): {"колонки": [{"подпись": "Дата заявки", "тип": "date|string|number", "значения": ["..."], "от": 1, "до": 1000}], "строк": 2000}.',
   'Строки данных не придумывай и не присылай: их сгенерирует Кобра по описанию колонок.',
   'Раздел БРИФ — требования заказчика, а не задача: выполняй то, что в «Задача», опираясь на бриф.',
   'Из брифа бери название и подписи блоков под его показатели, категории — под его разрезы. «Проваливаться до документов: да» значит, что нужен блок с таблицей исходных строк.',
-  'Если запрос не про дашборд и не про данные, верни только «ответ».',
+  'Если запрос не про шаблон и не про данные, верни только «ответ».',
 ].join('\n');
 
 function aiParse(text) {
@@ -6808,7 +6808,7 @@ function renderAssistant(D, host, api) {
   const briefForm = () => {
     const draft = Object.assign({ title: D.title || '' }, aiBrief(D) || {});
     const box = h('div', { class: 'ai-form' });
-    box.appendChild(h('div', { class: 'ai-form-head' }, h('b', null, 'Коротко о дашборде'), h('div', { class: 'grow' }),
+    box.appendChild(h('div', { class: 'ai-form-head' }, h('b', null, 'Коротко о шаблоне'), h('div', { class: 'grow' }),
       iconBtn('x', 'Закрыть форму', () => { briefOpen = false; D.chatBriefSkipped = true; saveSoon(); paint(); }, 'sm')));
     box.appendChild(h('div', { class: 'ai-note' },
       'Ответы уходят с каждым запросом отдельным разделом — AI-ассистент меньше придумывает от себя. Можно заполнить частью или закрыть.'));
@@ -6838,7 +6838,7 @@ function renderAssistant(D, host, api) {
       saveState();
       aiPush(D, 'system', 'Бриф сохранён:\n' + aiBriefLines(b).join('\n'));
       briefOpen = false;
-      if (fire) { paint(); await send('Собери дашборд по брифу: уровни детализации по вкладкам и блоки под показатели.'); return; }
+      if (fire) { paint(); await send('Собери шаблон по брифу: уровни детализации по вкладкам и блоки под показатели.'); return; }
       toast('Бриф сохранён — он уходит с каждым запросом');
       paint();
     };
@@ -6862,7 +6862,7 @@ function renderAssistant(D, host, api) {
     if (briefOpen) log.appendChild(briefForm());
     else if (!aiLog(D).length) log.appendChild(h('div', { class: 'ai-note' },
       mock ? 'Опишите свой процесс словами — AI-ассистент придумает под него данные и предложит блоки. Например: «заявки на кредит: приходят в отделения, проходят скоринг, часть одобряем».'
-        : 'Опишите, что хотите увидеть на дашборде. AI-ассистент предложит блоки, а применять их или нет — решаете вы.'));
+        : 'Опишите, что хотите увидеть в шаблоне. AI-ассистент предложит блоки, а применять их или нет — решаете вы.'));
     aiLog(D).forEach(m => {
       const el = h('div', { class: 'ai-msg ' + m.role });
       el.appendChild(h('div', { class: 'ai-text' }, m.text));
@@ -6897,7 +6897,7 @@ function renderAssistant(D, host, api) {
     }
 
     // Ввод
-    const ta = h('textarea', { class: 'textarea ai-input', rows: 3, placeholder: 'Что показать на дашборде?', 'aria-label': 'Запрос AI-ассистенту' });
+    const ta = h('textarea', { class: 'textarea ai-input', rows: 3, placeholder: 'Что показать в шаблоне?', 'aria-label': 'Запрос AI-ассистенту' });
     const send = async forced => {
       const q = String(forced || ta.value).trim();
       if (!q || busy) return;
@@ -6926,7 +6926,7 @@ function renderAssistant(D, host, api) {
       const schema = isMockupDs(ds()) ? r.schema : null;
       if (r.schema && !schema) delete extra.schemaCols;
       aiPush(D, 'assistant', r.ответ || (r.blocks.length || schema ? 'Вот что предлагаю.' : 'Не понял запрос.'), extra);
-      if (r.schema && !schema) aiPush(D, 'system', 'Придуманные данные не подставляю: этот дашборд построен на настоящем наборе.');
+      if (r.schema && !schema) aiPush(D, 'system', 'Придуманные данные не подставляю: этот шаблон построен на настоящем наборе.');
       pending = (r.blocks.length || schema) ? { blocks: r.blocks, schema } : null;
     };
 
@@ -6946,11 +6946,11 @@ function renderAssistant(D, host, api) {
           foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена'),
             h('button', { class: 'btn primary', onclick: () => { close(); takeAnswer(area.value); paint(); } }, 'Разобрать')] });
       } }, 'Вставить ответ'));
-    if (!briefOpen) row.appendChild(h('button', { class: 'btn sm', title: 'Ответы о дашборде, которые уходят с каждым запросом',
+    if (!briefOpen) row.appendChild(h('button', { class: 'btn sm', title: 'Ответы о шаблоне, которые уходят с каждым запросом',
       onclick: () => { briefOpen = true; paint(); } }, ic('edit'), aiBriefFilled(aiBrief(D)) ? 'Бриф' : 'Заполнить бриф'));
     host.appendChild(row);
     if (real) host.appendChild(checkbox('Приложить к запросу ' + AI_SAMPLE_ROWS + ' строк данных (на один раз)', samples, v => { samples = v; }));
-    else host.appendChild(h('div', { class: 'ai-note' }, 'Данные придуманы, поэтому наружу уходят только названия полей и состав дашборда.'));
+    else host.appendChild(h('div', { class: 'ai-note' }, 'Данные придуманы, поэтому наружу уходят только названия полей и состав шаблона.'));
     if (isMockupDs(ds())) host.appendChild(h('button', { class: 'btn sm', style: { marginTop: '8px' }, onclick: () => aiExportCsv(ds()) }, ic('download'), 'Выгрузить данные в CSV'));
     if (!aiReady()) host.appendChild(h('div', { class: 'ai-note' },
       'Доступ к модели не настроен: укажите адрес и модель в шестерёнке — или работайте переносом вручную, он не требует ни ключей, ни сети.'));
@@ -7043,12 +7043,12 @@ function openExportDialog(presetDashId) {
   const size = h('div', { class: 'muted', style: { fontSize: '12.5px' } });
 
   const recount = () => {
-    if (!picked.size && !includeLoose) { size.textContent = 'Не выбрано ни одного дашборда.'; return; }
+    if (!picked.size && !includeLoose) { size.textContent = 'Не выбрано ни одного шаблона.'; return; }
     try {
       const json = JSON.stringify(buildExport({ dashIds: [...picked], includeLoose, withData, fakeData, author, note }));
       const kb = new Blob([json]).size / 1024;
       const { charts, dsIds } = collectRefs([...picked], includeLoose);
-      size.textContent = `В файле: ${picked.size} ${plural(picked.size, 'дашборд', 'дашборда', 'дашбордов')}, `
+      size.textContent = `В файле: ${picked.size} ${plural(picked.size, 'шаблон', 'шаблона', 'шаблонов')}, `
         + `${Object.keys(charts).length} ${plural(Object.keys(charts).length, 'график', 'графика', 'графиков')}, `
         + `${dsIds.length} ${plural(dsIds.length, 'набор', 'набора', 'наборов')} данных. Размер — `
         + (kb > 1024 ? (kb / 1024).toFixed(1) + ' МБ' : Math.max(1, Math.round(kb)) + ' КБ') + '.';
@@ -7059,18 +7059,18 @@ function openExportDialog(presetDashId) {
     clear(body);
     body.appendChild(h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Что вкладываем'),
       h('div', { class: 'seg' },
-        h('button', { class: withData ? '' : 'on', onclick: () => { withData = false; paint(); } }, 'Шаблон для передачи — без данных'),
-        h('button', { class: withData ? 'on' : '', onclick: () => { withData = true; paint(); } }, 'Проект — с данными')),
+        h('button', { class: withData ? '' : 'on', onclick: () => { withData = false; paint(); } }, 'Без данных — только структура'),
+        h('button', { class: withData ? 'on' : '', onclick: () => { withData = true; paint(); } }, 'Со строками данных')),
       h('div', { class: 'hint' }, withData
         ? 'Строки загруженных наборов попадут в файл. Не отправляйте его по открытым каналам, если данные чувствительные.'
-        : 'Только структура: дашборды, графики, метрики и описания наборов. Строки загруженных файлов не вкладываются.')));
+        : 'Только структура: шаблоны, графики, метрики и описания наборов. Строки загруженных файлов не вкладываются.')));
     if (!withData) body.appendChild(checkbox('Подставить вымышленные данные, чтобы графики не были пустыми', fakeData, v => { fakeData = v; recount(); }));
 
     const list = h('div', { style: { display: 'grid', gap: '4px', marginTop: '4px' } });
     all.forEach(d => list.appendChild(checkbox(d.title, picked.has(d.id), v => { v ? picked.add(d.id) : picked.delete(d.id); recount(); })));
-    body.appendChild(h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Дашборды'),
-      all.length ? list : h('p', { class: 'muted', style: { fontSize: '13px', margin: 0 } }, 'Дашбордов пока нет.')));
-    body.appendChild(checkbox('Добавить графики, которых нет ни на одном дашборде', includeLoose, v => { includeLoose = v; recount(); }));
+    body.appendChild(h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Шаблоны'),
+      all.length ? list : h('p', { class: 'muted', style: { fontSize: '13px', margin: 0 } }, 'Шаблонов пока нет.')));
+    body.appendChild(checkbox('Добавить графики, которых нет ни в одном шаблоне', includeLoose, v => { includeLoose = v; recount(); }));
 
     body.appendChild(h('div', { class: 'row2', style: { marginTop: '12px' } },
       field('Автор', h('input', { class: 'input', value: author, placeholder: 'Кто отправляет', oninput: e => { author = e.target.value; } })),
@@ -7087,12 +7087,12 @@ function openExportDialog(presetDashId) {
       h('button', {
         class: 'btn primary', onclick: () => {
           const dashIds = [...picked];
-          if (!dashIds.length && !includeLoose) { toast('Выберите хотя бы один дашборд', true); return; }
+          if (!dashIds.length && !includeLoose) { toast('Выберите хотя бы один шаблон', true); return; }
           const payload = buildExport({ dashIds, includeLoose, withData, fakeData, author, note });
           if (author.trim()) lsSet(LS_AUTHOR, author.trim());
           if (downloadFile(exportFileName(dashIds, withData), JSON.stringify(payload, null, 1))) {
             close();
-            toast(withData ? 'Проект сохранён в файл' : 'Шаблон для передачи сохранён в файл');
+            toast(withData ? 'Файл со строками данных сохранён' : 'Файл без данных сохранён');
           }
         },
       }, ic('download'), 'Скачать файл')],
@@ -7103,7 +7103,7 @@ function openExportDialog(presetDashId) {
 function validatePayload(p) {
   if (!p || typeof p !== 'object') throw new Error('это не файл Кобры');
   if (p.kobra !== KOBRA_FILE_V) throw new Error(p.kobra ? `версия файла ${p.kobra} не поддерживается` : 'в файле нет пометки Кобры');
-  if (!p.dashboards || !p.charts) throw new Error('в файле нет дашбордов и графиков');
+  if (!p.dashboards || !p.charts) throw new Error('в файле нет шаблонов и графиков');
   return p;
 }
 
@@ -7206,11 +7206,11 @@ function openImportPreview(file, p) {
     clear(body);
     body.appendChild(h('table', { class: 'list' }, h('tbody', null, [
       ['Файл', file.name],
-      ['Вид', p.kind === 'project' ? 'Проект со строками данных' : 'Шаблон для передачи, без данных'],
+      ['Вид', p.kind === 'project' ? 'Со строками данных' : 'Без данных, только структура'],
       ['Сохранён', p.exportedAt ? fmtDate(Date.parse(p.exportedAt)) : '—'],
       p.author ? ['Автор', p.author] : null,
       p.note ? ['Комментарий', p.note] : null,
-      ['Дашборды', dashes.map(d => d.title).join(', ') || '—'],
+      ['Шаблоны', dashes.map(d => d.title).join(', ') || '—'],
       ['Графики', String(charts.length)],
       ['Наборы данных', `${dsList.length}` + (withRows ? `, со строками — ${withRows}` : '') + (fake ? `, по схеме — ${fake}` : '') + (noRows ? `, без строк — ${noRows}` : '')],
     ].filter(Boolean).map(([k, v]) => h('tr', null, h('td', { class: 'muted', style: { width: '150px' } }, k), h('td', null, v))))));
@@ -7223,7 +7223,7 @@ function openImportPreview(file, p) {
           h('button', { class: mode === 'replace' ? 'on' : '', onclick: () => { mode = 'replace'; paint(); } }, 'Заменить мои версии')),
         h('div', { class: 'hint' }, mode === 'copy'
           ? 'Ничего не потеряется: совпавшее приедет рядом, с пометкой «импорт».'
-          : 'Мои дашборды и графики с теми же идентификаторами будут перезаписаны версией из файла.')));
+          : 'Мои шаблоны и графики с теми же идентификаторами будут перезаписаны версией из файла.')));
     }
   };
   paint();
@@ -7480,7 +7480,7 @@ function dashSpecDatasets(D) {
    чтобы ТЗ совпадало с тем, что человек видит на экране. */
 function buildSpecMd(dash, opts = {}) {
   const D = typeof dash === 'string' ? STATE.dashboards[dash] : dash;
-  if (!D) throw new Error('Дашборд не найден');
+  if (!D) throw new Error('Шаблон не найден');
   const L = [];
   const dsIds = dashSpecDatasets(D);
   const nCharts = D.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
@@ -7556,7 +7556,7 @@ function specFileName(D) {
 /* ---------- Диалог выгрузки ---------- */
 function openSpecDialog(dash) {
   const D = typeof dash === 'string' ? STATE.dashboards[dash] : dash;
-  if (!D) { toast('Дашборд не найден', true); return; }
+  if (!D) { toast('Шаблон не найден', true); return; }
   let author = lsGet(LS_SPEC_AUTHOR) || '';
   let note = '';
   const nCharts = D.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
@@ -7564,14 +7564,14 @@ function openSpecDialog(dash) {
   const filled = charts.filter(c => specValue(c, 'question')).length;
   const body = h('div');
   body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 14px' } },
-    'Кобра соберёт из дашборда готовое задание: по каждому графику — тип, набор данных, метрики с формулами, разрезы, фильтры и лимиты, плюс поля ТЗ. '
+    'Кобра соберёт из шаблона готовое задание: по каждому графику — тип, набор данных, метрики с формулами, разрезы, фильтры и лимиты, плюс поля ТЗ. '
     + 'Цифры и подписи в файле те же, что на экране.'));
   body.appendChild(h('div', { class: 'row2' },
     field('Автор', h('input', { class: 'input', value: author, placeholder: 'Кто составил ТЗ', oninput: e => { author = e.target.value; } })),
     field('Комментарий', h('input', { class: 'input', value: note, placeholder: 'Например: на согласование с дирекцией', oninput: e => { note = e.target.value; } }))));
   body.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: 0 } },
     `В файле: ${D.tabs.length} ${plural(D.tabs.length, 'вкладка', 'вкладки', 'вкладок')}, ${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, `
-    + `${(D.filters || []).length} ${plural((D.filters || []).length, 'фильтр', 'фильтра', 'фильтров')} дашборда. `
+    + `${(D.filters || []).length} ${plural((D.filters || []).length, 'фильтр', 'фильтра', 'фильтров')} шаблона. `
     + (nCharts ? `Бизнес-вопрос заполнен у ${filled} из ${nCharts}.` : '')));
 
   const make = () => buildSpecMd(D, { author: author.trim(), note: note.trim() });

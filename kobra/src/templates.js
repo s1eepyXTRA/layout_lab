@@ -260,7 +260,7 @@ const TEMPLATES = [
 ];
 const tplById = id => TEMPLATES.find(t => t.id === id) || null;
 /* Название для собранного дашборда: отчётное, а не название приёма */
-const tplDashName = tpl => (tpl && (tpl.dash || tpl.name)) || 'Макет';
+const tplDashName = tpl => (tpl && (tpl.dash || tpl.name)) || 'Шаблон';
 
 /* ---------- Сборка дашборда из шаблона ---------- */
 /* Роль показателя → метрика графика. Производные уже созданы в наборе. */
@@ -439,7 +439,7 @@ function tplLayout(charts, ds, intro, preview) {
 
 /* Макет: данных нет, набор порождается под дашборд и прячется за ним */
 function createMockup(tpl, { title, levels } = {}) {
-  const name = (title || (tpl ? tplDashName(tpl) : 'Макет')).trim() || 'Макет';
+  const name = (title || (tpl ? tplDashName(tpl) : 'Шаблон')).trim() || 'Шаблон';
   const dashId = uid('d_');
   const dsId = saveSchemaDataset({ name: `Данные макета «${name}»`, schema: mockupSchema(tpl), owner: dashId });
   if (!tpl) { emptyMockup(dashId, dsId, name); return dashId; }
@@ -471,7 +471,7 @@ function createFromTemplate(tpl, ds, { title, roles, levels, preview, dashId }) 
     : '';
   const intro = `**${tplDashName(tpl)}.** ${TPL_LEVELS[plan.levels[0].id].q[0].toUpperCase() + TPL_LEVELS[plan.levels[0].id].q.slice(1)}.`
     + deeper + ' '
-    + (isSchemaDs(ds) ? SCHEMA_NOTE : 'Дашборд собран по готовому шаблону: правьте названия, разрезы и состав как обычно.');
+    + (isSchemaDs(ds) ? SCHEMA_NOTE : 'Собрано по готовому шаблону: правьте названия, разрезы и состав как обычно.');
   const tabs = plan.levels.map((lv, i) => ({
     id: uid('t'), title: lv.title, level: lv.id,
     items: tplLayout(lv.charts, ds, i === 0 ? intro : null, preview),
@@ -552,10 +552,10 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
 
   const paint = () => {
     clear(body);
-    body.appendChild(field('Название дашборда', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })));
+    body.appendChild(field('Название шаблона', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })));
 
     if (mockup) body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 12px' } },
-      'Данные Кобра придумает сама. Названия блоков, показателей и категорий поменяете прямо на дашборде.'));
+      'Данные Кобра придумает сама. Названия блоков, показателей и категорий поменяете прямо в шаблоне.'));
     // Роли
     const rolesBox = h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Какие поля во что идут'),
       h('div', { class: 'hint', style: { marginBottom: '6px' } }, 'Кобра подобрала их сама — поменяйте, если взяла не то.'));
@@ -622,9 +622,9 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
         }
         if (!id) return;
         close();
-        toast(mockup ? 'Макет собран: правьте названия прямо на блоках' : 'Дашборд собран');
+        toast('Шаблон собран' + (mockup ? ': правьте названия прямо на блоках' : ''));
         go('#/d/' + id);
-      } }, ic('check'), 'Создать дашборд')],
+      } }, ic('check'), 'Создать шаблон')],
   });
 }
 
@@ -742,8 +742,8 @@ function renderTemplateList(main, q) {
     h('div', { class: 'grow' }, h('h1', null, 'Готовые шаблоны'),
       h('p', null, ownData
         ? `Выберите шаблон и приложите к набору «${DS[ownData].name}». Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.`
-        : 'Выберите шаблон: Кобра соберёт по нему дашборд на придуманных данных, а вы переименуете блоки и категории под свой процесс. Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.')),
-    h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем дашбордам')));
+        : 'Выберите готовый шаблон: Кобра соберёт его на придуманных данных, а вы переименуете блоки и категории под свой процесс. Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.')),
+    h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем шаблонам')));
 
   const grid = h('div', { class: 'tpl-grid' });
   const paint = () => {
@@ -769,7 +769,7 @@ function renderTemplateList(main, q) {
           const id = templatePreview(tpl, dsId);
           if (id) go('#/d/' + id);
         } }, ic('eye'), 'Посмотреть пример') : null,
-        h('button', { class: 'btn sm primary', disabled: !fit.ok, onclick: () => openTemplateDialog(tpl, dsId) }, ds ? 'Взять этот' : 'Сделать макет')));
+        h('button', { class: 'btn sm primary', disabled: !fit.ok, onclick: () => openTemplateDialog(tpl, dsId) }, ds ? 'Взять этот' : 'Сделать шаблон')));
       grid.appendChild(card);
     });
     // Запасной путь: ни один скелет не подошёл
@@ -779,13 +779,13 @@ function renderTemplateList(main, q) {
       own.appendChild(h('p', null, 'Ни один готовый не подошёл? Кобра посмотрит на колонки набора и соберёт черновик одной вкладкой.'));
       own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => openAutoDashDialog(dsId) }, ic('wand'), 'Собрать черновик')));
     } else {
-      own.appendChild(h('div', { class: 'tpl-head' }, h('b', null, 'Пустой макет')));
+      own.appendChild(h('div', { class: 'tpl-head' }, h('b', null, 'Пустой шаблон')));
       own.appendChild(h('p', null, 'Ни один готовый не подошёл? Начните с чистого листа и добавляйте блоки сами — данные Кобра тоже придумает.'));
       own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => {
-        const id = createMockup(null, { title: 'Новый макет', levels: ['sum'] });
+        const id = createMockup(null, { title: 'Новый шаблон', levels: ['sum'] });
         // Помечаем как только что созданный: брошенную пустышку уберут при уходе
         if (id) { freshDashboards.add(id); go('#/d/' + id + '?edit=1'); }
-      } }, ic('plus'), 'Пустой макет')));
+      } }, ic('plus'), 'Пустой шаблон')));
     }
     grid.appendChild(own);
   };

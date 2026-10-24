@@ -274,14 +274,14 @@ function createAutoDash(ds, title, opts = {}) {
 function openAutoDashDialog(dsId) {
   const ds = DS[dsId];
   if (!ds) return;
-  if (!ds.rows.length) { toast('В наборе нет строк: собирать дашборд не из чего', true); return; }
+  if (!ds.rows.length) { toast('В наборе нет строк: собирать шаблон не из чего', true); return; }
   let title = ds.name;
   const opts = { kpi: true, trend: true, breakdown: true, table: true };
   const plan = buildAutoDash(ds, opts);
   const dt = plan.dt;
   const dimsTxt = plan.dims.length ? plan.dims.map(d => d.label).join(', ') : 'не нашлись';
   const body = h('div', null,
-    field('Название дашборда', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })),
+    field('Название шаблона', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })),
     h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Что собрать'),
       checkbox('Плитки с главными числами', opts.kpi, v => { opts.kpi = v; }),
       checkbox('Динамику по месяцам', opts.trend, v => { opts.trend = v; }),
@@ -293,7 +293,7 @@ function openAutoDashDialog(dsId) {
     h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '6px 0 0' } },
       'Это черновик: графики, фильтры и раскладку можно править как обычно, а лишнее — удалить.'));
   openModal({
-    title: 'Собрать черновик дашборда', body,
+    title: 'Собрать черновик шаблона', body,
     foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена'),
       h('button', { class: 'btn primary', onclick: () => {
         if (!opts.kpi && !opts.trend && !opts.breakdown && !opts.table) { toast('Отметьте хотя бы один блок', true); return; }
