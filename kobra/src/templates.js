@@ -693,7 +693,7 @@ function createMockupChart(ds, vizId) {
 
 /* ---------- Предпросмотр на вымышленных данных ---------- */
 /* Временный набор и дашборд живут только в памяти: в localStorage не пишем */
-function templatePreview(tpl) {
+function templatePreview(tpl, backDsId) {
   const used = new Set();
   const cols = (tpl.demo || []).map((d, i) => {
     const label = typeof d === 'string' ? d : d.label;
@@ -711,6 +711,9 @@ function templatePreview(tpl) {
   };
   const id = createFromTemplate(tpl, DS[dsId], { title: `Пример: ${tplDashName(tpl)}`, preview: true });
   if (!id) { delete DS[dsId]; return null; }
+  // Откуда человек пришёл: иначе из примера некуда вернуться, кроме кнопки браузера
+  STATE.dashboards[id].previewDs = backDsId || null;
+  STATE.dashboards[id].previewBack = '#/templates' + (backDsId ? '?ds=' + encodeURIComponent(backDsId) : '');
   return id;
 }
 /* Убираем примеры, когда человек ушёл с них: иначе они осядут в состоянии */
@@ -763,7 +766,7 @@ function renderTemplateList(main, q) {
       if (!fit.ok) card.appendChild(h('div', { class: 'tpl-miss' }, 'В наборе «' + ds.name + '» не нашлось: ' + fit.missingLabels.join(', ')));
       card.appendChild(h('div', { class: 'tpl-act' },
         tpl.demo && tpl.demo.length ? h('button', { class: 'btn sm', onclick: () => {
-          const id = templatePreview(tpl);
+          const id = templatePreview(tpl, dsId);
           if (id) go('#/d/' + id);
         } }, ic('eye'), 'Посмотреть пример') : null,
         h('button', { class: 'btn sm primary', disabled: !fit.ok, onclick: () => openTemplateDialog(tpl, dsId) }, ds ? 'Взять этот' : 'Сделать макет')));

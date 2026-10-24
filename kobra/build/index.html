@@ -180,6 +180,10 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .dash-head { display: flex; align-items: center; gap: 10px; padding: 16px 24px 8px; flex-wrap: wrap; }
 .dash-head h1 { font: 600 21px/1.25 var(--font-display); margin: 0; letter-spacing: -.01em; }
 .dash-head .grow { flex: 1; }
+/* Пример шаблона: возврат в каталог должен бросаться в глаза и не уезжать
+   при прокрутке — иначе человек застревает в чужом дашборде */
+.dash-head.ex { position: sticky; top: 0; z-index: 12; background: var(--bg); padding-bottom: 12px; }
+.dash-head .btn.back-ex { box-shadow: 0 0 0 4px var(--primary-soft), var(--shadow-pop); }
 .dash-head .title-input { font: 600 20px/1.25 var(--font-display); border: 1px dashed var(--line-2); background: var(--surface); border-radius: var(--r-m); padding: 4px 8px; min-width: 280px; }
 .dash-sub { padding: 0 24px 8px; color: var(--ink-3); font-size: 12.5px; }
 .tabs { display: flex; gap: 2px; padding: 0 24px; border-bottom: 1px solid var(--line); overflow-x: auto; flex: none; }
@@ -472,7 +476,8 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
   .fbar.closed { box-shadow: none; }
   .dash-main { margin-left: 44px; }
   .edit-panel { display: none; }
-  .dash-head .btn.primary, .dash-head .btn.hide-m { display: none; }
+  .dash-head .btn.primary, .dash-head .btn.hide-m, .dash-head .hide-m { display: none; }
+  .dash-head .btn.back-ex { display: inline-flex; }
   .explore { display: flex; flex-direction: column; overflow: auto; height: auto; }
   .explore > .x-col { overflow: visible; border-right: 0; }
   .explore > .x-col:nth-child(2) { order: 2; }
@@ -3199,7 +3204,21 @@ function renderDashboard(main, id, q) {
 
   /* ---------- Шапка ---------- */
   function paintHead() {
-    const head = h('div', { class: 'dash-head' });
+    const head = h('div', { class: 'dash-head' + (D.preview ? ' ex' : '') });
+    // Пример шаблона живёт только в памяти и пропадает при уходе со страницы:
+    // править его бессмысленно, поэтому в шапке — возврат в каталог и выбор
+    // шаблона. Шапка прилипает, иначе на длинном примере возврат уезжает вверх.
+    if (D.preview) {
+      head.append(
+        h('button', { class: 'btn primary back-ex', onclick: () => go(D.previewBack || '#/templates') }, ic('chevL'), 'Вернуться к шаблонам'),
+        h('h1', null, D.title),
+        h('div', { class: 'grow' }),
+        h('button', { class: 'btn', onclick: () => {
+          const tpl = tplById((D.fromTemplate || {}).tplId);
+          if (tpl) openTemplateDialog(tpl, D.previewDs || null); else go('#/templates');
+        } }, ic('check'), 'Выбрать этот шаблон'));
+      return head;
+    }
     if (editing) {
       const inp = h('input', { class: 'title-input', value: D.title, 'aria-label': 'Название дашборда', oninput: e => { D.title = e.target.value; } });
       head.appendChild(inp);
@@ -6158,7 +6177,7 @@ function createMockupChart(ds, vizId) {
 
 /* ---------- Предпросмотр на вымышленных данных ---------- */
 /* Временный набор и дашборд живут только в памяти: в localStorage не пишем */
-function templatePreview(tpl) {
+function templatePreview(tpl, backDsId) {
   const used = new Set();
   const cols = (tpl.demo || []).map((d, i) => {
     const label = typeof d === 'string' ? d : d.label;
@@ -6176,6 +6195,9 @@ function templatePreview(tpl) {
   };
   const id = createFromTemplate(tpl, DS[dsId], { title: `Пример: ${tplDashName(tpl)}`, preview: true });
   if (!id) { delete DS[dsId]; return null; }
+  // Откуда человек пришёл: иначе из примера некуда вернуться, кроме кнопки браузера
+  STATE.dashboards[id].previewDs = backDsId || null;
+  STATE.dashboards[id].previewBack = '#/templates' + (backDsId ? '?ds=' + encodeURIComponent(backDsId) : '');
   return id;
 }
 /* Убираем примеры, когда человек ушёл с них: иначе они осядут в состоянии */
@@ -6228,7 +6250,7 @@ function renderTemplateList(main, q) {
       if (!fit.ok) card.appendChild(h('div', { class: 'tpl-miss' }, 'В наборе «' + ds.name + '» не нашлось: ' + fit.missingLabels.join(', ')));
       card.appendChild(h('div', { class: 'tpl-act' },
         tpl.demo && tpl.demo.length ? h('button', { class: 'btn sm', onclick: () => {
-          const id = templatePreview(tpl);
+          const id = templatePreview(tpl, dsId);
           if (id) go('#/d/' + id);
         } }, ic('eye'), 'Посмотреть пример') : null,
         h('button', { class: 'btn sm primary', disabled: !fit.ok, onclick: () => openTemplateDialog(tpl, dsId) }, ds ? 'Взять этот' : 'Сделать макет')));

@@ -185,7 +185,21 @@ function renderDashboard(main, id, q) {
 
   /* ---------- Шапка ---------- */
   function paintHead() {
-    const head = h('div', { class: 'dash-head' });
+    const head = h('div', { class: 'dash-head' + (D.preview ? ' ex' : '') });
+    // Пример шаблона живёт только в памяти и пропадает при уходе со страницы:
+    // править его бессмысленно, поэтому в шапке — возврат в каталог и выбор
+    // шаблона. Шапка прилипает, иначе на длинном примере возврат уезжает вверх.
+    if (D.preview) {
+      head.append(
+        h('button', { class: 'btn primary back-ex', onclick: () => go(D.previewBack || '#/templates') }, ic('chevL'), 'Вернуться к шаблонам'),
+        h('h1', null, D.title),
+        h('div', { class: 'grow' }),
+        h('button', { class: 'btn', onclick: () => {
+          const tpl = tplById((D.fromTemplate || {}).tplId);
+          if (tpl) openTemplateDialog(tpl, D.previewDs || null); else go('#/templates');
+        } }, ic('check'), 'Выбрать этот шаблон'));
+      return head;
+    }
     if (editing) {
       const inp = h('input', { class: 'title-input', value: D.title, 'aria-label': 'Название дашборда', oninput: e => { D.title = e.target.value; } });
       head.appendChild(inp);

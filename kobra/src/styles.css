@@ -173,6 +173,10 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .dash-head { display: flex; align-items: center; gap: 10px; padding: 16px 24px 8px; flex-wrap: wrap; }
 .dash-head h1 { font: 600 21px/1.25 var(--font-display); margin: 0; letter-spacing: -.01em; }
 .dash-head .grow { flex: 1; }
+/* Пример шаблона: возврат в каталог должен бросаться в глаза и не уезжать
+   при прокрутке — иначе человек застревает в чужом дашборде */
+.dash-head.ex { position: sticky; top: 0; z-index: 12; background: var(--bg); padding-bottom: 12px; }
+.dash-head .btn.back-ex { box-shadow: 0 0 0 4px var(--primary-soft), var(--shadow-pop); }
 .dash-head .title-input { font: 600 20px/1.25 var(--font-display); border: 1px dashed var(--line-2); background: var(--surface); border-radius: var(--r-m); padding: 4px 8px; min-width: 280px; }
 .dash-sub { padding: 0 24px 8px; color: var(--ink-3); font-size: 12.5px; }
 .tabs { display: flex; gap: 2px; padding: 0 24px; border-bottom: 1px solid var(--line); overflow-x: auto; flex: none; }
@@ -465,7 +469,8 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
   .fbar.closed { box-shadow: none; }
   .dash-main { margin-left: 44px; }
   .edit-panel { display: none; }
-  .dash-head .btn.primary, .dash-head .btn.hide-m { display: none; }
+  .dash-head .btn.primary, .dash-head .btn.hide-m, .dash-head .hide-m { display: none; }
+  .dash-head .btn.back-ex { display: inline-flex; }
   .explore { display: flex; flex-direction: column; overflow: auto; height: auto; }
   .explore > .x-col { overflow: visible; border-right: 0; }
   .explore > .x-col:nth-child(2) { order: 2; }
