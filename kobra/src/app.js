@@ -152,7 +152,7 @@ function route() {
     console.error(e);
     main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Не удалось открыть страницу'), e.message, h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'К дашбордам'))));
   }
-  document.title = 'Кобра — ' + ({ d: (STATE.dashboards[parts[1]] || {}).title || 'Дашборд', charts: 'Графики', explore: 'Конструктор графика', data: 'Данные', templates: 'Готовые дашборды' }[sec] || 'Дашборды');
+  document.title = 'Кобра — ' + ({ d: (STATE.dashboards[parts[1]] || {}).title || 'Дашборд', charts: 'Графики', explore: 'Конструктор графика', data: 'Данные', templates: 'Готовые шаблоны' }[sec] || 'Дашборды');
 }
 
 /* ---------- Каркас ---------- */
@@ -284,7 +284,6 @@ function renderDashboardList(main) {
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('h1', null, 'Дашборды'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
     h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
-    h('button', { class: 'btn', onclick: () => go('#/templates') }, ic('schema'), 'Готовые дашборды'),
     h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый дашборд')));
   page.appendChild(dashGrid(list));
 }

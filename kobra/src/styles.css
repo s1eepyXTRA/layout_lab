@@ -239,7 +239,7 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .comp.used { opacity: .6; }
 .edit-banner { background: var(--accent-soft); color: var(--ink); padding: 8px 24px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
 .edit-banner.fake-banner { background: var(--primary-soft); color: var(--ink); }
-/* Каталог готовых дашбордов */
+/* Каталог готовых шаблонов */
 .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 18px; }
 .tpl-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }
 .tpl-card.off { opacity: .72; }
