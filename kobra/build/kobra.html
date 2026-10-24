@@ -5676,13 +5676,18 @@ function docsLevelFits(ds, roles) {
 
 /* ---------- Каталог ---------- */
 /* Блок: {viz, by (роль разреза), metric (роль показателя), need, params, size}.
-   Параметры всегда кладутся поверх VIZ[viz].defaults(ds) при сборке. */
+   Параметры всегда кладутся поверх VIZ[viz].defaults(ds) при сборке.
+   `name` — название приёма: шаблон это скелет, и называть его как готовый отчёт
+   («Продажи и выручка») нельзя — человек решит, что выбирает чужой дашборд.
+   Отчётное название лежит отдельно в `dash` и подставляется собранному
+   дашборду. `examples` — для чего это бывает полезно, живыми словами. */
 const TEMPLATES = [
   {
     id: 'overview',
-    name: 'Сводка процесса',
-    desc: 'Универсальный отчёт по любому процессу: что происходит, за счёт чего и какие строки за этим стоят.',
-    forWhom: 'Подходит почти всегда — с него стоит начинать, если не уверены.',
+    name: 'Показатель во времени и в разрезах',
+    dash: 'Сводка процесса',
+    desc: 'Самый универсальный скелет: один главный показатель — как он менялся, из чего складывается и какие строки за ним стоят. С него стоит начинать, если не уверены, что выбрать.',
+    examples: ['выручка по филиалам и месяцам', 'количество заявок по категориям', 'объём выпуска по цехам', 'затраты по статьям'],
     need: ['date', 'dim1'],
     demo: ['Дата', 'Подразделение', 'Категория', 'Статус', 'Сумма, ₽', 'Количество, шт.'],
     derived: [],
@@ -5704,9 +5709,10 @@ const TEMPLATES = [
   },
   {
     id: 'sales',
-    name: 'Продажи и выручка',
-    desc: 'Сколько заработали и за счёт чего: динамика выручки, разрезы по товарам и каналам, средний чек.',
-    forWhom: 'Коммерция, руководитель направления.',
+    name: 'Сумма денег и из чего она складывается',
+    dash: 'Продажи и выручка',
+    desc: 'Скелет для любой суммы в рублях: динамика, разрезы по товарам и каналам, средний чек и документы, из которых сумма набежала.',
+    examples: ['выручка по категориям товаров', 'продажи по каналам и городам', 'поступления по договорам', 'закупки по поставщикам'],
     need: ['date', 'money', 'dim1'],
     demo: ['Дата заказа', 'Категория', 'Канал продаж', 'Город', 'Номер заказа', 'Выручка, ₽', 'Количество, шт.'],
     derived: ['avg_check'],
@@ -5730,9 +5736,10 @@ const TEMPLATES = [
   },
   {
     id: 'funnel',
-    name: 'Воронка и конверсия',
-    desc: 'Где теряем клиентов: этапы воронки, доли перехода и разрез по источникам.',
-    forWhom: 'Интернет-магазин, отдел продаж, маркетинг.',
+    name: 'Этапы и потери между ними',
+    dash: 'Воронка и конверсия',
+    desc: 'Скелет для процесса, который проходят по шагам: сколько дошло до каждого этапа, где отваливаются и чем различаются источники.',
+    examples: ['путь от корзины до оплаты', 'подбор: от отклика до оффера', 'согласование заявки по стадиям', 'сделки по стадиям переговоров'],
     need: ['stage'],
     demo: ['Дата', { label: 'Этап', values: ['Посещение', 'Карточка товара', 'Корзина', 'Оформление', 'Оплата'] }, 'Источник трафика', 'Платформа', 'Пользователи, шт.'],
     derived: [],
@@ -5752,9 +5759,10 @@ const TEMPLATES = [
   },
   {
     id: 'flow',
-    name: 'Поток обращений',
-    desc: 'Сколько пришло, в каком состоянии и где затык: поступление по времени, состояния, ответственные.',
-    forWhom: 'Поддержка, сервис, бэк-офис — там, где строка это заявка.',
+    name: 'Поступление и состояния',
+    dash: 'Поток обращений',
+    desc: 'Скелет там, где строка — это заявка или обращение: сколько пришло по неделям, в каких состояниях лежит и у кого.',
+    examples: ['обращения в поддержку по статусам', 'заявки на закупку по ответственным', 'инциденты по типам', 'рекламации по подразделениям'],
     need: ['date', 'dim1'],
     demo: ['Дата заявки', 'Статус', 'Ответственный', 'Категория', 'Номер заявки', 'Время обработки, мин'],
     derived: [],
@@ -5776,9 +5784,10 @@ const TEMPLATES = [
   },
   {
     id: 'planfact',
-    name: 'План и факт',
-    desc: 'Дотягиваем ли до цели: факт против плана по времени и по разрезам, процент выполнения.',
-    forWhom: 'Там, где план лежит в тех же данных, что и факт.',
+    name: 'Факт против плана',
+    dash: 'План и факт',
+    desc: 'Скелет для случая, когда рядом с фактом лежит цель: выполнение по времени и по разрезам, процент и отставание. План должен быть в тех же данных, что и факт.',
+    examples: ['план продаж по филиалам', 'бюджет: план и расход по статьям', 'производственный план по цехам', 'цели отдела за квартал'],
     need: ['plan', 'dim1'],
     demo: ['Дата', 'Подразделение', 'Категория', 'Факт, ₽', 'План, ₽'],
     derived: ['plan_done'],
@@ -5800,6 +5809,8 @@ const TEMPLATES = [
   },
 ];
 const tplById = id => TEMPLATES.find(t => t.id === id) || null;
+/* Название для собранного дашборда: отчётное, а не название приёма */
+const tplDashName = tpl => (tpl && (tpl.dash || tpl.name)) || 'Макет';
 
 /* ---------- Сборка дашборда из шаблона ---------- */
 /* Роль показателя → метрика графика. Производные уже созданы в наборе. */
@@ -5978,7 +5989,7 @@ function tplLayout(charts, ds, intro, preview) {
 
 /* Макет: данных нет, набор порождается под дашборд и прячется за ним */
 function createMockup(tpl, { title, levels } = {}) {
-  const name = (title || (tpl ? tpl.name : 'Макет')).trim() || 'Макет';
+  const name = (title || (tpl ? tplDashName(tpl) : 'Макет')).trim() || 'Макет';
   const dashId = uid('d_');
   const dsId = saveSchemaDataset({ name: `Данные макета «${name}»`, schema: mockupSchema(tpl), owner: dashId });
   if (!tpl) { emptyMockup(dashId, dsId, name); return dashId; }
@@ -6008,7 +6019,7 @@ function createFromTemplate(tpl, ds, { title, roles, levels, preview, dashId }) 
   const deeper = plan.levels[1]
     ? ` Чтобы углубиться, кликните по столбцу или сектору — остальные блоки отфильтруются — и перейдите на вкладку «${plan.levels[1].title}».`
     : '';
-  const intro = `**${tpl.name}.** ${TPL_LEVELS[plan.levels[0].id].q[0].toUpperCase() + TPL_LEVELS[plan.levels[0].id].q.slice(1)}.`
+  const intro = `**${tplDashName(tpl)}.** ${TPL_LEVELS[plan.levels[0].id].q[0].toUpperCase() + TPL_LEVELS[plan.levels[0].id].q.slice(1)}.`
     + deeper + ' '
     + (isSchemaDs(ds) ? SCHEMA_NOTE : 'Дашборд собран по готовому шаблону: правьте названия, разрезы и состав как обычно.');
   const tabs = plan.levels.map((lv, i) => ({
@@ -6017,7 +6028,7 @@ function createFromTemplate(tpl, ds, { title, roles, levels, preview, dashId }) 
   }));
   const id = dashId || uid('d_');
   STATE.dashboards[id] = {
-    id, title: title || tpl.name, updated: Date.now(), crossFilter: true, scheme: null, tabs, filters: plan.filters,
+    id, title: title || tplDashName(tpl), updated: Date.now(), crossFilter: true, scheme: null, tabs, filters: plan.filters,
     preview: preview || undefined,
     fromTemplate: { tplId: tpl.id, datasetId: ds.id, levels: plan.levels.map(l => l.id), roles: tplRoleMap(roles) },
   };
@@ -6080,7 +6091,7 @@ function tplUsedRoles(tpl) {
 function openTemplateDialog(tpl, dsId, opts = {}) {
   // Без набора — путь макета: данные Кобра придумает сама, роли спрашивать не о чем
   const mockup = !dsId;
-  let title = tpl.name;
+  let title = tplDashName(tpl);
   const ds = mockup ? mockupDatasetDraft(tpl, title) : DS[dsId];
   if (!ds) { toast('Набор данных не найден', true); return; }
   const roles = pickRoles(ds);
@@ -6157,7 +6168,7 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
         } else {
           const fit = templateFits(tpl, ds, roles);
           if (!fit.ok) { toast('Не заполнено: ' + fit.missingLabels.join(', '), true); return; }
-          id = createFromTemplate(tpl, ds, { title: title.trim() || tpl.name, roles, levels: lv });
+          id = createFromTemplate(tpl, ds, { title: title.trim() || tplDashName(tpl), roles, levels: lv });
         }
         if (!id) return;
         close();
@@ -6244,11 +6255,11 @@ function templatePreview(tpl) {
   const dsId = 'tpl_preview';
   const columns = cols.map(c => ({ key: c.key, label: c.label, type: c.type }));
   DS[dsId] = {
-    id: dsId, name: `Пример: ${tpl.name}`, kind: 'schema', preview: true, schema, columns,
+    id: dsId, name: `Пример: ${tplDashName(tpl)}`, kind: 'schema', preview: true, schema, columns,
     metrics: schemaMetrics(columns, null), mainDttm: (columns.find(c => c.type === 'date') || {}).key || null,
     description: SCHEMA_NOTE, rows: generateSchemaRows(schema),
   };
-  const id = createFromTemplate(tpl, DS[dsId], { title: `Пример: ${tpl.name}`, preview: true });
+  const id = createFromTemplate(tpl, DS[dsId], { title: `Пример: ${tplDashName(tpl)}`, preview: true });
   if (!id) { delete DS[dsId]; return null; }
   return id;
 }
@@ -6293,7 +6304,7 @@ function renderTemplateList(main, q) {
       card.appendChild(h('div', { class: 'tpl-head' }, h('b', null, tpl.name),
         fit.ok ? null : h('span', { class: 'pill' }, 'не подходит набору')));
       card.appendChild(h('p', null, tpl.desc));
-      card.appendChild(h('p', { class: 'muted' }, tpl.forWhom));
+      card.appendChild(h('p', { class: 'muted' }, 'Например: ' + (tpl.examples || []).join(' · ')));
       const lvls = h('ul', { class: 'tpl-levels' });
       tpl.levels.forEach(l => lvls.appendChild(h('li', null, h('b', null, TPL_LEVELS[l.id].title), ' — ' + TPL_LEVELS[l.id].q)));
       card.appendChild(lvls);
