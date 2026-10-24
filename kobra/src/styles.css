@@ -256,6 +256,8 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .tpl-plan b { font-weight: 600; }
 /* Стартовый выбор пути */
 .start-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 8px; }
+.start-choice.tight { gap: 14px; margin-top: 0; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.start-choice.tight .start-card { padding: 16px 18px; box-shadow: none; }
 .start-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); padding: 22px 24px; display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
 .start-card.rec { border-color: var(--primary); }
 .start-ic { width: 40px; height: 40px; border-radius: 10px; background: var(--surface-3); color: var(--ink-2); display: grid; place-items: center; }

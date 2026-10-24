@@ -263,6 +263,8 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .tpl-plan b { font-weight: 600; }
 /* Стартовый выбор пути */
 .start-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 8px; }
+.start-choice.tight { gap: 14px; margin-top: 0; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.start-choice.tight .start-card { padding: 16px 18px; box-shadow: none; }
 .start-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); padding: 22px 24px; display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
 .start-card.rec { border-color: var(--primary); }
 .start-ic { width: 40px; height: 40px; border-radius: 10px; background: var(--surface-3); color: var(--ink-2); display: grid; place-items: center; }
@@ -2767,22 +2769,32 @@ function fmtWhen(ts) {
   const same = d.toDateString() === now.toDateString();
   return same ? `сегодня в ${pad2(d.getHours())}:${pad2(d.getMinutes())}` : `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()}`;
 }
-/* Два пути из стартового экрана: взять готовое или строить самому */
-function startChoice() {
-  const card = (cls, icon, title, desc, note, btn, onClick) =>
-    h('div', { class: 'start-card' + cls },
-      h('div', { class: 'start-ic' }, ic(icon)),
-      h('b', null, title), h('p', null, desc),
-      note ? h('p', { class: 'start-note' }, note) : null,
-      h('button', { class: 'btn ' + (cls ? 'primary' : ''), onclick: onClick }, btn));
-  return h('div', { class: 'start-choice' },
-    card(' rec', 'schema', 'Сделать макет',
-      'Выбираете готовый отчёт — Кобра собирает его на придуманных данных и раскладывает по уровням: общая картина, разбор, исходные строки. Названия блоков, показателей и категорий правятся прямо на дашборде.',
-      'Обычно подходит именно это: данные выбирать не надо, состав и оформление уже сделаны по стандартам визуализации, а под свой процесс макет переименовывается за пару минут.',
-      'Выбрать готовый', () => go('#/templates')),
-    card('', 'upload', 'Мои данные',
-      'Загружаете CSV или Excel и строите по своим цифрам: то же самое, но на настоящих данных вашей выгрузки.',
-      null, 'Загрузить файл', () => go('#/data')));
+/* Три пути: взять готовое, строить самому, принести свои данные. Описаны
+   одним списком, потому что показываются в двух местах — на стартовом экране
+   и в диалоге «Новый дашборд», и расходиться им нельзя. В диалоге путей два:
+   «мои данные» — это не создание дашборда, а загрузка файла. */
+const START_WAYS = [
+  { id: 'tpl', icon: 'schema', rec: true, title: 'Готовый шаблон',
+    desc: 'Заготовленные отчёты: выбираете подходящий, а дальше при необходимости дорабатываете. Кобра соберёт его на придуманных данных и разложит по уровням — общая картина, разбор, исходные строки.',
+    note: 'Зачастую подходит именно это: состав и оформление сделаны по стандартам визуализации, а названия блоков, показателей и категорий правятся прямо на дашборде.',
+    act: () => go('#/templates') },
+  { id: 'blank', icon: 'plus', title: 'Начать с нуля',
+    desc: 'Пустой дашборд, в котором вы сами накидаете блоки, графики и вкладки. Данные под них Кобра придумает — выбирать набор не нужно.',
+    act: () => createBlankDashboard() },
+  { id: 'own', icon: 'upload', title: 'Мои данные', btn: 'Загрузить файл',
+    desc: 'Загружаете CSV или Excel и строите по своим цифрам: то же самое, но на настоящих данных вашей выгрузки.',
+    act: () => go('#/data') },
+];
+function startCard(w, onPick) {
+  return h('div', { class: 'start-card' + (w.rec ? ' rec' : '') },
+    h('div', { class: 'start-ic' }, ic(w.icon)),
+    h('b', null, w.title), h('p', null, w.desc),
+    w.note ? h('p', { class: 'start-note' }, w.note) : null,
+    h('button', { class: 'btn ' + (w.rec ? 'primary' : ''), onclick: () => { onPick && onPick(); w.act(); } }, w.btn || 'Выбрать'));
+}
+function startChoice(ids) {
+  const ways = START_WAYS.filter(w => !ids || ids.includes(w.id));
+  return h('div', { class: 'start-choice' }, ways.map(w => startCard(w)));
 }
 function renderDashboardList(main) {
   const page = h('div', { class: 'page' });
@@ -2806,7 +2818,7 @@ function renderDashboardList(main) {
     h('div', { class: 'grow' }, h('h1', null, 'Дашборды'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
     h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
     h('button', { class: 'btn', onclick: () => go('#/templates') }, ic('schema'), 'Готовые дашборды'),
-    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый макет')));
+    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый дашборд')));
   page.appendChild(dashGrid(list));
 }
 function dashGrid(list) {
@@ -2829,14 +2841,27 @@ function dashGrid(list) {
       h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
         h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`)), more)));
   });
-  grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый макет'));
+  grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый дашборд'));
   return grid;
 }
 // Пустые дашборды, созданные кнопкой «Новый дашборд»: если с такого ушли,
 // ничего не добавив, запись убирается, чтобы в списке не оставался мусор.
 // Набор не сохраняется — после перезагрузки дашборд просто остаётся как раньше.
 const freshDashboards = new Set();
+/* Кнопка «Новый дашборд» сначала спрашивает, с чего начать: готовых шаблонов
+   у человека может не быть в голове, а начинать с пустого экрана тяжелее. */
 function createDashboard() {
+  const host = h('div', { class: 'start-choice tight' });
+  const m = openModal({
+    title: 'Новый дашборд', wide: true,
+    body: h('div', null,
+      h('p', { class: 'muted', style: { margin: '0 0 14px', fontSize: '13.5px' } },
+        'Оба пути ведут к одному: дашборд потом правится как угодно.'), host),
+    foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена')],
+  });
+  START_WAYS.filter(w => w.id !== 'own').forEach(w => host.appendChild(startCard(w, m.close)));
+}
+function createBlankDashboard() {
   // Пустой дашборд — тоже макет: под блоки нужны данные, и Кобра их придумает
   const mid = createMockup(null, { title: 'Новый макет' });
   if (mid) { freshDashboards.add(mid); go('#/d/' + mid + '?edit=1'); return; }
