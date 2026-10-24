@@ -267,6 +267,7 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .start-card .btn { margin-top: auto; align-self: flex-start; }
 /* Простая правка */
 .tune-bar { border-top: 1px solid var(--line); padding: 8px 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--surface-2); border-radius: 0 0 var(--r-l) var(--r-l); }
+.tune-dim { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1 1 100%; }
 .tune-f { display: flex; align-items: center; gap: 6px; flex: 1 1 200px; min-width: 0; }
 .tune-f > span { font-size: 12px; font-weight: 600; color: var(--ink-3); flex: none; }
 .tune-f .input, .tune-f .select { height: 30px; font-size: 13px; }

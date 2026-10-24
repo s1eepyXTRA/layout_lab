@@ -274,6 +274,7 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .start-card .btn { margin-top: auto; align-self: flex-start; }
 /* Простая правка */
 .tune-bar { border-top: 1px solid var(--line); padding: 8px 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--surface-2); border-radius: 0 0 var(--r-l) var(--r-l); }
+.tune-dim { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1 1 100%; }
 .tune-f { display: flex; align-items: center; gap: 6px; flex: 1 1 200px; min-width: 0; }
 .tune-f > span { font-size: 12px; font-weight: 600; color: var(--ink-3); flex: none; }
 .tune-f .input, .tune-f .select { height: 30px; font-size: 13px; }
@@ -3308,13 +3309,35 @@ function renderDashboard(main, id, q) {
   function place(el, p) { el.style.left = p.left + 'px'; el.style.top = p.top + 'px'; el.style.width = p.width + 'px'; el.style.height = p.height + 'px'; }
   /* В простой правке под каждым блоком живёт полоса с полями. Она должна
      занимать место в сетке, иначе наезжает на график и на соседние блоки. */
-  const TUNE_ROWS = 4;
+  const TUNE_ROWS = 4;                 // пока не измерили
+  const tuneRows = new Map();          // i → сколько рядов сетки занимает полоса
   function tuneLayout(items) {
-    const copy = items.map(i => Object.assign({}, i, { h: i.h + (i.type === 'chart' ? TUNE_ROWS : 0) }));
+    const copy = items.map(i => Object.assign({}, i, { h: i.h + (i.type === 'chart' ? (tuneRows.get(i.i) || TUNE_ROWS) : 0) }));
     compactLayout(copy);
     return copy;
   }
+  /* Полоса переносит поля по ширине плитки, поэтому её высоту не угадать:
+     измеряем после раскладки и, если не совпало, раскладываем ещё раз.
+     Иначе второй разрез наезжает на график — так и было до измерения. */
+  function measureTuneRows() {
+    let changed = false;
+    cells.forEach((c, key) => {
+      const bar = c.el.querySelector('.tune-bar');
+      if (!bar || !bar.offsetHeight) return;
+      const rows = Math.max(2, Math.ceil((bar.offsetHeight + G_GAP) / (G_ROWH + G_GAP)));
+      if (tuneRows.get(key) !== rows) { tuneRows.set(key, rows); changed = true; }
+    });
+    return changed;
+  }
+  let tuneMeasuring = false;
   function layoutGrid(items) {
+    layoutPass(items);
+    if (!tuning || tuneMeasuring) return;
+    tuneMeasuring = true;
+    if (measureTuneRows()) layoutPass(items);
+    tuneMeasuring = false;
+  }
+  function layoutPass(items) {
     if (!gridEl) return;
     const t = curTab();
     items = items || t.items;
@@ -3383,53 +3406,61 @@ function renderDashboard(main, id, q) {
           onchange: e => { tuneTouchDs(ds); guidedSetSuffix(ds, chart, e.target.value); refreshCharts(); } })));
     }
 
-    const opts = guidedDimOptions(ds, chart);
-    const cur = guidedDimKey(chart);
-    if (!opts.length || !cur) {
+    const slots = guidedDimSlots(ds, chart);
+    if (!slots.length) {
       bar.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
         `Показывает ${guidedWhat(ds, chart)} — разрез не меняется`));
       return bar;
     }
-    // Блок со временем: период вместо выбора колонки — колонка там всё равно одна
-    if (guidedIsTimeDim(ds, chart)) {
-      bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Период'),
-        selectEl(Object.entries(TIME_GRAINS), guidedGrainOf(chart), v => {
-          tuneTouch(it.chartId);
-          guidedSetGrain(chart, v);
-          guidedRetitle(ds, chart);
-          nameInp.value = chart.name;
-          if (cell.titleEl) cell.titleEl.textContent = chart.name;
-          drawChart(cell);
-        }, { 'aria-label': 'Шаг по времени' })));
-      return bar;
+    slots.forEach(slot => bar.appendChild(tuneDim(it, chart, cell, ds, slot, nameInp)));
+    return bar;
+  }
+  /* Один разрез блока, своей строкой. На макете правятся название разреза и
+     сами категории — сколько их, как называются и какая форма распределения;
+     у настоящего набора разрез выбирается из колонок, а у времени — шаг. */
+  function tuneDim(it, chart, cell, ds, slot, nameInp) {
+    const row = h('div', { class: 'tune-dim' });
+    const mock = isMockupDs(ds);
+    const lab = (text, el, flex) => h('label', { class: 'tune-f', style: flex ? { flex } : null }, h('span', null, text), el);
+    const retitle = () => { guidedRetitle(ds, chart); nameInp.value = chart.name; if (cell.titleEl) cell.titleEl.textContent = chart.name; };
+    const relayout = () => { repaintItem(it); layoutGrid(); };
+
+    // Слот пустой: второй разрез человек включает сам
+    if (!slot.key) {
+      row.appendChild(h('button', { class: 'btn sm', onclick: () => {
+        tuneTouch(it.chartId);
+        if (mock) { tuneTouchDs(ds); guidedParamSet(chart, slot.spec, guidedAddMockDim(ds, chart).key); }
+        else {
+          const opts = guidedDimOptions(ds, chart, slot);
+          if (!opts.length) { toast('Больше нет колонок, по которым можно разбить', true); return; }
+          guidedParamSet(chart, slot.spec, opts[0].key);
+        }
+        relayout();
+      } }, ic('plus'), slot.add || 'Добавить второй разрез'));
+      return row;
     }
-    const cats = mock ? guidedCats(ds, chart) : null;
+    // Время: колонка там одна, менять имеет смысл шаг
+    if (slot.time) {
+      if (GUIDED_GRAIN[chart.viz]) row.appendChild(lab('Период', selectEl(Object.entries(TIME_GRAINS), guidedGrainOf(chart), v => {
+        tuneTouch(it.chartId); guidedSetGrain(chart, v); retitle(); drawChart(cell);
+      }, { 'aria-label': 'Шаг по времени' })));
+      else row.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, 'Разрез по дате'));
+      return row;
+    }
+    const cats = mock ? guidedCats(ds, slot.key) : null;
     if (cats) {
       // В макете разрез — это просто его название: какая колонка под ним, человеку незачем
-      bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Разрез'),
-        h('input', { class: 'input', value: guidedDimLabel(ds, chart) || '', placeholder: 'Филиалы, продукты, статусы',
-          'aria-label': 'Название разреза',
-          onchange: e => { tuneTouchDs(ds); if (guidedRenameDim(ds, chart, e.target.value)) { guidedRetitle(ds, chart); nameInp.value = chart.name; if (cell.titleEl) cell.titleEl.textContent = chart.name; refreshCharts(); } } })));
-    } else {
-      const sel = selectEl(opts.map(o => [o.key, o.label]), cur, v => {
-        tuneTouch(it.chartId);
-        guidedSetDimParam(chart, v);
-        guidedRetitle(ds, chart);
-        nameInp.value = chart.name;
-        if (cell.titleEl) cell.titleEl.textContent = chart.name;
-        repaintItem(it);
-      }, { 'aria-label': 'В разрезе чего' });
-      bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'В разрезе'), sel));
-    }
-
-    // Категории разреза: их число и названия — это значения в придуманных данных
-    if (cats) {
+      row.appendChild(lab(slot.label, h('input', { class: 'input', value: guidedDimLabel(ds, slot.key) || '',
+        placeholder: 'Филиалы, продукты, статусы', 'aria-label': 'Название разреза',
+        onchange: e => { tuneTouchDs(ds); if (guidedRenameDim(ds, slot.key, e.target.value)) { retitle(); refreshCharts(); } } })));
+      // Категории разреза: их число и названия — это значения в придуманных данных
       const namesInp = h('input', { class: 'input', value: cats.values.join(', '), placeholder: 'Названия через запятую',
         'aria-label': 'Названия категорий' });
-      const cntInp = h('input', { class: 'input', type: 'number', min: 2, max: 12, value: cats.count, 'aria-label': 'Сколько категорий', style: { width: '64px' } });
+      const cntInp = h('input', { class: 'input', type: 'number', min: 2, max: 12, value: cats.count,
+        'aria-label': 'Сколько категорий', style: { width: '64px' } });
       const applyCats = () => {
         tuneTouchDs(ds);
-        const res = guidedSetCats(ds, chart, cntInp.value, namesInp.value.split(',').map(x => x.trim()).filter(Boolean));
+        const res = guidedSetCats(ds, slot.key, cntInp.value, namesInp.value.split(',').map(x => x.trim()).filter(Boolean));
         if (!res) return;
         migrateFilterValues(res.col, res.old, res.next);
         namesInp.value = res.next.join(', ');
@@ -3439,12 +3470,22 @@ function renderDashboard(main, id, q) {
       };
       cntInp.addEventListener('change', applyCats);
       namesInp.addEventListener('change', applyCats);
-      bar.appendChild(h('label', { class: 'tune-f', style: { flex: '0 1 120px' } }, h('span', null, 'Категорий'), cntInp));
-      bar.appendChild(h('label', { class: 'tune-f', style: { flex: '2 1 240px' } }, h('span', null, 'Названия'), namesInp));
-      bar.appendChild(h('button', { class: 'btn sm', title: 'Другая форма распределения: подписи те же, пропорции другие',
-        onclick: () => { tuneTouchDs(ds); if (guidedCycleSpread(ds, chart)) refreshCharts(); } }, ic('refresh'), 'Распределение'));
+      row.appendChild(lab('Категорий', cntInp, '0 1 120px'));
+      row.appendChild(lab('Названия', namesInp, '2 1 240px'));
+      row.appendChild(h('button', { class: 'btn sm', title: 'Другая форма распределения: подписи те же, пропорции другие',
+        onclick: () => { tuneTouchDs(ds); if (guidedCycleSpread(ds, slot.key)) refreshCharts(); } }, ic('refresh'), 'Распределение'));
+    } else {
+      // Настоящий набор: разрез выбирается из его же колонок
+      const opts = guidedDimOptions(ds, chart, slot);
+      row.appendChild(lab(slot.nth ? slot.label : 'В разрезе',
+        selectEl(opts.map(o => [o.key, o.label]), slot.key, v => {
+          tuneTouch(it.chartId); guidedParamSet(chart, slot.spec, v); retitle(); repaintItem(it);
+        }, { 'aria-label': 'В разрезе чего' })));
     }
-    return bar;
+    if (slot.optional) row.appendChild(iconBtn('x', 'Убрать этот разрез', () => {
+      tuneTouch(it.chartId); guidedParamSet(chart, slot.spec, null); retitle(); relayout();
+    }, 'sm'));
+    return row;
   }
   /* Переименовали категории — переносим выбранное в фильтрах по месту, пропавшее убираем */
   function migrateFilterValues(col, oldVals, newVals) {
@@ -6188,51 +6229,76 @@ function renderTemplateList(main, q) {
    Своего формата не вводит — правит обычные графики дашборда.
    ============================================================ */
 
-/* Параметр, который у каждого типа визуализации отвечает за разрез.
-   Нет строки — значит, в простом режиме разрез у этого типа не меняется
-   (большие числа разреза не имеют, у комбинированного он всегда время). */
-const GUIDED_DIM = {
-  line: 'x_col', area: 'x_col', bar: 'x_col',
-  pie: 'dim', funnel: 'dim', bullet: 'dim',
-  heatmap: 'y_col',
-  table: 'groupby[0]', treemap: 'groupby[0]', pivot: 'rows[0]',
+/* Разрезы, которые правятся в простом режиме, по одному слоту на параметр
+   вида визуализации. Их бывает два: «по дате и по городу» — обычная просьба,
+   и у линии, таблицы, сводной и тепловой карты второй разрез есть в самом
+   графике. Нет записи — разрез у этого типа не меняется (большое число
+   разреза не имеет, у комбинированного по оси X всегда время).
+   `optional: true` — слот, который человек включает и убирает сам. */
+const GUIDED_DIMS = {
+  line: [{ spec: 'x_col' }, { spec: 'series_col', label: 'Серии', add: 'Разбить на серии', optional: true }],
+  area: [{ spec: 'x_col' }, { spec: 'series_col', label: 'Серии', add: 'Разбить на серии', optional: true }],
+  bar: [{ spec: 'x_col' }, { spec: 'series_col', label: 'Серии', add: 'Разбить на серии', optional: true }],
+  mixed: [{ spec: 'x_col' }],
+  pie: [{ spec: 'dim' }],
+  funnel: [{ spec: 'dim' }],
+  bullet: [{ spec: 'dim', add: 'Разбить по разрезу', optional: true }],
+  big_number_trend: [{ spec: 'time_col' }],
+  heatmap: [{ spec: 'y_col' }, { spec: 'x_col', label: 'Второй разрез' }],
+  table: [{ spec: 'groupby[0]' }, { spec: 'groupby[1]', label: 'Второй разрез', optional: true }],
+  treemap: [{ spec: 'groupby[0]' }, { spec: 'groupby[1]', label: 'Второй разрез', optional: true }],
+  pivot: [{ spec: 'rows[0]' }, { spec: 'cols[0]', label: 'Столбцы', add: 'Добавить столбцы', optional: true }],
 };
-const GUIDED_ARR = /^(\w+)\[0\]$/;
+const GUIDED_ARR = /^(\w+)\[(\d+)\]$/;
 
-function guidedDimSpec(chart) {
-  if (!chart || !GUIDED_DIM[chart.viz]) return null;
-  if (chart.viz === 'table' && (chart.params || {}).mode === 'raw') return null; // исходные строки не группируются
-  return GUIDED_DIM[chart.viz];
-}
-function guidedDimKey(chart) {
-  const spec = guidedDimSpec(chart);
-  if (!spec) return null;
+/* Путь к параметру: `series_col` или `groupby[1]` */
+function guidedParamGet(chart, spec) {
   const p = chart.params || {};
   const m = GUIDED_ARR.exec(spec);
-  return m ? ((p[m[1]] || [])[0] || null) : (p[spec] || null);
+  return m ? ((p[m[1]] || [])[+m[2]] || null) : (p[spec] || null);
 }
-function guidedSetDimParam(chart, key) {
-  const spec = guidedDimSpec(chart);
-  if (!spec) return;
+function guidedParamSet(chart, spec, key) {
+  const p = chart.params || (chart.params = {});
   const m = GUIDED_ARR.exec(spec);
-  if (m) { const arr = [...(chart.params[m[1]] || [])]; arr[0] = key; chart.params[m[1]] = arr; }
-  else chart.params[spec] = key;
+  if (!m) { if (key) p[spec] = key; else delete p[spec]; return; }
+  const arr = [...(p[m[1]] || [])];
+  if (key) arr[+m[2]] = key; else arr.splice(+m[2], 1);
+  p[m[1]] = arr.filter(Boolean);
 }
-/* Поля, по которым этот график построится: тот же тип, что и сейчас,
-   без идентификаторов — по номеру документа разрез бессмыслен */
-function guidedDimOptions(ds, chart) {
-  const cur = guidedDimKey(chart);
-  if (!guidedDimSpec(chart)) return [];
-  const curCol = cur && dsCol(ds, cur);
-  const type = curCol ? curCol.type : 'string';
+/* Разрезы блока: заполненные и те, которые можно включить. У таблицы в режиме
+   исходных строк группировок нет вовсе — там печатаются сами строки. */
+function guidedDimSlots(ds, chart) {
+  if (!chart || !GUIDED_DIMS[chart.viz]) return [];
+  if (chart.viz === 'table' && (chart.params || {}).mode === 'raw') return [];
+  return GUIDED_DIMS[chart.viz].map((s, nth) => {
+    const key = guidedParamGet(chart, s.spec);
+    const col = key ? dsCol(ds, key) : null;
+    return Object.assign({ label: 'Разрез' }, s,
+      { nth, key: col ? key : null, col, time: !!(col && col.type === 'date') });
+  }).filter(s => s.key || s.optional);
+}
+/* Первый разрез — он же тот, по которому собирается заголовок */
+function guidedDimKey(chart) {
+  const list = chart && GUIDED_DIMS[chart.viz];
+  if (!list || (chart.viz === 'table' && (chart.params || {}).mode === 'raw')) return null;
+  return guidedParamGet(chart, list[0].spec);
+}
+/* Поля, по которым этот разрез построится: тот же тип, что и сейчас (у пустого
+   слота — текстовые), без идентификаторов (по номеру документа разрез
+   бессмыслен) и без того, что уже занято другим разрезом этого же блока */
+function guidedDimOptions(ds, chart, slot) {
+  const type = slot && slot.col ? slot.col.type : 'string';
+  const busy = guidedDimSlots(ds, chart).filter(s => !slot || s.spec !== slot.spec).map(s => s.key);
   return ds.columns
-    .filter(c => c.type === type && !AUTO_ID_RE.test(c.key + ' ' + (c.label || '')))
+    .filter(c => c.type === type && !AUTO_ID_RE.test(c.key + ' ' + (c.label || '')) && !busy.includes(c.key))
     .map(c => ({ key: c.key, label: colLabel(ds, c.key) }));
 }
 function guidedMainMetric(chart) {
   const p = chart.params || {};
   return p.metric || (Array.isArray(p.metrics) && p.metrics[0]) || null;
 }
+const GUIDED_BY = { day: 'по дням', week: 'по неделям', month: 'по месяцам', quarter: 'по кварталам', year: 'по годам' };
+const GUIDED_FOR = { day: 'за день', week: 'за неделю', month: 'за месяц', quarter: 'за квартал', year: 'за год' };
 /* Заголовок пересобираем только у тех графиков, которым его придумала Кобра */
 function guidedRetitle(ds, chart) {
   if (!chart.autoName) return;
@@ -6242,8 +6308,9 @@ function guidedRetitle(ds, chart) {
   const t = autoMetricTitle(ds, met);
   const col = dim && dsCol(ds, dim);
   if (col && col.type === 'date') {
-    const by = { day: 'по дням', week: 'по неделям', month: 'по месяцам', quarter: 'по кварталам', year: 'по годам' };
-    chart.name = `${t} ${by[guidedGrainOf(chart)] || 'по месяцам'}`;
+    // «Выручка по месяцам» у графика и «Выручка за месяц» у большого числа
+    const words = chart.viz === 'big_number_trend' ? GUIDED_FOR : GUIDED_BY;
+    chart.name = `${t} ${words[guidedGrainOf(chart)] || words.month}`;
     return;
   }
   if (!dim) { chart.name = t; return; }
@@ -6292,15 +6359,15 @@ function guidedSetSuffix(ds, chart, text) {
   return true;
 }
 
-/* Колонка схемы, по которой построен разрез блока */
-function guidedSchemaCol(ds, chart) {
-  const key = guidedDimKey(chart);
+/* Колонка схемы, по которой построен разрез. Дальше всё считается по колонке,
+   а не по графику: разрезов у блока бывает два, и правятся они по отдельности. */
+function guidedSchemaCol(ds, key) {
   if (!key || !isMockupDs(ds)) return null;
   const col = (ds.schema.columns || []).find(c => c.key === key);
   return col && col.type === 'string' ? col : null;
 }
-function guidedCats(ds, chart) {
-  const col = guidedSchemaCol(ds, chart);
+function guidedCats(ds, key) {
+  const col = guidedSchemaCol(ds, key);
   if (!col) return null;
   const values = (col.values && col.values.length) ? col.values : schemaFallbackValues(col.label);
   return { col, values, count: values.length };
@@ -6324,8 +6391,8 @@ function guidedCatValues(col, count, names) {
 }
 /* Меняет категории в скрытом наборе и пересчитывает строки тем же seed.
    Возвращает старый и новый списки: по ним потом чинятся фильтры дашборда. */
-function guidedSetCats(ds, chart, count, names) {
-  const cur = guidedCats(ds, chart);
+function guidedSetCats(ds, key, count, names) {
+  const cur = guidedCats(ds, key);
   if (!cur) return null;
   const next = guidedCatValues(cur.col, count, names);
   if (JSON.stringify(next) === JSON.stringify(cur.values)) return null;
@@ -6336,14 +6403,29 @@ function guidedSetCats(ds, chart, count, names) {
   return { col: cur.col.key, old: cur.values, next };
 }
 
+/* Второй разрез на макете: берём свободную текстовую колонку схемы, а если
+   все заняты — дописываем новую и пересчитываем строки. Данные всё равно
+   придуманные, зато «по департаменту и по городу» собирается без конструктора. */
+function guidedAddMockDim(ds, chart) {
+  const cols = ds.schema.columns || [];
+  const busy = guidedDimSlots(ds, chart).map(s => s.key).filter(Boolean);
+  const free = cols.find(c => c.type === 'string' && !busy.includes(c.key));
+  if (free) return free;
+  const label = 'Разрез ' + (cols.filter(c => c.type === 'string').length + 1);
+  const col = { key: slugKey(label, cols.length, new Set(cols.map(c => c.key))), label, type: 'string',
+    values: guidedCatValues({ label }, 4, ['Категория А']) };
+  cols.push(col);
+  ds.columns.push({ key: col.key, label, type: 'string' });
+  ds.rows = generateSchemaRows(ds.schema);
+  delete ds._maxCache;
+  persistDs(ds);
+  return col;
+}
+
 /* У блоков со временем разрез — это сама дата, выбирать тут нечего.
    Зато полезно менять шаг: день, неделя, месяц, квартал, год. */
-const GUIDED_GRAIN = { line: 'x_grain', area: 'x_grain', bar: 'x_grain', mixed: 'x_grain', heatmap: 'x_grain', table: 'time_grain' };
-function guidedIsTimeDim(ds, chart) {
-  const key = guidedDimKey(chart);
-  const col = key && dsCol(ds, key);
-  return !!(col && col.type === 'date' && GUIDED_GRAIN[chart.viz]);
-}
+const GUIDED_GRAIN = { line: 'x_grain', area: 'x_grain', bar: 'x_grain', mixed: 'x_grain', heatmap: 'x_grain',
+  table: 'time_grain', big_number_trend: 'x_grain', pivot: 'time_grain' };
 function guidedGrainOf(chart) {
   const p = chart.params || {};
   return p[GUIDED_GRAIN[chart.viz]] || 'month';
@@ -6357,12 +6439,12 @@ function guidedSetGrain(chart, grain) {
 
 /* Разрез в макете — это подпись колонки: человеку всё равно, как она
    называется внутри, ему важно, что написано на экране */
-function guidedDimLabel(ds, chart) {
-  const col = guidedSchemaCol(ds, chart);
+function guidedDimLabel(ds, key) {
+  const col = guidedSchemaCol(ds, key);
   return col ? col.label : null;
 }
-function guidedRenameDim(ds, chart, text) {
-  const col = guidedSchemaCol(ds, chart);
+function guidedRenameDim(ds, key, text) {
+  const col = guidedSchemaCol(ds, key);
   const v = String(text || '').trim();
   if (!col || !v || col.label === v) return false;
   col.label = v;
@@ -6372,8 +6454,8 @@ function guidedRenameDim(ds, chart, text) {
   return true;
 }
 /* Другая форма распределения: подписи те же, пропорции другие */
-function guidedCycleSpread(ds, chart) {
-  const col = guidedSchemaCol(ds, chart);
+function guidedCycleSpread(ds, key) {
+  const col = guidedSchemaCol(ds, key);
   if (!col) return false;
   col.spread = ((col.spread || 0) + 1) % SCHEMA_SPREADS;
   ds.rows = generateSchemaRows(ds.schema);
