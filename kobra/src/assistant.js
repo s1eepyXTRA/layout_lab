@@ -1,6 +1,6 @@
 /* ============================================================
-   Кобра · помощник на дашборде
-   Человек описывает задачу словами — помощник предлагает состав
+   Кобра · AI-ассистент на дашборде
+   Человек описывает задачу словами — AI-ассистент предлагает состав
    дашборда или описание данных. Ничего не применяется без
    подтверждения, наружу уходит описание, а не строки данных.
    ============================================================ */
@@ -47,7 +47,7 @@ async function aiAsk(messages) {
 
 /* ---------- Бриф: первый диалог ----------
    Четыре вопроса, которые заказчик и так держит в голове, плюс уточнения.
-   Форма необязательная — её закрывают, если макет уже начат и от помощника
+   Форма необязательная — её закрывают, если макет уже начат и от AI-ассистента
    нужно только дополнение. Ответы хранятся в дашборде и уходят с каждым
    запросом отдельным разделом: модель перестаёт угадывать название,
    показатели и разрезы. `tag` — короткая подпись для запроса: в форме вопрос
@@ -120,7 +120,7 @@ function aiPrompt(q, ctx) {
   return parts.join('\n\n');
 }
 
-/* ---------- Что помощник умеет вернуть ---------- */
+/* ---------- Что AI-ассистент умеет вернуть ---------- */
 const AI_SYSTEM = [
   'Ты помогаешь собрать дашборд в конструкторе «Кобра». Отвечай по-русски и только JSON, без пояснений вокруг.',
   'Формат ответа: {"ответ": "<текст человеку>", "блоки": [...], "набор": {...}}. Поля «блоки» и «набор» необязательны.',
@@ -222,12 +222,12 @@ function openAiSettings(done) {
   });
 }
 
-/* ---------- Панель помощника ---------- */
+/* ---------- Панель AI-ассистента ---------- */
 const aiOpenState = () => lsGet('kobra.ai.open') || {};
 const aiIsOpen = id => !!aiOpenState()[id];
 function aiSetOpen(id, v) { const s = aiOpenState(); if (v) s[id] = 1; else delete s[id]; lsSet('kobra.ai.open', s); }
 
-/* api: { ds, applyBlocks, applySchema, rollback, canRollback } — всё, что помощник
+/* api: { ds, applyBlocks, applySchema, rollback, canRollback } — всё, что AI-ассистент
    умеет сделать с дашбордом, живёт в dashboard.js и приходит сюда функциями. */
 function renderAssistant(D, host, api) {
   let pending = null;      // последнее предложение, которого ещё не применили
@@ -246,7 +246,7 @@ function renderAssistant(D, host, api) {
     box.appendChild(h('div', { class: 'ai-form-head' }, h('b', null, 'Коротко о дашборде'), h('div', { class: 'grow' }),
       iconBtn('x', 'Закрыть форму', () => { briefOpen = false; D.chatBriefSkipped = true; saveSoon(); paint(); }, 'sm')));
     box.appendChild(h('div', { class: 'ai-note' },
-      'Ответы уходят с каждым запросом отдельным разделом — помощник меньше придумывает от себя. Можно заполнить частью или закрыть.'));
+      'Ответы уходят с каждым запросом отдельным разделом — AI-ассистент меньше придумывает от себя. Можно заполнить частью или закрыть.'));
     const add = (to, f) => {
       let ctl;
       if (f.pick) ctl = selectEl([['', 'Не указано']].concat(f.pick.map(v => [v, v[0].toUpperCase() + v.slice(1)])),
@@ -278,7 +278,7 @@ function renderAssistant(D, host, api) {
       paint();
     };
     box.appendChild(h('div', { class: 'ai-row' },
-      h('button', { class: 'btn sm primary', onclick: () => keep(true) }, ic('cobra'), 'Собрать по брифу'),
+      h('button', { class: 'btn sm primary', onclick: () => keep(true) }, 'Собрать по брифу'),
       h('button', { class: 'btn sm', title: 'Запомнить ответы, запрос отправлю сам', onclick: () => keep(false) }, 'Сохранить'),
       h('button', { class: 'btn sm', onclick: () => { briefOpen = false; D.chatBriefSkipped = true; saveSoon(); paint(); } }, 'Пропустить')));
     return box;
@@ -287,17 +287,17 @@ function renderAssistant(D, host, api) {
   const paint = () => {
     clear(host);
     const mock = isMockupDs(ds());
-    host.appendChild(h('div', { class: 'ai-head' }, ic('cobra'), h('b', null, 'Помощник'),
+    host.appendChild(h('div', { class: 'ai-head' }, h('b', null, 'AI-ассистент'),
       h('div', { class: 'grow' }),
       iconBtn('settings', 'Доступ к модели', () => openAiSettings(paint), 'sm'),
-      iconBtn('x', 'Закрыть помощника', () => { aiSetOpen(D.id, false); api.close(); }, 'sm')));
+      iconBtn('x', 'Закрыть AI-ассистента', () => { aiSetOpen(D.id, false); api.close(); }, 'sm')));
 
     const log = h('div', { class: 'ai-log' });
     if (D.chatTrimmed) log.appendChild(h('div', { class: 'ai-note' }, 'Часть старых сообщений отброшена: переписка хранится не целиком.'));
     if (briefOpen) log.appendChild(briefForm());
     else if (!aiLog(D).length) log.appendChild(h('div', { class: 'ai-note' },
-      mock ? 'Опишите свой процесс словами — помощник придумает под него данные и предложит блоки. Например: «заявки на кредит: приходят в отделения, проходят скоринг, часть одобряем».'
-        : 'Опишите, что хотите увидеть на дашборде. Помощник предложит блоки, а применять их или нет — решаете вы.'));
+      mock ? 'Опишите свой процесс словами — AI-ассистент придумает под него данные и предложит блоки. Например: «заявки на кредит: приходят в отделения, проходят скоринг, часть одобряем».'
+        : 'Опишите, что хотите увидеть на дашборде. AI-ассистент предложит блоки, а применять их или нет — решаете вы.'));
     aiLog(D).forEach(m => {
       const el = h('div', { class: 'ai-msg ' + m.role });
       el.appendChild(h('div', { class: 'ai-text' }, m.text));
@@ -332,7 +332,7 @@ function renderAssistant(D, host, api) {
     }
 
     // Ввод
-    const ta = h('textarea', { class: 'textarea ai-input', rows: 3, placeholder: 'Что показать на дашборде?', 'aria-label': 'Запрос помощнику' });
+    const ta = h('textarea', { class: 'textarea ai-input', rows: 3, placeholder: 'Что показать на дашборде?', 'aria-label': 'Запрос AI-ассистенту' });
     const send = async forced => {
       const q = String(forced || ta.value).trim();
       if (!q || busy) return;

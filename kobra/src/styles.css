@@ -85,6 +85,10 @@ a { color: var(--primary); }
 .btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
 .btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
 .btn.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+/* AI-ассистент — не рядовая кнопка: свой цвет, чтобы находиться глазами сразу */
+.btn.ai { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.btn.ai:hover { border-color: var(--accent); }
+.btn.ai.on { background: var(--accent); border-color: var(--accent); color: var(--bar); }
 .btn.ghost { border-color: transparent; background: transparent; }
 .btn.ghost:hover { background: var(--surface-3); }
 .btn.danger { color: var(--danger); }
@@ -277,7 +281,7 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .tune-f { display: flex; align-items: center; gap: 6px; flex: 1 1 200px; min-width: 0; }
 .tune-f > span { font-size: 12px; font-weight: 600; color: var(--ink-3); flex: none; }
 .tune-f .input, .tune-f .select { height: 30px; font-size: 13px; }
-/* Помощник */
+/* AI-ассистент */
 .ai-panel { width: 340px; flex: none; border-left: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; overflow: auto; transition: width .18s; }
 .ai-panel.closed { width: 0; padding: 0; border: 0; overflow: hidden; }
 .ai-head { display: flex; align-items: center; gap: 8px; }

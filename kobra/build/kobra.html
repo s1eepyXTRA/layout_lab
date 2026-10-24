@@ -92,6 +92,10 @@ a { color: var(--primary); }
 .btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
 .btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
 .btn.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+/* AI-ассистент — не рядовая кнопка: свой цвет, чтобы находиться глазами сразу */
+.btn.ai { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.btn.ai:hover { border-color: var(--accent); }
+.btn.ai.on { background: var(--accent); border-color: var(--accent); color: var(--bar); }
 .btn.ghost { border-color: transparent; background: transparent; }
 .btn.ghost:hover { background: var(--surface-3); }
 .btn.danger { color: var(--danger); }
@@ -284,7 +288,7 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .tune-f { display: flex; align-items: center; gap: 6px; flex: 1 1 200px; min-width: 0; }
 .tune-f > span { font-size: 12px; font-weight: 600; color: var(--ink-3); flex: none; }
 .tune-f .input, .tune-f .select { height: 30px; font-size: 13px; }
-/* Помощник */
+/* AI-ассистент */
 .ai-panel { width: 340px; flex: none; border-left: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; overflow: auto; transition: width .18s; }
 .ai-panel.closed { width: 0; padding: 0; border: 0; overflow: hidden; }
 .ai-head { display: flex; align-items: center; gap: 8px; }
@@ -3170,7 +3174,7 @@ function renderDashboard(main, id, q) {
   const fbar = h('aside', { class: 'fbar' + (fbarOpen ? '' : ' closed'), 'aria-label': 'Фильтры дашборда' });
   const dmain = h('div', { class: 'dash-main' });
   const panel = editing ? h('aside', { class: 'edit-panel', 'aria-label': 'Добавление элементов' }) : null;
-  const aiHost = h('aside', { class: 'ai-panel', 'aria-label': 'Помощник' });
+  const aiHost = h('aside', { class: 'ai-panel', 'aria-label': 'AI-ассистент' });
   let aiOpen = !editing && aiIsOpen(id);
   let aiUi = null;
   let aiSnap = null;            // снимок перед применением предложения
@@ -3290,6 +3294,7 @@ function renderDashboard(main, id, q) {
   /* ---------- Шапка ---------- */
   function paintHead() {
     const head = h('div', { class: 'dash-head' + (D.preview ? ' ex' : '') });
+    const aiBtn = () => h('button', { class: 'btn ai' + (aiOpen ? ' on' : ''), title: 'Описать задачу словами — AI-ассистент предложит блоки', onclick: aiToggle }, 'AI-ассистент');
     // Пример шаблона живёт только в памяти и пропадает при уходе со страницы:
     // править его бессмысленно, поэтому в шапке — возврат в каталог и выбор
     // шаблона. Шапка прилипает, иначе на длинном примере возврат уезжает вверх.
@@ -3314,7 +3319,7 @@ function renderDashboard(main, id, q) {
     head.appendChild(h('div', { class: 'grow' }));
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
-      tuning ? { label: aiOpen ? 'Скрыть помощника' : 'Спросить помощника', icon: 'cobra', onClick: aiToggle } : null,
+      tuning ? { label: aiOpen ? 'Скрыть AI-ассистента' : 'Спросить AI-ассистента', icon: 'wand', onClick: aiToggle } : null,
       { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
       { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
       { label: 'Свойства дашборда', icon: 'settings', onClick: openProps },
@@ -3330,13 +3335,12 @@ function renderDashboard(main, id, q) {
         h('button', { class: 'btn', title: 'Полное редактирование', onclick: () => leaveTo('#/d/' + id + '?edit=1') }, ic('edit'), 'Больше настроек'),
         h('button', { class: 'btn primary', onclick: tuneDone }, ic('check'), 'Готово'), more);
     } else if (editing) {
+      if (!aiBtnInGrid()) head.appendChild(aiBtn());
       head.append(
-        h('button', { class: 'btn' + (aiOpen ? ' on' : ''), title: 'Описать задачу словами — помощник предложит блоки', onclick: aiToggle }, ic('cobra'), 'Помощник'),
         h('button', { class: 'btn', onclick: cancelEdit }, 'Отменить'),
         h('button', { class: 'btn primary', onclick: saveEdit }, ic('check'), 'Сохранить'), more);
     } else {
-      head.append(
-        h('button', { class: 'btn' + (aiOpen ? ' on' : ''), title: 'Описать задачу словами — помощник предложит блоки', onclick: aiToggle }, ic('cobra'), 'Помощник'),
+      head.append(aiBtn(),
         h('button', { class: 'btn', title: 'Поменять названия и разрезы прямо на блоках', onclick: () => go('#/d/' + id + '?tune=1') }, ic('edit'), 'Названия и разрезы'),
         h('button', { class: 'btn', title: 'Обновить все графики', 'aria-label': 'Обновить все графики', onclick: () => refreshCharts() }, ic('refresh')),
         h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'), more);
@@ -3373,7 +3377,7 @@ function renderDashboard(main, id, q) {
     if (JSON.stringify(D) !== original && !(await confirmDialog('Отменить изменения', 'Несохранённые изменения дашборда пропадут.', 'Отменить изменения'))) return;
     draftHandled = true;
     // Графики и придуманные данные живут вне черновика: сам он пропадёт, а они
-    // останутся, если их не убрать. Снимок есть только у работы помощника —
+    // останутся, если их не убрать. Снимок есть только у работы AI-ассистента —
     // блоки с палитры и раньше оставались в графиках после отмены.
     if (aiSnap) {
       (aiSnap.newCharts || []).forEach(cid => { delete STATE.charts[cid]; });
@@ -3508,10 +3512,10 @@ function renderDashboard(main, id, q) {
     gridEl = h('div', { class: 'dgrid' + (editing ? ' editing' : '') });
     if (!t.items.length) {
       const empty = h('div', { class: 'empty' }, h('b', null, editing ? 'Пустая вкладка' : 'Здесь пока ничего нет'),
-        editing ? 'Добавьте блоки с панели справа — или опишите задачу помощнику, и он предложит их сам.' : 'Откройте режим редактирования и добавьте графики.',
+        editing ? 'Добавьте блоки с панели справа — или опишите задачу AI-ассистенту, и он предложит их сам.' : 'Откройте режим редактирования и добавьте графики.',
         h('br'),
         editing
-          ? (aiOpen ? null : h('button', { class: 'btn primary', onclick: aiToggle }, ic('cobra'), 'Спросить помощника'))
+          ? (aiOpen ? null : h('button', { class: 'btn ai', onclick: aiToggle }, 'Спросить AI-ассистента'))
           : h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'));
       return h('div', { class: 'grid-wrap' }, empty);
     }
@@ -3932,14 +3936,17 @@ function renderDashboard(main, id, q) {
     });
   }
 
-  /* ---------- Помощник ---------- */
+  /* ---------- AI-ассистент ---------- */
   const aiDs = () => dsGet((D.fromTemplate || {}).datasetId) || dsGet(((STATE.charts[(D.tabs.flatMap(t => t.items).find(i => i.chartId) || {}).chartId] || {}).datasetId));
-  /* Помощник открывается из трёх мест. В правке его состояние не запоминаем:
-     иначе конструктор открывался бы с помощником вместо палитры блоков. */
+  /* AI-ассистент открывается из трёх мест. В правке его состояние не запоминаем:
+     иначе конструктор открывался бы с AI-ассистентом вместо палитры блоков. */
   function aiToggle() { aiOpen = !aiOpen; if (!editing) aiSetOpen(id, aiOpen); paintAi(); paintBody(); }
+  /* Кнопка AI-ассистента одна: пока вкладка в конструкторе пуста, она стоит на
+     самой вкладке, и в шапке её нет — две одинаковые кнопки рядом сбивают. */
+  function aiBtnInGrid() { return editing && !aiOpen && !curTab().items.length; }
   function paintAi() {
     aiHost.className = 'ai-panel' + (aiOpen ? '' : ' closed');
-    // Справа помещается одна колонка: помощник встаёт на место палитры блоков
+    // Справа помещается одна колонка: AI-ассистент встаёт на место палитры блоков
     if (panel) panel.style.display = aiOpen ? 'none' : '';
     clear(aiHost);
     if (!aiOpen) { aiUi = null; setTimeout(layoutGrid, 220); return; }
@@ -6642,8 +6649,8 @@ function guidedWhat(ds, chart) {
 }
 
 /* ============================================================
-   Кобра · помощник на дашборде
-   Человек описывает задачу словами — помощник предлагает состав
+   Кобра · AI-ассистент на дашборде
+   Человек описывает задачу словами — AI-ассистент предлагает состав
    дашборда или описание данных. Ничего не применяется без
    подтверждения, наружу уходит описание, а не строки данных.
    ============================================================ */
@@ -6690,7 +6697,7 @@ async function aiAsk(messages) {
 
 /* ---------- Бриф: первый диалог ----------
    Четыре вопроса, которые заказчик и так держит в голове, плюс уточнения.
-   Форма необязательная — её закрывают, если макет уже начат и от помощника
+   Форма необязательная — её закрывают, если макет уже начат и от AI-ассистента
    нужно только дополнение. Ответы хранятся в дашборде и уходят с каждым
    запросом отдельным разделом: модель перестаёт угадывать название,
    показатели и разрезы. `tag` — короткая подпись для запроса: в форме вопрос
@@ -6763,7 +6770,7 @@ function aiPrompt(q, ctx) {
   return parts.join('\n\n');
 }
 
-/* ---------- Что помощник умеет вернуть ---------- */
+/* ---------- Что AI-ассистент умеет вернуть ---------- */
 const AI_SYSTEM = [
   'Ты помогаешь собрать дашборд в конструкторе «Кобра». Отвечай по-русски и только JSON, без пояснений вокруг.',
   'Формат ответа: {"ответ": "<текст человеку>", "блоки": [...], "набор": {...}}. Поля «блоки» и «набор» необязательны.',
@@ -6865,12 +6872,12 @@ function openAiSettings(done) {
   });
 }
 
-/* ---------- Панель помощника ---------- */
+/* ---------- Панель AI-ассистента ---------- */
 const aiOpenState = () => lsGet('kobra.ai.open') || {};
 const aiIsOpen = id => !!aiOpenState()[id];
 function aiSetOpen(id, v) { const s = aiOpenState(); if (v) s[id] = 1; else delete s[id]; lsSet('kobra.ai.open', s); }
 
-/* api: { ds, applyBlocks, applySchema, rollback, canRollback } — всё, что помощник
+/* api: { ds, applyBlocks, applySchema, rollback, canRollback } — всё, что AI-ассистент
    умеет сделать с дашбордом, живёт в dashboard.js и приходит сюда функциями. */
 function renderAssistant(D, host, api) {
   let pending = null;      // последнее предложение, которого ещё не применили
@@ -6889,7 +6896,7 @@ function renderAssistant(D, host, api) {
     box.appendChild(h('div', { class: 'ai-form-head' }, h('b', null, 'Коротко о дашборде'), h('div', { class: 'grow' }),
       iconBtn('x', 'Закрыть форму', () => { briefOpen = false; D.chatBriefSkipped = true; saveSoon(); paint(); }, 'sm')));
     box.appendChild(h('div', { class: 'ai-note' },
-      'Ответы уходят с каждым запросом отдельным разделом — помощник меньше придумывает от себя. Можно заполнить частью или закрыть.'));
+      'Ответы уходят с каждым запросом отдельным разделом — AI-ассистент меньше придумывает от себя. Можно заполнить частью или закрыть.'));
     const add = (to, f) => {
       let ctl;
       if (f.pick) ctl = selectEl([['', 'Не указано']].concat(f.pick.map(v => [v, v[0].toUpperCase() + v.slice(1)])),
@@ -6921,7 +6928,7 @@ function renderAssistant(D, host, api) {
       paint();
     };
     box.appendChild(h('div', { class: 'ai-row' },
-      h('button', { class: 'btn sm primary', onclick: () => keep(true) }, ic('cobra'), 'Собрать по брифу'),
+      h('button', { class: 'btn sm primary', onclick: () => keep(true) }, 'Собрать по брифу'),
       h('button', { class: 'btn sm', title: 'Запомнить ответы, запрос отправлю сам', onclick: () => keep(false) }, 'Сохранить'),
       h('button', { class: 'btn sm', onclick: () => { briefOpen = false; D.chatBriefSkipped = true; saveSoon(); paint(); } }, 'Пропустить')));
     return box;
@@ -6930,17 +6937,17 @@ function renderAssistant(D, host, api) {
   const paint = () => {
     clear(host);
     const mock = isMockupDs(ds());
-    host.appendChild(h('div', { class: 'ai-head' }, ic('cobra'), h('b', null, 'Помощник'),
+    host.appendChild(h('div', { class: 'ai-head' }, h('b', null, 'AI-ассистент'),
       h('div', { class: 'grow' }),
       iconBtn('settings', 'Доступ к модели', () => openAiSettings(paint), 'sm'),
-      iconBtn('x', 'Закрыть помощника', () => { aiSetOpen(D.id, false); api.close(); }, 'sm')));
+      iconBtn('x', 'Закрыть AI-ассистента', () => { aiSetOpen(D.id, false); api.close(); }, 'sm')));
 
     const log = h('div', { class: 'ai-log' });
     if (D.chatTrimmed) log.appendChild(h('div', { class: 'ai-note' }, 'Часть старых сообщений отброшена: переписка хранится не целиком.'));
     if (briefOpen) log.appendChild(briefForm());
     else if (!aiLog(D).length) log.appendChild(h('div', { class: 'ai-note' },
-      mock ? 'Опишите свой процесс словами — помощник придумает под него данные и предложит блоки. Например: «заявки на кредит: приходят в отделения, проходят скоринг, часть одобряем».'
-        : 'Опишите, что хотите увидеть на дашборде. Помощник предложит блоки, а применять их или нет — решаете вы.'));
+      mock ? 'Опишите свой процесс словами — AI-ассистент придумает под него данные и предложит блоки. Например: «заявки на кредит: приходят в отделения, проходят скоринг, часть одобряем».'
+        : 'Опишите, что хотите увидеть на дашборде. AI-ассистент предложит блоки, а применять их или нет — решаете вы.'));
     aiLog(D).forEach(m => {
       const el = h('div', { class: 'ai-msg ' + m.role });
       el.appendChild(h('div', { class: 'ai-text' }, m.text));
@@ -6975,7 +6982,7 @@ function renderAssistant(D, host, api) {
     }
 
     // Ввод
-    const ta = h('textarea', { class: 'textarea ai-input', rows: 3, placeholder: 'Что показать на дашборде?', 'aria-label': 'Запрос помощнику' });
+    const ta = h('textarea', { class: 'textarea ai-input', rows: 3, placeholder: 'Что показать на дашборде?', 'aria-label': 'Запрос AI-ассистенту' });
     const send = async forced => {
       const q = String(forced || ta.value).trim();
       if (!q || busy) return;
@@ -7053,7 +7060,7 @@ function collectRefs(dashIds, includeLoose) {
     const d = STATE.dashboards[id];
     if (!d) return;
     dashboards[id] = clone(d);
-    delete dashboards[id].chat;          // переписка с помощником — личное, в файл не уходит
+    delete dashboards[id].chat;          // переписка с AI-ассистентом — личное, в файл не уходит
     delete dashboards[id].chatTrimmed;
     d.tabs.forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) charts[i.chartId] = clone(STATE.charts[i.chartId]); }));
     (d.filters || []).forEach(f => { if (f.datasetId) dsIds.add(f.datasetId); });

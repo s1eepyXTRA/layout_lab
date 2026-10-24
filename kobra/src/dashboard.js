@@ -66,7 +66,7 @@ function renderDashboard(main, id, q) {
   const fbar = h('aside', { class: 'fbar' + (fbarOpen ? '' : ' closed'), 'aria-label': 'Фильтры дашборда' });
   const dmain = h('div', { class: 'dash-main' });
   const panel = editing ? h('aside', { class: 'edit-panel', 'aria-label': 'Добавление элементов' }) : null;
-  const aiHost = h('aside', { class: 'ai-panel', 'aria-label': 'Помощник' });
+  const aiHost = h('aside', { class: 'ai-panel', 'aria-label': 'AI-ассистент' });
   let aiOpen = !editing && aiIsOpen(id);
   let aiUi = null;
   let aiSnap = null;            // снимок перед применением предложения
@@ -186,6 +186,7 @@ function renderDashboard(main, id, q) {
   /* ---------- Шапка ---------- */
   function paintHead() {
     const head = h('div', { class: 'dash-head' + (D.preview ? ' ex' : '') });
+    const aiBtn = () => h('button', { class: 'btn ai' + (aiOpen ? ' on' : ''), title: 'Описать задачу словами — AI-ассистент предложит блоки', onclick: aiToggle }, 'AI-ассистент');
     // Пример шаблона живёт только в памяти и пропадает при уходе со страницы:
     // править его бессмысленно, поэтому в шапке — возврат в каталог и выбор
     // шаблона. Шапка прилипает, иначе на длинном примере возврат уезжает вверх.
@@ -210,7 +211,7 @@ function renderDashboard(main, id, q) {
     head.appendChild(h('div', { class: 'grow' }));
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
-      tuning ? { label: aiOpen ? 'Скрыть помощника' : 'Спросить помощника', icon: 'cobra', onClick: aiToggle } : null,
+      tuning ? { label: aiOpen ? 'Скрыть AI-ассистента' : 'Спросить AI-ассистента', icon: 'wand', onClick: aiToggle } : null,
       { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
       { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
       { label: 'Свойства дашборда', icon: 'settings', onClick: openProps },
@@ -226,13 +227,12 @@ function renderDashboard(main, id, q) {
         h('button', { class: 'btn', title: 'Полное редактирование', onclick: () => leaveTo('#/d/' + id + '?edit=1') }, ic('edit'), 'Больше настроек'),
         h('button', { class: 'btn primary', onclick: tuneDone }, ic('check'), 'Готово'), more);
     } else if (editing) {
+      if (!aiBtnInGrid()) head.appendChild(aiBtn());
       head.append(
-        h('button', { class: 'btn' + (aiOpen ? ' on' : ''), title: 'Описать задачу словами — помощник предложит блоки', onclick: aiToggle }, ic('cobra'), 'Помощник'),
         h('button', { class: 'btn', onclick: cancelEdit }, 'Отменить'),
         h('button', { class: 'btn primary', onclick: saveEdit }, ic('check'), 'Сохранить'), more);
     } else {
-      head.append(
-        h('button', { class: 'btn' + (aiOpen ? ' on' : ''), title: 'Описать задачу словами — помощник предложит блоки', onclick: aiToggle }, ic('cobra'), 'Помощник'),
+      head.append(aiBtn(),
         h('button', { class: 'btn', title: 'Поменять названия и разрезы прямо на блоках', onclick: () => go('#/d/' + id + '?tune=1') }, ic('edit'), 'Названия и разрезы'),
         h('button', { class: 'btn', title: 'Обновить все графики', 'aria-label': 'Обновить все графики', onclick: () => refreshCharts() }, ic('refresh')),
         h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'), more);
@@ -269,7 +269,7 @@ function renderDashboard(main, id, q) {
     if (JSON.stringify(D) !== original && !(await confirmDialog('Отменить изменения', 'Несохранённые изменения дашборда пропадут.', 'Отменить изменения'))) return;
     draftHandled = true;
     // Графики и придуманные данные живут вне черновика: сам он пропадёт, а они
-    // останутся, если их не убрать. Снимок есть только у работы помощника —
+    // останутся, если их не убрать. Снимок есть только у работы AI-ассистента —
     // блоки с палитры и раньше оставались в графиках после отмены.
     if (aiSnap) {
       (aiSnap.newCharts || []).forEach(cid => { delete STATE.charts[cid]; });
@@ -404,10 +404,10 @@ function renderDashboard(main, id, q) {
     gridEl = h('div', { class: 'dgrid' + (editing ? ' editing' : '') });
     if (!t.items.length) {
       const empty = h('div', { class: 'empty' }, h('b', null, editing ? 'Пустая вкладка' : 'Здесь пока ничего нет'),
-        editing ? 'Добавьте блоки с панели справа — или опишите задачу помощнику, и он предложит их сам.' : 'Откройте режим редактирования и добавьте графики.',
+        editing ? 'Добавьте блоки с панели справа — или опишите задачу AI-ассистенту, и он предложит их сам.' : 'Откройте режим редактирования и добавьте графики.',
         h('br'),
         editing
-          ? (aiOpen ? null : h('button', { class: 'btn primary', onclick: aiToggle }, ic('cobra'), 'Спросить помощника'))
+          ? (aiOpen ? null : h('button', { class: 'btn ai', onclick: aiToggle }, 'Спросить AI-ассистента'))
           : h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'));
       return h('div', { class: 'grid-wrap' }, empty);
     }
@@ -828,14 +828,17 @@ function renderDashboard(main, id, q) {
     });
   }
 
-  /* ---------- Помощник ---------- */
+  /* ---------- AI-ассистент ---------- */
   const aiDs = () => dsGet((D.fromTemplate || {}).datasetId) || dsGet(((STATE.charts[(D.tabs.flatMap(t => t.items).find(i => i.chartId) || {}).chartId] || {}).datasetId));
-  /* Помощник открывается из трёх мест. В правке его состояние не запоминаем:
-     иначе конструктор открывался бы с помощником вместо палитры блоков. */
+  /* AI-ассистент открывается из трёх мест. В правке его состояние не запоминаем:
+     иначе конструктор открывался бы с AI-ассистентом вместо палитры блоков. */
   function aiToggle() { aiOpen = !aiOpen; if (!editing) aiSetOpen(id, aiOpen); paintAi(); paintBody(); }
+  /* Кнопка AI-ассистента одна: пока вкладка в конструкторе пуста, она стоит на
+     самой вкладке, и в шапке её нет — две одинаковые кнопки рядом сбивают. */
+  function aiBtnInGrid() { return editing && !aiOpen && !curTab().items.length; }
   function paintAi() {
     aiHost.className = 'ai-panel' + (aiOpen ? '' : ' closed');
-    // Справа помещается одна колонка: помощник встаёт на место палитры блоков
+    // Справа помещается одна колонка: AI-ассистент встаёт на место палитры блоков
     if (panel) panel.style.display = aiOpen ? 'none' : '';
     clear(aiHost);
     if (!aiOpen) { aiUi = null; setTimeout(layoutGrid, 220); return; }
