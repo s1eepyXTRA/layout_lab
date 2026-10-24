@@ -3176,7 +3176,7 @@ function renderDashboard(main, id, q) {
   let aiSnap = null;            // снимок перед применением предложения
   dash.append(fbar, dmain);
   if (panel) dash.appendChild(panel);
-  if (!editing) dash.appendChild(aiHost);
+  dash.appendChild(aiHost);
 
   const curTab = () => D.tabs.find(t => t.id === tabId) || D.tabs[0];
   const markDirty = () => { /* черновик сравнивается при выходе */ };
@@ -3314,7 +3314,7 @@ function renderDashboard(main, id, q) {
     head.appendChild(h('div', { class: 'grow' }));
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
-      tuning ? { label: aiOpen ? 'Скрыть помощника' : 'Спросить помощника', icon: 'cobra', onClick: () => { aiOpen = !aiOpen; aiSetOpen(id, aiOpen); paintAi(); } } : null,
+      tuning ? { label: aiOpen ? 'Скрыть помощника' : 'Спросить помощника', icon: 'cobra', onClick: aiToggle } : null,
       { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor },
       { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } },
       { label: 'Свойства дашборда', icon: 'settings', onClick: openProps },
@@ -3331,11 +3331,12 @@ function renderDashboard(main, id, q) {
         h('button', { class: 'btn primary', onclick: tuneDone }, ic('check'), 'Готово'), more);
     } else if (editing) {
       head.append(
+        h('button', { class: 'btn' + (aiOpen ? ' on' : ''), title: 'Описать задачу словами — помощник предложит блоки', onclick: aiToggle }, ic('cobra'), 'Помощник'),
         h('button', { class: 'btn', onclick: cancelEdit }, 'Отменить'),
         h('button', { class: 'btn primary', onclick: saveEdit }, ic('check'), 'Сохранить'), more);
     } else {
       head.append(
-        h('button', { class: 'btn' + (aiOpen ? ' on' : ''), title: 'Описать задачу словами — помощник предложит блоки', onclick: () => { aiOpen = !aiOpen; aiSetOpen(id, aiOpen); paintAi(); paintBody(); } }, ic('cobra'), 'Помощник'),
+        h('button', { class: 'btn' + (aiOpen ? ' on' : ''), title: 'Описать задачу словами — помощник предложит блоки', onclick: aiToggle }, ic('cobra'), 'Помощник'),
         h('button', { class: 'btn', title: 'Поменять названия и разрезы прямо на блоках', onclick: () => go('#/d/' + id + '?tune=1') }, ic('edit'), 'Названия и разрезы'),
         h('button', { class: 'btn', title: 'Обновить все графики', 'aria-label': 'Обновить все графики', onclick: () => refreshCharts() }, ic('refresh')),
         h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'), more);
@@ -3371,6 +3372,16 @@ function renderDashboard(main, id, q) {
   async function cancelEdit() {
     if (JSON.stringify(D) !== original && !(await confirmDialog('Отменить изменения', 'Несохранённые изменения дашборда пропадут.', 'Отменить изменения'))) return;
     draftHandled = true;
+    // Графики и придуманные данные живут вне черновика: сам он пропадёт, а они
+    // останутся, если их не убрать. Снимок есть только у работы помощника —
+    // блоки с палитры и раньше оставались в графиках после отмены.
+    if (aiSnap) {
+      (aiSnap.newCharts || []).forEach(cid => { delete STATE.charts[cid]; });
+      Object.entries(aiSnap.charts || {}).forEach(([cid, c]) => { STATE.charts[cid] = c; });
+      if (aiSnap.ds) { STATE.datasets[aiSnap.ds.id] = aiSnap.ds.meta; DS[aiSnap.ds.id] = Object.assign({}, aiSnap.ds.meta, { rows: generateSchemaRows(aiSnap.ds.meta.schema) }); }
+      aiSnap = null;
+      saveState();
+    }
     go('#/d/' + id);
   }
   function openProps() {
@@ -3497,8 +3508,11 @@ function renderDashboard(main, id, q) {
     gridEl = h('div', { class: 'dgrid' + (editing ? ' editing' : '') });
     if (!t.items.length) {
       const empty = h('div', { class: 'empty' }, h('b', null, editing ? 'Пустая вкладка' : 'Здесь пока ничего нет'),
-        editing ? 'Добавьте графики, заголовки или текст с панели справа.' : 'Откройте режим редактирования и добавьте графики.',
-        !editing ? h('br') : null, !editing ? h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать') : null);
+        editing ? 'Добавьте блоки с панели справа — или опишите задачу помощнику, и он предложит их сам.' : 'Откройте режим редактирования и добавьте графики.',
+        h('br'),
+        editing
+          ? (aiOpen ? null : h('button', { class: 'btn primary', onclick: aiToggle }, ic('cobra'), 'Спросить помощника'))
+          : h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'));
       return h('div', { class: 'grid-wrap' }, empty);
     }
     compactLayout(t.items);
@@ -3920,8 +3934,13 @@ function renderDashboard(main, id, q) {
 
   /* ---------- Помощник ---------- */
   const aiDs = () => dsGet((D.fromTemplate || {}).datasetId) || dsGet(((STATE.charts[(D.tabs.flatMap(t => t.items).find(i => i.chartId) || {}).chartId] || {}).datasetId));
+  /* Помощник открывается из трёх мест. В правке его состояние не запоминаем:
+     иначе конструктор открывался бы с помощником вместо палитры блоков. */
+  function aiToggle() { aiOpen = !aiOpen; if (!editing) aiSetOpen(id, aiOpen); paintAi(); paintBody(); }
   function paintAi() {
     aiHost.className = 'ai-panel' + (aiOpen ? '' : ' closed');
+    // Справа помещается одна колонка: помощник встаёт на место палитры блоков
+    if (panel) panel.style.display = aiOpen ? 'none' : '';
     clear(aiHost);
     if (!aiOpen) { aiUi = null; setTimeout(layoutGrid, 220); return; }
     aiUi = renderAssistant(D, aiHost, {
@@ -3934,10 +3953,19 @@ function renderDashboard(main, id, q) {
         if (!aiSnap) return;
         (aiSnap.newCharts || []).forEach(cid => { delete STATE.charts[cid]; });
         Object.entries(aiSnap.charts || {}).forEach(([cid, c]) => { STATE.charts[cid] = c; });
-        STATE.dashboards[id] = aiSnap.dash;
         if (aiSnap.ds) { STATE.datasets[aiSnap.ds.id] = aiSnap.ds.meta; DS[aiSnap.ds.id] = Object.assign({}, aiSnap.ds.meta, { rows: generateSchemaRows(aiSnap.ds.meta.schema) }); }
+        const snap = aiSnap.dash;
         aiSnap = null;
         saveState();
+        // Из правки не выходим: черновик возвращаем к снимку на месте, иначе
+        // откат предложения выбросил бы и всё, что человек правил руками
+        if (editing) {
+          D.title = snap.title; D.tabs = snap.tabs; D.filters = snap.filters;
+          if (!D.tabs.some(t => t.id === tabId)) tabId = tabMemory[id] = D.tabs[0].id;
+          paintAll();
+          return;
+        }
+        STATE.dashboards[id] = snap;
         go('#/d/' + id);
       },
       applyBlocks: blocks => {
@@ -3985,7 +4013,8 @@ function renderDashboard(main, id, q) {
     if (aiSnap) return;
     const charts = {};
     D.tabs.forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) charts[i.chartId] = clone(STATE.charts[i.chartId]); }));
-    aiSnap = { dash: clone(STATE.dashboards[id]), charts, newCharts: [], ds: null };
+    // В правке снимаем черновик: сохранённого дашборда правки ещё не касались
+    aiSnap = { dash: clone(editing ? D : STATE.dashboards[id]), charts, newCharts: [], ds: null };
   }
   /* Данные сменились целиком — блоки пересобираем под новые поля */
   function rebuildMockupBlocks(ds) {
@@ -4034,7 +4063,7 @@ function renderDashboard(main, id, q) {
     dmain.appendChild(paintGrid());
     paintPanel();
   }
-  function paintAll() { paintFilterBar(); paintBody(); if (!editing) paintAi(); }
+  function paintAll() { paintFilterBar(); paintBody(); paintAi(); }
   paintAll();
 
   return () => {
