@@ -30,7 +30,10 @@ function route() {
   const sec = parts[0] || 'dashboards';
   // Примеры шаблонов живут только пока на них смотрят
   if (typeof purgePreviews === 'function') purgePreviews(sec === 'd' ? parts[1] : null);
-  document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.sec === (sec === 'd' ? 'dashboards' : sec === 'explore' ? 'charts' : sec)));
+  document.querySelectorAll('.nav a').forEach(el => {
+    const a = /** @type {HTMLElement} */ (el);
+    a.classList.toggle('on', a.dataset.sec === (sec === 'd' ? 'dashboards' : sec === 'explore' ? 'charts' : sec));
+  });
   try {
     if (sec === 'd' && parts[1]) pageCleanup = renderDashboard(main, parts[1], q);
     else if (sec === 'templates') pageCleanup = renderTemplateList(main, q);

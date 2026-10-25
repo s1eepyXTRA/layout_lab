@@ -101,7 +101,9 @@ function authInit() {
   if (login) authSignIn(login, { silent: true });
   return !!AUTH.user;
 }
-function authSignIn(login, { silent } = {}) {
+/** @param {{silent?: boolean}} [opts] */
+function authSignIn(login, opts = {}) {
+  const { silent } = opts;
   const u = authUsers().find(x => x.login === String(login || '').trim().toLowerCase())
     || authFind(login);
   if (!u) { if (!silent) toast('Такого сотрудника нет в каталоге', true); return false; }

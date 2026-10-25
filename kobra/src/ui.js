@@ -115,8 +115,13 @@ function toast(msg, isErr) {
 }
 
 /* ---------- Модальные окна ---------- */
+/**
+ * Модальное окно.
+ * @param {{title: string, body: any, foot?: any, wide?: boolean|'x', onClose?: () => void}} opts
+ * @returns {{close: () => void, el: HTMLElement}}
+ */
 function openModal({ title, body, foot, wide, onClose }) {
-  const prevFocus = document.activeElement;
+  const prevFocus = /** @type {HTMLElement} */ (document.activeElement);
   const ov = h('div', { class: 'overlay' });
   const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); onClose && onClose(); prevFocus && prevFocus.focus && prevFocus.focus(); };
   const onKey = e => { if (e.key === 'Escape' && !document.querySelector('.pop')) close(); };

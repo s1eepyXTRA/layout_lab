@@ -122,6 +122,7 @@ async function loadUploaded() {
 }
 
 /* ---------- Каркас ---------- */
+let themeBtnEl = null;   // перерисовать иконку темы можно и без тайника в window
 function renderShell() {
   const app = document.getElementById('app');
   clear(app);
@@ -156,7 +157,7 @@ function renderShell() {
       h('a', { href: '#/data', 'data-sec': 'data' }, 'Данные')),
     h('div', { class: 'spacer' }), whoBtn, themeBtn, settingsBtn));
   app.appendChild(h('main', { class: 'main' }));
-  window._themeBtn = themeBtn;
+  themeBtnEl = themeBtn;
 }
 function isDark() {
   const t = document.documentElement.getAttribute('data-theme');
@@ -167,7 +168,7 @@ function toggleTheme() {
   const next = isDark() ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
   try { localStorage.setItem('kobra.theme', next); } catch (e) { }
-  window._themeBtn && window._themeBtn._paint();
+  themeBtnEl && themeBtnEl._paint();
   route();
 }
 async function restoreDemo() {
@@ -470,7 +471,7 @@ function startApp() {
   window.addEventListener('popstate', onNav);
   // Внутренние ссылки обрабатываем сами: во встроенном окне просмотра переход по href может увести фрейм на чужой адрес
   document.addEventListener('click', e => {
-    const a = e.target.closest && e.target.closest('a[href]');
+    const a = /** @type {Element} */ (e.target).closest && /** @type {Element} */ (e.target).closest('a[href]');
     if (!a) return;
     const href = a.getAttribute('href');
     if (href.startsWith('#')) { e.preventDefault(); go(href); return; }
@@ -478,7 +479,7 @@ function startApp() {
   }, true);
   let lastW = window.innerWidth;
   window.addEventListener('resize', debounce(() => { if (Math.abs(window.innerWidth - lastW) > 40 && (lastW < 760) !== (window.innerWidth < 760)) route(); lastW = window.innerWidth; }, 200));
-  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!document.documentElement.getAttribute('data-theme')) { window._themeBtn && window._themeBtn._paint(); route(); } });
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!document.documentElement.getAttribute('data-theme')) { themeBtnEl && themeBtnEl._paint(); route(); } });
   if (!location.hash) { try { history.replaceState(null, '', '#/d/d_demo'); } catch (e) { } }
   route();
   const ld = document.querySelector('.loading');

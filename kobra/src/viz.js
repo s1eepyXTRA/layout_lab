@@ -94,7 +94,9 @@ const firstMetric = ds => ds.metrics[0] ? { kind: 'saved', key: ds.metrics[0].ke
 const fmtFor = (p, res, i = 0) => (p.y_format && p.y_format !== 'auto') ? p.y_format : (res.mets[i] ? res.mets[i].format : 'smart');
 
 /* XY-запрос: категории по оси X, серии по метрикам и/или измерению */
-function queryXY(ds, filters, { xCol, grain, metrics, seriesCol, seriesLimit, sort, catLimit }) {
+/** @param {{xCol: string, grain?: string, metrics: MetricRef[], seriesCol?: string, seriesLimit?: number, sort?: string, catLimit?: number}} spec */
+function queryXY(ds, filters, spec) {
+  const { xCol, grain, metrics, seriesCol, seriesLimit, sort, catLimit } = spec;
   const xDate = isDateCol(ds, xCol);
   const gb = [{ col: xCol, grain: xDate ? (grain || 'month') : null }];
   if (seriesCol) gb.push({ col: seriesCol, grain: isDateCol(ds, seriesCol) ? 'year' : null });
@@ -944,6 +946,9 @@ VIZ.pie = {
     let rows = res.rows.filter(r => r[mk] > 0);
     if (!rows.length) return vizMsg(root, 'Нет данных для выбранных фильтров');
     const lim = p.row_limit || 8;
+    /* «Прочее» — единственная доля без исходного значения: по ней не
+       фильтруют, поэтому raw у неё нет */
+    /** @type {{name: string, value: number, raw?: any, other?: boolean, itemStyle?: any}[]} */
     const data = rows.slice(0, lim).map(r => ({ name: fmtDimValue(r[d.key], d), value: r[mk], raw: r[d.key] }));
     if (rows.length > lim && p.other !== false) data.push({ name: 'Прочее', value: rows.slice(lim).reduce((a, r) => a + r[mk], 0), other: true, itemStyle: { color: themeColors().line2 } });
     const total = data.reduce((a, x) => a + x.value, 0);
@@ -1034,6 +1039,7 @@ VIZ.treemap = {
       if (!ctx.cross || !e.treePathInfo) return;
       const path = e.treePathInfo.slice(1);
       const out = [];
+      /** @type {any} */
       let node = { children: data };
       path.forEach(pt => { node = (node.children || []).find(c => c.name === pt.name); if (node) { const dm = res.dims.find(d => d.col === node.dimKey); if (dm && dm.type !== 'date') out.push({ col: node.dimKey, op: 'in', val: [node.raw], label: `${dm.label}: ${node.name}` }); } });
       if (out.length) ctx.cross(out);

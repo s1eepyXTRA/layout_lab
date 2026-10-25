@@ -438,7 +438,9 @@ function tplLayout(charts, ds, intro, preview) {
 }
 
 /* Макет: данных нет, набор порождается под дашборд и прячется за ним */
-function createMockup(tpl, { title, levels } = {}) {
+/** @param {{title?: string, levels?: string[]}} [opts] */
+function createMockup(tpl, opts = {}) {
+  const { title, levels } = opts;
   const name = (title || (tpl ? tplDashName(tpl) : 'Шаблон')).trim() || 'Шаблон';
   const dashId = uid('d_');
   const dsId = saveSchemaDataset({ name: `Данные макета «${name}»`, schema: mockupSchema(tpl), owner: dashId });
@@ -459,7 +461,9 @@ function emptyMockup(dashId, dsId, name) {
 }
 
 /* Создаёт дашборд из шаблона, пишет его в STATE и возвращает id */
-function createFromTemplate(tpl, ds, { title, roles, levels, preview, dashId }) {
+/** @param {{title?: string, roles?: any, levels?: string[], preview?: boolean, dashId?: string}} [opts] */
+function createFromTemplate(tpl, ds, opts = {}) {
+  let { title, roles, levels, preview, dashId } = opts;
   roles = roles || pickRoles(ds);
   const derived = preview ? ensureDerivedInMemory(tpl, ds, roles) : ensureDerived(tpl, ds, roles);
   const plan = buildFromTemplate(tpl, ds, roles, levels, derived);

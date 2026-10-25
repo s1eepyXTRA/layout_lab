@@ -1,0 +1,22 @@
+{
+  "//strict": "Строгость включена не вся намеренно: код DOM-овый и нигде не проверяет null, поэтому strictNullChecks утопил бы сигнал в шуме. Ловим то, что дёшево: опечатки в полях, неверную арность, несуществующие имена.",
+  "//": "Типы без переезда на TypeScript: редактор проверяет JS по JSDoc, сборка не меняется. Разово: npx -p typescript@5.6.3 tsc -p kobra/jsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "none",
+    "moduleResolution": "node",
+
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "noImplicitThis": false,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*.js", "types/**/*.d.ts"],
+  "exclude": ["build", "service", "vendor", "test"]
+}

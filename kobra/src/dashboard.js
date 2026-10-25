@@ -400,7 +400,7 @@ function renderDashboard(main, id, q) {
     const ds = dsGet(chart.datasetId);
     const bar = h('div', { class: 'tune-bar' });
     const nameInp = h('input', { class: 'input', value: chart.name, 'aria-label': 'Название блока',
-      oninput: e => { tuneTouch(it.chartId); guidedRename(chart, e.target.value); cell.titleEl && (cell.titleEl.textContent = chart.name); } });
+      oninput: e => { tuneTouch(); guidedRename(chart, e.target.value); cell.titleEl && (cell.titleEl.textContent = chart.name); } });
     bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Название'), nameInp));
     if (!ds) return bar;
     const mock = isMockupDs(ds);
@@ -410,11 +410,11 @@ function renderDashboard(main, id, q) {
       const redraw = () => { guidedRetitle(ds, chart); nameInp.value = chart.name; if (cell.titleEl) cell.titleEl.textContent = chart.name; refreshCharts(); };
       bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Показатель'),
         h('input', { class: 'input', value: guidedMetricOf(ds, chart).label, 'aria-label': 'Название показателя',
-          onchange: e => { tuneTouchDs(ds); guidedSetMetricLabel(ds, chart, e.target.value); redraw(); } })));
+          onchange: e => { tuneTouchDs(); guidedSetMetricLabel(ds, chart, e.target.value); redraw(); } })));
       bar.appendChild(h('label', { class: 'tune-f', style: { flex: '0 1 150px' } }, h('span', null, 'Единица'),
         h('input', { class: 'input', value: guidedSuffixOf(ds, chart) || '', placeholder: '₽, шт., мин',
           'aria-label': 'Единица измерения',
-          onchange: e => { tuneTouchDs(ds); guidedSetSuffix(ds, chart, e.target.value); refreshCharts(); } })));
+          onchange: e => { tuneTouchDs(); guidedSetSuffix(ds, chart, e.target.value); refreshCharts(); } })));
     }
 
     const slots = guidedDimSlots(ds, chart);
@@ -439,8 +439,8 @@ function renderDashboard(main, id, q) {
     // Слот пустой: второй разрез человек включает сам
     if (!slot.key) {
       row.appendChild(h('button', { class: 'btn sm', onclick: () => {
-        tuneTouch(it.chartId);
-        if (mock) { tuneTouchDs(ds); guidedParamSet(chart, slot.spec, guidedAddMockDim(ds, chart).key); }
+        tuneTouch();
+        if (mock) { tuneTouchDs(); guidedParamSet(chart, slot.spec, guidedAddMockDim(ds, chart).key); }
         else {
           const opts = guidedDimOptions(ds, chart, slot);
           if (!opts.length) { toast('Больше нет колонок, по которым можно разбить', true); return; }
@@ -453,7 +453,7 @@ function renderDashboard(main, id, q) {
     // Время: колонка там одна, менять имеет смысл шаг
     if (slot.time) {
       if (GUIDED_GRAIN[chart.viz]) row.appendChild(lab('Период', selectEl(Object.entries(TIME_GRAINS), guidedGrainOf(chart), v => {
-        tuneTouch(it.chartId); guidedSetGrain(chart, v); retitle(); drawChart(cell);
+        tuneTouch(); guidedSetGrain(chart, v); retitle(); drawChart(cell);
       }, { 'aria-label': 'Шаг по времени' })));
       else row.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, 'Разрез по дате'));
       return row;
@@ -463,14 +463,14 @@ function renderDashboard(main, id, q) {
       // В макете разрез — это просто его название: какая колонка под ним, человеку незачем
       row.appendChild(lab(slot.label, h('input', { class: 'input', value: guidedDimLabel(ds, slot.key) || '',
         placeholder: 'Филиалы, продукты, статусы', 'aria-label': 'Название разреза',
-        onchange: e => { tuneTouchDs(ds); if (guidedRenameDim(ds, slot.key, e.target.value)) { retitle(); refreshCharts(); } } })));
+        onchange: e => { tuneTouchDs(); if (guidedRenameDim(ds, slot.key, e.target.value)) { retitle(); refreshCharts(); } } })));
       // Категории разреза: их число и названия — это значения в придуманных данных
       const namesInp = h('input', { class: 'input', value: cats.values.join(', '), placeholder: 'Названия через запятую',
         'aria-label': 'Названия категорий' });
       const cntInp = h('input', { class: 'input', type: 'number', min: 2, max: 12, value: cats.count,
         'aria-label': 'Сколько категорий', style: { width: '64px' } });
       const applyCats = () => {
-        tuneTouchDs(ds);
+        tuneTouchDs();
         const res = guidedSetCats(ds, slot.key, cntInp.value, namesInp.value.split(',').map(x => x.trim()).filter(Boolean));
         if (!res) return;
         migrateFilterValues(res.col, res.old, res.next);
@@ -484,17 +484,17 @@ function renderDashboard(main, id, q) {
       row.appendChild(lab('Категорий', cntInp, '0 1 120px'));
       row.appendChild(lab('Названия', namesInp, '2 1 240px'));
       row.appendChild(h('button', { class: 'btn sm', title: 'Другая форма распределения: подписи те же, пропорции другие',
-        onclick: () => { tuneTouchDs(ds); if (guidedCycleSpread(ds, slot.key)) refreshCharts(); } }, ic('refresh'), 'Распределение'));
+        onclick: () => { tuneTouchDs(); if (guidedCycleSpread(ds, slot.key)) refreshCharts(); } }, ic('refresh'), 'Распределение'));
     } else {
       // Настоящий набор: разрез выбирается из его же колонок
       const opts = guidedDimOptions(ds, chart, slot);
       row.appendChild(lab(slot.nth ? slot.label : 'В разрезе',
         selectEl(opts.map(o => [o.key, o.label]), slot.key, v => {
-          tuneTouch(it.chartId); guidedParamSet(chart, slot.spec, v); retitle(); repaintItem(it);
+          tuneTouch(); guidedParamSet(chart, slot.spec, v); retitle(); repaintItem(it);
         }, { 'aria-label': 'В разрезе чего' })));
     }
     if (slot.optional) row.appendChild(iconBtn('x', 'Убрать этот разрез', () => {
-      tuneTouch(it.chartId); guidedParamSet(chart, slot.spec, null); retitle(); relayout();
+      tuneTouch(); guidedParamSet(chart, slot.spec, null); retitle(); relayout();
     }, 'sm'));
     return row;
   }
@@ -520,7 +520,7 @@ function renderDashboard(main, id, q) {
       const n = ds ? ex.filter(f => dsCol(ds, f.col)).length : 0;
       clear(c.badge);
       c.badge.style.display = n ? '' : 'none';
-      if (n) { c.badge.appendChild(ic('filter')); c.badge.appendChild(document.createTextNode(n)); c.badge.title = `Применено фильтров шаблона: ${n}`; }
+      if (n) { c.badge.appendChild(ic('filter')); c.badge.appendChild(document.createTextNode(String(n))); c.badge.title = `Применено фильтров шаблона: ${n}`; }
     }
   }
   function refreshCharts() { cells.forEach(c => { if (c.chartId) drawChart(c); }); }
@@ -748,7 +748,7 @@ function renderDashboard(main, id, q) {
       const paintList = () => {
         clear(list);
         const qq = search.value.trim().toLowerCase();
-        const charts = Object.values(STATE.charts).filter(c => !qq || c.name.toLowerCase().includes(qq)).sort((a, b) => (onDash.has(a.id) - onDash.has(b.id)) || (b.updated || 0) - (a.updated || 0));
+        const charts = Object.values(STATE.charts).filter(c => !qq || c.name.toLowerCase().includes(qq)).sort((a, b) => (Number(onDash.has(a.id)) - Number(onDash.has(b.id))) || (b.updated || 0) - (a.updated || 0));
         if (!charts.length) list.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Графиков не найдено'));
         charts.forEach(c => list.appendChild(h('button', { class: 'comp' + (onDash.has(c.id) ? ' used' : ''), title: 'Добавить на текущую вкладку', onclick: () => addItem({ type: 'chart', chartId: c.id }) },
           ic(VIZ[c.viz].icon), h('div', { class: 'grow' }, h('b', null, c.name), h('span', null, VIZ[c.viz].label + (onDash.has(c.id) ? ' · уже в шаблоне' : ''))), ic('plus'))));

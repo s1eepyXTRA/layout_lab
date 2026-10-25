@@ -78,7 +78,9 @@ function aiBriefLines(b) {
 /* ---------- Что уходит наружу ----------
    Единственное место сборки отправляемого: его целиком можно показать
    человеку и службе безопасности. Строк здесь нет, пока не разрешили. */
-function aiContext(D, ds, { samples } = {}) {
+/** @param {{samples?: boolean}} [opts] строки прикладываются только по согласию */
+function aiContext(D, ds, opts = {}) {
+  const { samples } = opts;
   const out = { бриф: null, набор: null, дашборд: null };
   if (aiBriefFilled(aiBrief(D))) out.бриф = aiBriefLines(aiBrief(D));
   if (ds) {
@@ -236,6 +238,10 @@ function renderAssistant(D, host, api) {
   // Бриф показываем первым, пока на него не ответили и не закрыли
   let briefOpen = !aiBriefFilled(aiBrief(D)) && !D.chatBriefSkipped && !aiLog(D).length;
   const ds = () => api.ds();
+  /* Отправку собирает paint() — она замкнута на поле ввода, которое там же и
+     создаётся. Форме брифа нужна та же отправка, но из своей области видимости
+     её не видно, поэтому держим ссылку. */
+  let sendNow = async (/** @type {string} */ q) => { };
 
   /* Форма брифа. Живёт в переписке и закрывается крестиком: человек, который
      уже собрал половину макета, не должен отвечать на восемь вопросов, чтобы
@@ -273,7 +279,7 @@ function renderAssistant(D, host, api) {
       saveState();
       aiPush(D, 'system', 'Бриф сохранён:\n' + aiBriefLines(b).join('\n'));
       briefOpen = false;
-      if (fire) { paint(); await send('Собери шаблон по брифу: уровни детализации по вкладкам и блоки под показатели.'); return; }
+      if (fire) { paint(); await sendNow('Собери шаблон по брифу: уровни детализации по вкладкам и блоки под показатели.'); return; }
       toast('Бриф сохранён — он уходит с каждым запросом');
       paint();
     };
@@ -333,7 +339,7 @@ function renderAssistant(D, host, api) {
 
     // Ввод
     const ta = h('textarea', { class: 'textarea ai-input', rows: 3, placeholder: 'Что показать в шаблоне?', 'aria-label': 'Запрос AI-ассистенту' });
-    const send = async forced => {
+    const send = async (/** @type {string} */ forced) => {
       const q = String(forced || ta.value).trim();
       if (!q || busy) return;
       if (!aiReady()) { toast('Доступ к модели не настроен — воспользуйтесь переносом вручную', true); return; }
@@ -350,6 +356,7 @@ function renderAssistant(D, host, api) {
       samples = false; busy = false; paint();
       if (ta.isConnected) ta.focus();
     };
+    sendNow = send;
     const takeAnswer = text => {
       const r = aiParse(text);
       const extra = {};

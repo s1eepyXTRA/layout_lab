@@ -5,7 +5,7 @@
 import os, sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC, VENDOR = os.path.join(ROOT, 'src'), os.path.join(ROOT, 'vendor')
-ORDER = ['data.js', 'engine.js', 'ui.js', 'auth.js', 'store.js', 'router.js', 'grid.js', 'viz.js', 'app.js', 'dashboard.js', 'explore.js', 'datasets.js', 'schema.js', 'autodash.js', 'templates.js', 'guided.js', 'assistant.js', 'share.js', 'spec.js']
+ORDER = ['types.js', 'data.js', 'engine.js', 'ui.js', 'auth.js', 'store.js', 'router.js', 'grid.js', 'viz.js', 'app.js', 'dashboard.js', 'explore.js', 'datasets.js', 'schema.js', 'autodash.js', 'templates.js', 'guided.js', 'assistant.js', 'share.js', 'spec.js']
 CDN = {
     'echarts.min.js': 'https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js',
     'marked.min.js': 'https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js',
@@ -16,6 +16,16 @@ LAZY = ['xlsx.full.min.js', 'papaparse.min.js']  # Excel и CSV: в онлайн
 offline = len(sys.argv) > 1 and sys.argv[1] == 'offline'
 read = lambda p: open(p, encoding='utf-8').read()
 css = read(os.path.join(SRC, 'styles.css'))
+# Файл в src/, забытый в ORDER, не попадёт в сборку и молча «не заработает».
+# Проверяем здесь: это дешевле, чем искать потом в собранном HTML.
+have = sorted(f for f in os.listdir(SRC) if f.endswith('.js'))
+missing = [f for f in have if f not in ORDER]
+extra = [f for f in ORDER if f not in have]
+if missing:
+    raise SystemExit('Не перечислены в ORDER: ' + ', '.join(missing))
+if extra:
+    raise SystemExit('В ORDER есть несуществующие файлы: ' + ', '.join(extra))
+
 js = '\n'.join(read(os.path.join(SRC, f)) for f in ORDER)
 
 if offline:

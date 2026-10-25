@@ -168,6 +168,7 @@ function schemaMetrics(columns, prev) {
   return out.concat(keep);
 }
 
+/** @param {{id?: string, name: string, schema: SchemaDef, owner?: string}} opts */
 function saveSchemaDataset({ id, name, schema, owner }) {
   const sc = normalizeSchema(schema);
   const columns = sc.columns.map(c => ({ key: c.key, label: c.label || c.key, type: c.type }));

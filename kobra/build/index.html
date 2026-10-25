@@ -525,6 +525,255 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 <div class="loading" role="status"><div><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5c-3.3 0-6 2.6-6 6.3 0 2.4 1.2 4 2.6 5.2.8.7 1.1 1.4 1.1 2.4V21h4.6v-4.6c0-1 .3-1.7 1.1-2.4 1.4-1.2 2.6-2.8 2.6-5.2 0-3.7-2.7-6.3-6-6.3z"/></svg><span>Готовлю демо-данные…</span></div></div>
 <div id="app"></div>
 <script>
+/* =============================================================
+   Кобра · формы данных
+   Типы в JSDoc, а не в TypeScript: сборка — это конкатенация скриптов
+   в один <script>, и компилятор в неё не вписывается, а редактор типы
+   из JSDoc понимает и так (jsconfig.json, checkJs). Разово проверить
+   всё целиком: npx -p typescript@5.6.3 tsc -p kobra/jsconfig.json
+
+   Здесь только те формы, которые ездят между файлами, — на них
+   держатся договорённости. Локальные объекты не описываем: вывод
+   типов справляется сам, а лишние @typedef устаревают молча.
+   ============================================================= */
+
+/** @typedef {'string'|'number'|'date'} ColType */
+
+/**
+ * Колонка набора данных.
+ * @typedef {Object} Column
+ * @property {string} key    машинный ключ, латиница
+ * @property {string} label  подпись для человека
+ * @property {ColType} type
+ */
+
+/**
+ * Формула показателя. Отношение считается двумя аккумуляторами, а не
+ * делением готовых агрегатов, — поэтому у него две части, а не строка.
+ * @typedef {{type:'simple', agg:string, col:string}
+ *   | {type:'ratio', num:{agg:string,col:string}, den:{agg:string,col:string}, mult?:number}} MetricExpr
+ */
+
+/**
+ * Показатель, сохранённый в наборе.
+ * @typedef {Object} SavedMetric
+ * @property {string} key
+ * @property {string} label
+ * @property {MetricExpr} expr
+ * @property {string} [format]  ключ из NUMBER_FORMATS либо 'suffix:шт.'
+ */
+
+/**
+ * Показатель в параметрах графика: ссылка на сохранённый или разовый.
+ * @typedef {{kind:'saved', key:string} | {kind:'simple', agg:string, col:string}} MetricRef
+ */
+
+/** @typedef {{preset?:string, from?:string, to?:string}} TimeRangeVal */
+
+/**
+ * Фильтр запроса. `op` — ключ из FILTER_OPS; у 'time_range' в `val`
+ * лежит TimeRangeVal, у 'in' — массив значений.
+ * @typedef {{col:string, op:string, val?:any}} QueryFilter
+ */
+
+/**
+ * Описание придуманного набора: по нему порождаются строки.
+ * @typedef {Object} SchemaDef
+ * @property {number} seed
+ * @property {number} rowCount
+ * @property {string} [dateFrom]
+ * @property {string} [dateTo]
+ * @property {SchemaColumn[]} columns
+ */
+
+/**
+ * @typedef {Object} SchemaColumn
+ * @property {string} key
+ * @property {string} label
+ * @property {ColType} type
+ * @property {string[]} [values]    категории текстовой колонки
+ * @property {number} [min]
+ * @property {number} [max]
+ * @property {number} [decimals]
+ * @property {string} [spread]
+ */
+
+/**
+ * Набор данных в реестре DS. `owner` — это **дашборд**, которому
+ * принадлежит скрытый набор макета; владелец-человек — `ownerLogin`.
+ * @typedef {Object} Dataset
+ * @property {string} id
+ * @property {string} name
+ * @property {Column[]} columns
+ * @property {SavedMetric[]} metrics
+ * @property {Record<string, any>[]} rows
+ * @property {string|null} [mainDttm]
+ * @property {boolean} [builtin]
+ * @property {'schema'|'upload'} [kind]
+ * @property {SchemaDef} [schema]
+ * @property {string} [description]
+ * @property {string} [fileName]
+ * @property {boolean} [preview]
+ * @property {boolean} [missingRows]
+ * @property {boolean} [fromTemplate]
+ * @property {string} [owner]       id дашборда-хозяина
+ * @property {string} [ownerLogin]  логин владельца
+ * @property {string} [team]
+ * @property {string[]} [shared]
+ * @property {Record<string, number>} [_maxCache]
+ */
+
+/**
+ * Запрос к набору: единственный способ получить данные для графика.
+ * @typedef {Object} QuerySpec
+ * @property {QueryFilter[]} [filters]
+ * @property {{col:string, grain?:string, alias?:string}[]} [groupby]
+ * @property {MetricRef[]} [metrics]
+ * @property {{key:string, desc?:boolean}[]} [orderby]
+ * @property {number} [limit]
+ * @property {Record<string, any>[]} [_rows]
+ */
+
+/**
+ * Ответ движка. `dims[].key` — `col` или `col__grain`, `mets[].key` —
+ * подпись показателя: по ней же значения достаются из строк.
+ * @typedef {Object} QueryResult
+ * @property {Record<string, any>[]} rows
+ * @property {{key:string, col:string, grain:string|null, label:string, type:ColType}[]} dims
+ * @property {{key:string, label:string, format?:string}[]} mets
+ * @property {number} filteredCount
+ */
+
+/**
+ * График. `params` зависит от типа визуализации — его форму задаёт
+ * VIZ[viz].controls, поэтому здесь он намеренно свободный.
+ * @typedef {Object} Chart
+ * @property {string} id
+ * @property {string} name
+ * @property {string} viz
+ * @property {string} datasetId
+ * @property {Record<string, any>} params
+ * @property {number} [updated]
+ * @property {boolean} [autoName]   заголовок собран Коброй и следует за разрезом
+ * @property {boolean} [preview]
+ * @property {Record<string, string>} [spec]  поля ТЗ
+ * @property {string} [ownerLogin]
+ * @property {string} [team]
+ * @property {string[]} [shared]
+ */
+
+/**
+ * Элемент на вкладке дашборда.
+ * @typedef {Object} DashItem
+ * @property {string} i
+ * @property {'chart'|'markdown'|'header'|'divider'} type
+ * @property {string} [chartId]
+ * @property {string} [text]
+ * @property {string} [size]
+ * @property {number} x
+ * @property {number} y
+ * @property {number} w
+ * @property {number} h
+ */
+
+/** @typedef {{id:string, title:string, level?:string, items:DashItem[]}} DashTab */
+
+/**
+ * Фильтр дашборда (нативный, с панели слева).
+ * @typedef {Object} DashFilter
+ * @property {string} id
+ * @property {string} name
+ * @property {'select'|'time'|'range'} type
+ * @property {string} datasetId
+ * @property {string} col
+ * @property {any} [value]
+ * @property {any} [def]
+ * @property {boolean} [multi]
+ * @property {string} [scope]
+ * @property {boolean} [dependent]
+ */
+
+/**
+ * Дашборд — в интерфейсе «шаблон». Переписка с AI-ассистентом живёт
+ * здесь же и в файл обмена не уезжает.
+ * @typedef {Object} Dashboard
+ * @property {string} id
+ * @property {string} title
+ * @property {DashTab[]} tabs
+ * @property {DashFilter[]} filters
+ * @property {number} [updated]
+ * @property {boolean} [crossFilter]
+ * @property {string|null} [scheme]
+ * @property {boolean} [preview]
+ * @property {string} [previewBack]
+ * @property {string|null} [previewDs]
+ * @property {{tplId:string|null, datasetId:string, levels:string[], roles:Record<string,any>}} [fromTemplate]
+ * @property {{role:string, text:string, blocks?:any[], schemaCols?:any[]}[]} [chat]
+ * @property {Record<string, string>} [chatBrief]
+ * @property {boolean} [chatBriefSkipped]
+ * @property {boolean} [chatTrimmed]
+ * @property {string} [ownerLogin]
+ * @property {string} [team]
+ * @property {string[]} [shared]
+ */
+
+/**
+ * Весь пользовательский мир. Пишется в localStorage под kobra.state.v1.
+ * @typedef {Object} AppState
+ * @property {number} v
+ * @property {Record<string, Chart>} charts
+ * @property {Record<string, Dashboard>} dashboards
+ * @property {Record<string, Dataset>} datasets
+ * @property {Record<string, SavedMetric[]>} dsMetrics
+ * @property {number} [savedAt]
+ */
+
+/** @typedef {'Admin'|'Alpha'|'Gamma'} Role */
+
+/**
+ * Сотрудник из каталога. В целевой системе его отдаёт LDAP.
+ * @typedef {Object} User
+ * @property {string} login
+ * @property {string} name
+ * @property {string} email
+ * @property {string} team
+ * @property {string[]} groups
+ * @property {Role|null} [role]  выданная руками роль важнее групп
+ */
+
+/**
+ * Объект, у которого есть владелец: шаблон, график или набор.
+ * @typedef {{ownerLogin?:string, team?:string, shared?:string[], title?:string, name?:string}} Owned
+ */
+
+/**
+ * Что получает рендерер графика.
+ * @typedef {Object} VizCtx
+ * @property {Dataset} ds
+ * @property {Record<string, any>} params  defaults(ds) поверх сохранённых
+ * @property {string[]} colors
+ * @property {QueryFilter[]} filters       свои, периода и дашборда вместе
+ * @property {(res: QueryResult) => void} setData  питает «Посмотреть данные»
+ * @property {(f: QueryFilter[]) => void} cross    клик ставит кросс-фильтр
+ * @property {(col: string, val: any) => boolean} [crossActive]
+ */
+
+/**
+ * Запись реестра визуализаций. Новый тип графика = запись здесь,
+ * ключ в VIZ_ORDER и иконка v_* в ICONS — больше нигде.
+ * @typedef {Object} VizDef
+ * @property {string} label
+ * @property {string} [en]
+ * @property {string} icon
+ * @property {string} [desc]
+ * @property {{title:string, tab:'data'|'view', controls:any[]}[]} controls
+ * @property {(ds: Dataset) => Record<string, any>} defaults
+ * @property {(root: HTMLElement, ctx: VizCtx) => void} render
+ */
+
+/** Снимок состояния для отката (store.js) */
+/** @typedef {{label:string, at:number, state:AppState}} StateSnapshot */
+
 /* ============================================================
    Кобра · синтетические демо-данные
    Вымышленная розничная сеть: ни одной настоящей компании, марки или
@@ -550,6 +799,7 @@ function pickWeighted(rnd, items, wKey = 'w') {
 }
 
 /* [регион, город, вес, сколько точек] */
+/** @type {[string, string, number, number][]} */
 const REGIONS = [
   ['Центр', 'Москва', 0.15, 6], ['Центр', 'Воронеж', 0.03, 2], ['Центр', 'Ярославль', 0.025, 2],
   ['Северо-Запад', 'Санкт-Петербург', 0.09, 4], ['Северо-Запад', 'Калининград', 0.025, 2],
@@ -562,6 +812,7 @@ const REGIONS = [
 const STORE_FORMATS = ['Флагман', 'Стандарт', 'Компакт'];
 
 /* [направление, группа товаров, маржа, вес, сезонность(12 мес), товары: [линейка, название, цена]] */
+/** @type {[string, string, number, number, number[], [string, string, number][]][]} */
 const CATALOG = [
   ['Бытовая техника', 'Крупная техника', 0.12, 12, [.9, .88, .95, 1, 1.05, 1.1, 1.05, 1, 1.05, 1, 1.15, 1.2], [
     ['Базовая', 'Холодильник двухкамерный', 54990], ['Комфорт', 'Холодильник с морозильником', 79990],
@@ -1268,8 +1519,13 @@ function toast(msg, isErr) {
 }
 
 /* ---------- Модальные окна ---------- */
+/**
+ * Модальное окно.
+ * @param {{title: string, body: any, foot?: any, wide?: boolean|'x', onClose?: () => void}} opts
+ * @returns {{close: () => void, el: HTMLElement}}
+ */
 function openModal({ title, body, foot, wide, onClose }) {
-  const prevFocus = document.activeElement;
+  const prevFocus = /** @type {HTMLElement} */ (document.activeElement);
   const ov = h('div', { class: 'overlay' });
   const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); onClose && onClose(); prevFocus && prevFocus.focus && prevFocus.focus(); };
   const onKey = e => { if (e.key === 'Escape' && !document.querySelector('.pop')) close(); };
@@ -1595,7 +1851,9 @@ function authInit() {
   if (login) authSignIn(login, { silent: true });
   return !!AUTH.user;
 }
-function authSignIn(login, { silent } = {}) {
+/** @param {{silent?: boolean}} [opts] */
+function authSignIn(login, opts = {}) {
+  const { silent } = opts;
   const u = authUsers().find(x => x.login === String(login || '').trim().toLowerCase())
     || authFind(login);
   if (!u) { if (!silent) toast('Такого сотрудника нет в каталоге', true); return false; }
@@ -2001,7 +2259,10 @@ function route() {
   const sec = parts[0] || 'dashboards';
   // Примеры шаблонов живут только пока на них смотрят
   if (typeof purgePreviews === 'function') purgePreviews(sec === 'd' ? parts[1] : null);
-  document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.sec === (sec === 'd' ? 'dashboards' : sec === 'explore' ? 'charts' : sec)));
+  document.querySelectorAll('.nav a').forEach(el => {
+    const a = /** @type {HTMLElement} */ (el);
+    a.classList.toggle('on', a.dataset.sec === (sec === 'd' ? 'dashboards' : sec === 'explore' ? 'charts' : sec));
+  });
   try {
     if (sec === 'd' && parts[1]) pageCleanup = renderDashboard(main, parts[1], q);
     else if (sec === 'templates') pageCleanup = renderTemplateList(main, q);
@@ -2152,7 +2413,9 @@ const firstMetric = ds => ds.metrics[0] ? { kind: 'saved', key: ds.metrics[0].ke
 const fmtFor = (p, res, i = 0) => (p.y_format && p.y_format !== 'auto') ? p.y_format : (res.mets[i] ? res.mets[i].format : 'smart');
 
 /* XY-запрос: категории по оси X, серии по метрикам и/или измерению */
-function queryXY(ds, filters, { xCol, grain, metrics, seriesCol, seriesLimit, sort, catLimit }) {
+/** @param {{xCol: string, grain?: string, metrics: MetricRef[], seriesCol?: string, seriesLimit?: number, sort?: string, catLimit?: number}} spec */
+function queryXY(ds, filters, spec) {
+  const { xCol, grain, metrics, seriesCol, seriesLimit, sort, catLimit } = spec;
   const xDate = isDateCol(ds, xCol);
   const gb = [{ col: xCol, grain: xDate ? (grain || 'month') : null }];
   if (seriesCol) gb.push({ col: seriesCol, grain: isDateCol(ds, seriesCol) ? 'year' : null });
@@ -3002,6 +3265,9 @@ VIZ.pie = {
     let rows = res.rows.filter(r => r[mk] > 0);
     if (!rows.length) return vizMsg(root, 'Нет данных для выбранных фильтров');
     const lim = p.row_limit || 8;
+    /* «Прочее» — единственная доля без исходного значения: по ней не
+       фильтруют, поэтому raw у неё нет */
+    /** @type {{name: string, value: number, raw?: any, other?: boolean, itemStyle?: any}[]} */
     const data = rows.slice(0, lim).map(r => ({ name: fmtDimValue(r[d.key], d), value: r[mk], raw: r[d.key] }));
     if (rows.length > lim && p.other !== false) data.push({ name: 'Прочее', value: rows.slice(lim).reduce((a, r) => a + r[mk], 0), other: true, itemStyle: { color: themeColors().line2 } });
     const total = data.reduce((a, x) => a + x.value, 0);
@@ -3092,6 +3358,7 @@ VIZ.treemap = {
       if (!ctx.cross || !e.treePathInfo) return;
       const path = e.treePathInfo.slice(1);
       const out = [];
+      /** @type {any} */
       let node = { children: data };
       path.forEach(pt => { node = (node.children || []).find(c => c.name === pt.name); if (node) { const dm = res.dims.find(d => d.col === node.dimKey); if (dm && dm.type !== 'date') out.push({ col: node.dimKey, op: 'in', val: [node.raw], label: `${dm.label}: ${node.name}` }); } });
       if (out.length) ctx.cross(out);
@@ -3251,6 +3518,7 @@ async function loadUploaded() {
 }
 
 /* ---------- Каркас ---------- */
+let themeBtnEl = null;   // перерисовать иконку темы можно и без тайника в window
 function renderShell() {
   const app = document.getElementById('app');
   clear(app);
@@ -3285,7 +3553,7 @@ function renderShell() {
       h('a', { href: '#/data', 'data-sec': 'data' }, 'Данные')),
     h('div', { class: 'spacer' }), whoBtn, themeBtn, settingsBtn));
   app.appendChild(h('main', { class: 'main' }));
-  window._themeBtn = themeBtn;
+  themeBtnEl = themeBtn;
 }
 function isDark() {
   const t = document.documentElement.getAttribute('data-theme');
@@ -3296,7 +3564,7 @@ function toggleTheme() {
   const next = isDark() ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
   try { localStorage.setItem('kobra.theme', next); } catch (e) { }
-  window._themeBtn && window._themeBtn._paint();
+  themeBtnEl && themeBtnEl._paint();
   route();
 }
 async function restoreDemo() {
@@ -3599,7 +3867,7 @@ function startApp() {
   window.addEventListener('popstate', onNav);
   // Внутренние ссылки обрабатываем сами: во встроенном окне просмотра переход по href может увести фрейм на чужой адрес
   document.addEventListener('click', e => {
-    const a = e.target.closest && e.target.closest('a[href]');
+    const a = /** @type {Element} */ (e.target).closest && /** @type {Element} */ (e.target).closest('a[href]');
     if (!a) return;
     const href = a.getAttribute('href');
     if (href.startsWith('#')) { e.preventDefault(); go(href); return; }
@@ -3607,7 +3875,7 @@ function startApp() {
   }, true);
   let lastW = window.innerWidth;
   window.addEventListener('resize', debounce(() => { if (Math.abs(window.innerWidth - lastW) > 40 && (lastW < 760) !== (window.innerWidth < 760)) route(); lastW = window.innerWidth; }, 200));
-  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!document.documentElement.getAttribute('data-theme')) { window._themeBtn && window._themeBtn._paint(); route(); } });
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!document.documentElement.getAttribute('data-theme')) { themeBtnEl && themeBtnEl._paint(); route(); } });
   if (!location.hash) { try { history.replaceState(null, '', '#/d/d_demo'); } catch (e) { } }
   route();
   const ld = document.querySelector('.loading');
@@ -4016,7 +4284,7 @@ function renderDashboard(main, id, q) {
     const ds = dsGet(chart.datasetId);
     const bar = h('div', { class: 'tune-bar' });
     const nameInp = h('input', { class: 'input', value: chart.name, 'aria-label': 'Название блока',
-      oninput: e => { tuneTouch(it.chartId); guidedRename(chart, e.target.value); cell.titleEl && (cell.titleEl.textContent = chart.name); } });
+      oninput: e => { tuneTouch(); guidedRename(chart, e.target.value); cell.titleEl && (cell.titleEl.textContent = chart.name); } });
     bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Название'), nameInp));
     if (!ds) return bar;
     const mock = isMockupDs(ds);
@@ -4026,11 +4294,11 @@ function renderDashboard(main, id, q) {
       const redraw = () => { guidedRetitle(ds, chart); nameInp.value = chart.name; if (cell.titleEl) cell.titleEl.textContent = chart.name; refreshCharts(); };
       bar.appendChild(h('label', { class: 'tune-f' }, h('span', null, 'Показатель'),
         h('input', { class: 'input', value: guidedMetricOf(ds, chart).label, 'aria-label': 'Название показателя',
-          onchange: e => { tuneTouchDs(ds); guidedSetMetricLabel(ds, chart, e.target.value); redraw(); } })));
+          onchange: e => { tuneTouchDs(); guidedSetMetricLabel(ds, chart, e.target.value); redraw(); } })));
       bar.appendChild(h('label', { class: 'tune-f', style: { flex: '0 1 150px' } }, h('span', null, 'Единица'),
         h('input', { class: 'input', value: guidedSuffixOf(ds, chart) || '', placeholder: '₽, шт., мин',
           'aria-label': 'Единица измерения',
-          onchange: e => { tuneTouchDs(ds); guidedSetSuffix(ds, chart, e.target.value); refreshCharts(); } })));
+          onchange: e => { tuneTouchDs(); guidedSetSuffix(ds, chart, e.target.value); refreshCharts(); } })));
     }
 
     const slots = guidedDimSlots(ds, chart);
@@ -4055,8 +4323,8 @@ function renderDashboard(main, id, q) {
     // Слот пустой: второй разрез человек включает сам
     if (!slot.key) {
       row.appendChild(h('button', { class: 'btn sm', onclick: () => {
-        tuneTouch(it.chartId);
-        if (mock) { tuneTouchDs(ds); guidedParamSet(chart, slot.spec, guidedAddMockDim(ds, chart).key); }
+        tuneTouch();
+        if (mock) { tuneTouchDs(); guidedParamSet(chart, slot.spec, guidedAddMockDim(ds, chart).key); }
         else {
           const opts = guidedDimOptions(ds, chart, slot);
           if (!opts.length) { toast('Больше нет колонок, по которым можно разбить', true); return; }
@@ -4069,7 +4337,7 @@ function renderDashboard(main, id, q) {
     // Время: колонка там одна, менять имеет смысл шаг
     if (slot.time) {
       if (GUIDED_GRAIN[chart.viz]) row.appendChild(lab('Период', selectEl(Object.entries(TIME_GRAINS), guidedGrainOf(chart), v => {
-        tuneTouch(it.chartId); guidedSetGrain(chart, v); retitle(); drawChart(cell);
+        tuneTouch(); guidedSetGrain(chart, v); retitle(); drawChart(cell);
       }, { 'aria-label': 'Шаг по времени' })));
       else row.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, 'Разрез по дате'));
       return row;
@@ -4079,14 +4347,14 @@ function renderDashboard(main, id, q) {
       // В макете разрез — это просто его название: какая колонка под ним, человеку незачем
       row.appendChild(lab(slot.label, h('input', { class: 'input', value: guidedDimLabel(ds, slot.key) || '',
         placeholder: 'Филиалы, продукты, статусы', 'aria-label': 'Название разреза',
-        onchange: e => { tuneTouchDs(ds); if (guidedRenameDim(ds, slot.key, e.target.value)) { retitle(); refreshCharts(); } } })));
+        onchange: e => { tuneTouchDs(); if (guidedRenameDim(ds, slot.key, e.target.value)) { retitle(); refreshCharts(); } } })));
       // Категории разреза: их число и названия — это значения в придуманных данных
       const namesInp = h('input', { class: 'input', value: cats.values.join(', '), placeholder: 'Названия через запятую',
         'aria-label': 'Названия категорий' });
       const cntInp = h('input', { class: 'input', type: 'number', min: 2, max: 12, value: cats.count,
         'aria-label': 'Сколько категорий', style: { width: '64px' } });
       const applyCats = () => {
-        tuneTouchDs(ds);
+        tuneTouchDs();
         const res = guidedSetCats(ds, slot.key, cntInp.value, namesInp.value.split(',').map(x => x.trim()).filter(Boolean));
         if (!res) return;
         migrateFilterValues(res.col, res.old, res.next);
@@ -4100,17 +4368,17 @@ function renderDashboard(main, id, q) {
       row.appendChild(lab('Категорий', cntInp, '0 1 120px'));
       row.appendChild(lab('Названия', namesInp, '2 1 240px'));
       row.appendChild(h('button', { class: 'btn sm', title: 'Другая форма распределения: подписи те же, пропорции другие',
-        onclick: () => { tuneTouchDs(ds); if (guidedCycleSpread(ds, slot.key)) refreshCharts(); } }, ic('refresh'), 'Распределение'));
+        onclick: () => { tuneTouchDs(); if (guidedCycleSpread(ds, slot.key)) refreshCharts(); } }, ic('refresh'), 'Распределение'));
     } else {
       // Настоящий набор: разрез выбирается из его же колонок
       const opts = guidedDimOptions(ds, chart, slot);
       row.appendChild(lab(slot.nth ? slot.label : 'В разрезе',
         selectEl(opts.map(o => [o.key, o.label]), slot.key, v => {
-          tuneTouch(it.chartId); guidedParamSet(chart, slot.spec, v); retitle(); repaintItem(it);
+          tuneTouch(); guidedParamSet(chart, slot.spec, v); retitle(); repaintItem(it);
         }, { 'aria-label': 'В разрезе чего' })));
     }
     if (slot.optional) row.appendChild(iconBtn('x', 'Убрать этот разрез', () => {
-      tuneTouch(it.chartId); guidedParamSet(chart, slot.spec, null); retitle(); relayout();
+      tuneTouch(); guidedParamSet(chart, slot.spec, null); retitle(); relayout();
     }, 'sm'));
     return row;
   }
@@ -4136,7 +4404,7 @@ function renderDashboard(main, id, q) {
       const n = ds ? ex.filter(f => dsCol(ds, f.col)).length : 0;
       clear(c.badge);
       c.badge.style.display = n ? '' : 'none';
-      if (n) { c.badge.appendChild(ic('filter')); c.badge.appendChild(document.createTextNode(n)); c.badge.title = `Применено фильтров шаблона: ${n}`; }
+      if (n) { c.badge.appendChild(ic('filter')); c.badge.appendChild(document.createTextNode(String(n))); c.badge.title = `Применено фильтров шаблона: ${n}`; }
     }
   }
   function refreshCharts() { cells.forEach(c => { if (c.chartId) drawChart(c); }); }
@@ -4364,7 +4632,7 @@ function renderDashboard(main, id, q) {
       const paintList = () => {
         clear(list);
         const qq = search.value.trim().toLowerCase();
-        const charts = Object.values(STATE.charts).filter(c => !qq || c.name.toLowerCase().includes(qq)).sort((a, b) => (onDash.has(a.id) - onDash.has(b.id)) || (b.updated || 0) - (a.updated || 0));
+        const charts = Object.values(STATE.charts).filter(c => !qq || c.name.toLowerCase().includes(qq)).sort((a, b) => (Number(onDash.has(a.id)) - Number(onDash.has(b.id))) || (b.updated || 0) - (a.updated || 0));
         if (!charts.length) list.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Графиков не найдено'));
         charts.forEach(c => list.appendChild(h('button', { class: 'comp' + (onDash.has(c.id) ? ' used' : ''), title: 'Добавить на текущую вкладку', onclick: () => addItem({ type: 'chart', chartId: c.id }) },
           ic(VIZ[c.viz].icon), h('div', { class: 'grow' }, h('b', null, c.name), h('span', null, VIZ[c.viz].label + (onDash.has(c.id) ? ' · уже в шаблоне' : ''))), ic('plus'))));
@@ -5304,7 +5572,7 @@ function parseNumberLoose(v) {
   return +s;
 }
 function parseDateLoose(v) {
-  if (v instanceof Date) return isNaN(v) ? null : Date.UTC(v.getFullYear(), v.getMonth(), v.getDate(), v.getHours(), v.getMinutes(), v.getSeconds());
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : Date.UTC(v.getFullYear(), v.getMonth(), v.getDate(), v.getHours(), v.getMinutes(), v.getSeconds());
   if (v == null) return null;
   const s = String(v).trim();
   let m = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(s);
@@ -5589,6 +5857,7 @@ function schemaMetrics(columns, prev) {
   return out.concat(keep);
 }
 
+/** @param {{id?: string, name: string, schema: SchemaDef, owner?: string}} opts */
 function saveSchemaDataset({ id, name, schema, owner }) {
   const sc = normalizeSchema(schema);
   const columns = sc.columns.map(c => ({ key: c.key, label: c.label || c.key, type: c.type }));
@@ -6516,7 +6785,9 @@ function tplLayout(charts, ds, intro, preview) {
 }
 
 /* Макет: данных нет, набор порождается под дашборд и прячется за ним */
-function createMockup(tpl, { title, levels } = {}) {
+/** @param {{title?: string, levels?: string[]}} [opts] */
+function createMockup(tpl, opts = {}) {
+  const { title, levels } = opts;
   const name = (title || (tpl ? tplDashName(tpl) : 'Шаблон')).trim() || 'Шаблон';
   const dashId = uid('d_');
   const dsId = saveSchemaDataset({ name: `Данные макета «${name}»`, schema: mockupSchema(tpl), owner: dashId });
@@ -6537,7 +6808,9 @@ function emptyMockup(dashId, dsId, name) {
 }
 
 /* Создаёт дашборд из шаблона, пишет его в STATE и возвращает id */
-function createFromTemplate(tpl, ds, { title, roles, levels, preview, dashId }) {
+/** @param {{title?: string, roles?: any, levels?: string[], preview?: boolean, dashId?: string}} [opts] */
+function createFromTemplate(tpl, ds, opts = {}) {
+  let { title, roles, levels, preview, dashId } = opts;
   roles = roles || pickRoles(ds);
   const derived = preview ? ensureDerivedInMemory(tpl, ds, roles) : ensureDerived(tpl, ds, roles);
   const plan = buildFromTemplate(tpl, ds, roles, levels, derived);
@@ -7201,7 +7474,9 @@ function aiBriefLines(b) {
 /* ---------- Что уходит наружу ----------
    Единственное место сборки отправляемого: его целиком можно показать
    человеку и службе безопасности. Строк здесь нет, пока не разрешили. */
-function aiContext(D, ds, { samples } = {}) {
+/** @param {{samples?: boolean}} [opts] строки прикладываются только по согласию */
+function aiContext(D, ds, opts = {}) {
+  const { samples } = opts;
   const out = { бриф: null, набор: null, дашборд: null };
   if (aiBriefFilled(aiBrief(D))) out.бриф = aiBriefLines(aiBrief(D));
   if (ds) {
@@ -7359,6 +7634,10 @@ function renderAssistant(D, host, api) {
   // Бриф показываем первым, пока на него не ответили и не закрыли
   let briefOpen = !aiBriefFilled(aiBrief(D)) && !D.chatBriefSkipped && !aiLog(D).length;
   const ds = () => api.ds();
+  /* Отправку собирает paint() — она замкнута на поле ввода, которое там же и
+     создаётся. Форме брифа нужна та же отправка, но из своей области видимости
+     её не видно, поэтому держим ссылку. */
+  let sendNow = async (/** @type {string} */ q) => { };
 
   /* Форма брифа. Живёт в переписке и закрывается крестиком: человек, который
      уже собрал половину макета, не должен отвечать на восемь вопросов, чтобы
@@ -7396,7 +7675,7 @@ function renderAssistant(D, host, api) {
       saveState();
       aiPush(D, 'system', 'Бриф сохранён:\n' + aiBriefLines(b).join('\n'));
       briefOpen = false;
-      if (fire) { paint(); await send('Собери шаблон по брифу: уровни детализации по вкладкам и блоки под показатели.'); return; }
+      if (fire) { paint(); await sendNow('Собери шаблон по брифу: уровни детализации по вкладкам и блоки под показатели.'); return; }
       toast('Бриф сохранён — он уходит с каждым запросом');
       paint();
     };
@@ -7456,7 +7735,7 @@ function renderAssistant(D, host, api) {
 
     // Ввод
     const ta = h('textarea', { class: 'textarea ai-input', rows: 3, placeholder: 'Что показать в шаблоне?', 'aria-label': 'Запрос AI-ассистенту' });
-    const send = async forced => {
+    const send = async (/** @type {string} */ forced) => {
       const q = String(forced || ta.value).trim();
       if (!q || busy) return;
       if (!aiReady()) { toast('Доступ к модели не настроен — воспользуйтесь переносом вручную', true); return; }
@@ -7473,6 +7752,7 @@ function renderAssistant(D, host, api) {
       samples = false; busy = false; paint();
       if (ta.isConnected) ta.focus();
     };
+    sendNow = send;
     const takeAnswer = text => {
       const r = aiParse(text);
       const extra = {};
