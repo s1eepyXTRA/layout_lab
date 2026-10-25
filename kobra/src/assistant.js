@@ -328,7 +328,7 @@ function renderAssistant(D, host, api) {
     } else if (api.canRollback()) {
       host.appendChild(h('div', { class: 'ai-offer' },
         h('div', null, 'Последнее применение можно отменить.'),
-        h('div', { class: 'ai-row' }, h('button', { class: 'btn sm', onclick: () => { api.rollback(); aiPush(D, 'system', 'Откатано.'); paint(); } }, ic('reset'), 'Откатить'))));
+        h('div', { class: 'ai-row' }, h('button', { class: 'btn sm', onclick: () => api.rollback() }, ic('reset'), 'Откатить'))));
     }
 
     // Ввод

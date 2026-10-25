@@ -46,14 +46,16 @@ function renderDashboard(main, id, q) {
   if (!mayEdit && (q.edit === '1' || q.tune === '1')) toast(whyReadOnly(saved), true);
   const editing = q.edit === '1' && mayEdit;
   const tuning = !editing && q.tune === '1' && mayEdit;   // простая правка: только подписи и разрезы
-  const tuneBackup = {};                        // chartId → каким график был до правки
-  let tuneDsBackup = null;                      // и каким был придуманный набор
-  const tuneTouch = cid => { if (!tuneBackup[cid] && STATE.charts[cid]) tuneBackup[cid] = clone(STATE.charts[cid]); };
-  const tuneTouchDs = ds => { if (!tuneDsBackup && ds) tuneDsBackup = { id: ds.id, meta: clone(STATE.datasets[ds.id]) }; };
-  const tuneDirty = () => Object.keys(tuneBackup).length > 0 || !!tuneDsBackup;
-  const D = editing ? clone(saved) : saved; // черновик в режиме правки
+  // Правка идёт по живому состоянию, а «Отменить» возвращает снимок: так
+  // откат один на все режимы и на помощника, а не свой в каждом (store.js)
+  const editSnap = (editing || tuning) ? snapState(editing ? 'Редактирование' : 'Названия и разрезы') : null;
+  let touched = false;                          // что-то правили — есть что откатывать
+  const tuneTouch = () => { touched = true; };
+  const tuneTouchDs = () => { touched = true; };
+  const D = saved;
   const original = JSON.stringify(saved);
-  let draftHandled = false; // судьбу черновика решили сами: «Сохранить» или «Отменить»
+  let draftHandled = false; // судьбу правки решили сами: «Сохранить» или «Отменить»
+  const dirty = () => touched || JSON.stringify(D) !== original;
   if (!D.tabs.length) D.tabs.push({ id: uid('t'), title: 'Вкладка 1', items: [] });
   let tabId = tabMemory[id] && D.tabs.some(t => t.id === tabMemory[id]) ? tabMemory[id] : D.tabs[0].id;
   let cross = crossMemory[id] || (crossMemory[id] = []);
@@ -250,19 +252,18 @@ function renderDashboard(main, id, q) {
     return head;
   }
   function tuneDone() {
+    draftHandled = true;
+    const changed = dirty();
     saved.updated = Date.now();
     saveState();
-    toast(tuneDirty() ? 'Изменения сохранены' : 'Изменений не было');
+    if (!changed) dropUndo(editSnap);   // нечего откатывать — незачем и держать
+    toast(changed ? 'Изменения сохранены' : 'Изменений не было');
     go('#/d/' + id);
   }
   async function tuneCancel() {
-    if (tuneDirty() && !(await confirmDialog('Отменить изменения', 'Названия и разрезы вернутся к тому, что было.', 'Отменить изменения'))) return;
-    Object.entries(tuneBackup).forEach(([cid, c]) => { STATE.charts[cid] = c; });
-    if (tuneDsBackup) {
-      STATE.datasets[tuneDsBackup.id] = tuneDsBackup.meta;
-      DS[tuneDsBackup.id] = Object.assign({}, tuneDsBackup.meta, { rows: generateSchemaRows(tuneDsBackup.meta.schema) });
-      saveState();
-    }
+    if (dirty() && !(await confirmDialog('Отменить изменения', 'Названия и разрезы вернутся к тому, что было.', 'Отменить изменения'))) return;
+    draftHandled = true;
+    undoState(editSnap);
     go('#/d/' + id);
   }
   function saveEdit() {
@@ -270,24 +271,16 @@ function renderDashboard(main, id, q) {
     freshDashboards.delete(id);
     D.updated = Date.now();
     D.title = (D.title || '').trim() || 'Без названия';
-    STATE.dashboards[id] = D;
     saveState();
     toast('Шаблон сохранён');
     go('#/d/' + id);
   }
   async function cancelEdit() {
-    if (JSON.stringify(D) !== original && !(await confirmDialog('Отменить изменения', 'Несохранённые изменения шаблона пропадут.', 'Отменить изменения'))) return;
+    if (dirty() && !(await confirmDialog('Отменить изменения', 'Несохранённые изменения шаблона пропадут.', 'Отменить изменения'))) return;
     draftHandled = true;
-    // Графики и придуманные данные живут вне черновика: сам он пропадёт, а они
-    // останутся, если их не убрать. Снимок есть только у работы AI-ассистента —
-    // блоки с палитры и раньше оставались в графиках после отмены.
-    if (aiSnap) {
-      (aiSnap.newCharts || []).forEach(cid => { delete STATE.charts[cid]; });
-      Object.entries(aiSnap.charts || {}).forEach(([cid, c]) => { STATE.charts[cid] = c; });
-      if (aiSnap.ds) { STATE.datasets[aiSnap.ds.id] = aiSnap.ds.meta; DS[aiSnap.ds.id] = Object.assign({}, aiSnap.ds.meta, { rows: generateSchemaRows(aiSnap.ds.meta.schema) }); }
-      aiSnap = null;
-      saveState();
-    }
+    // Снимок возвращает всё разом: и состав шаблона, и графики, и придуманные
+    // данные. Раньше это были три разных набора резервных копий.
+    undoState(editSnap);
     go('#/d/' + id);
   }
   function openProps() {
@@ -808,7 +801,7 @@ function renderDashboard(main, id, q) {
   // Черновик в STATE: зовётся из функции очистки, когда со страницы уходят
   function stash() {
     if (!editing) return;
-    STATE.dashboards[id] = D; D.updated = Date.now(); saveState();
+    D.updated = Date.now(); saveState();
   }
   // Переходы внутрь приложения ничем не отличаются от ссылок в шапке:
   // черновик сохранит функция очистки, её зовёт route() при любом переходе.
@@ -857,37 +850,26 @@ function renderDashboard(main, id, q) {
       close: () => { aiOpen = false; paintAi(); paintHeadOnly(); },
       // Название из брифа — это название дашборда: два разных человек не ведёт
       renameDash: title => { D.title = title; D.updated = Date.now(); saveState(); paintHeadOnly(); },
-      canRollback: () => !!aiSnap,
+      canRollback: () => canUndo(aiSnap),
       rollback: () => {
         if (!aiSnap) return;
-        (aiSnap.newCharts || []).forEach(cid => { delete STATE.charts[cid]; });
-        Object.entries(aiSnap.charts || {}).forEach(([cid, c]) => { STATE.charts[cid] = c; });
-        if (aiSnap.ds) { STATE.datasets[aiSnap.ds.id] = aiSnap.ds.meta; DS[aiSnap.ds.id] = Object.assign({}, aiSnap.ds.meta, { rows: generateSchemaRows(aiSnap.ds.meta.schema) }); }
-        const snap = aiSnap.dash;
+        undoState(aiSnap);          // снимок возвращается в те же объекты
         aiSnap = null;
+        aiPush(D, 'system', 'Откатано.');
         saveState();
-        // Из правки не выходим: черновик возвращаем к снимку на месте, иначе
-        // откат предложения выбросил бы и всё, что человек правил руками
-        if (editing) {
-          D.title = snap.title; D.tabs = snap.tabs; D.filters = snap.filters;
-          if (!D.tabs.some(t => t.id === tabId)) tabId = tabMemory[id] = D.tabs[0].id;
-          paintAll();
-          return;
-        }
-        STATE.dashboards[id] = snap;
-        go('#/d/' + id);
+        paintAll();                 // из режима не выходим: страница та же
       },
       applyBlocks: blocks => {
         const ds = aiDs();
         if (!ds) { toast('Нет данных, на которых строить блоки', true); return; }
         snapshotForAi();
+        touched = true;
         const t = curTab();
         let y = Math.max(0, ...t.items.map(i => i.y + i.h), 0), x = 0, rowH = 0;
         blocks.forEach(b => {
           const cid = createMockupChart(ds, b.viz);
           if (!cid) return;
           if (b.name) { STATE.charts[cid].name = b.name; STATE.charts[cid].autoName = false; }
-          aiSnap.newCharts.push(cid);
           const sz = itemDefaultSize('chart', STATE.charts[cid]);
           if (x + sz.w > G_COLS) { y += rowH; x = 0; rowH = 0; }
           t.items.push({ i: uid('i'), type: 'chart', chartId: cid, x, y, w: sz.w, h: sz.h });
@@ -902,7 +884,7 @@ function renderDashboard(main, id, q) {
         const ds = aiDs();
         if (!isMockupDs(ds)) { toast('Подставить придуманные данные можно только в макет', true); return; }
         snapshotForAi();
-        aiSnap.ds = { id: ds.id, meta: clone(STATE.datasets[ds.id]) };
+        touched = true;
         ds.schema = normalizeSchema(schema);
         ds.columns = ds.schema.columns.map(c => ({ key: c.key, label: c.label, type: c.type }));
         ds.metrics = schemaMetrics(ds.columns, null);
@@ -916,14 +898,10 @@ function renderDashboard(main, id, q) {
     });
     setTimeout(layoutGrid, 220);
   }
-  /* Снимок перед применением: дашборд, его графики и набор. Графики живут
-     отдельно от дашборда и правятся на месте — без их копии откат неполный. */
+  /* Снимок перед применением предложения — тот же, что у «Отменить»:
+     состояние целиком, вместе с графиками и придуманными данными. */
   function snapshotForAi() {
-    if (aiSnap) return;
-    const charts = {};
-    D.tabs.forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) charts[i.chartId] = clone(STATE.charts[i.chartId]); }));
-    // В правке снимаем черновик: сохранённого дашборда правки ещё не касались
-    aiSnap = { dash: clone(editing ? D : STATE.dashboards[id]), charts, newCharts: [], ds: null };
+    if (!canUndo(aiSnap)) aiSnap = snapState('Предложение AI-ассистента');
   }
   /* Данные сменились целиком — блоки пересобираем под новые поля */
   function rebuildMockupBlocks(ds) {
@@ -983,7 +961,7 @@ function renderDashboard(main, id, q) {
     // Спрашивать здесь уже поздно — переход состоялся, — поэтому сохраняем молча
     // и говорим тостом, как это делал уход в конструктор графика.
     // «Отменить» и «Сохранить» ставят draftHandled сами, так что откат работает.
-    if (!draftHandled && JSON.stringify(D) !== original) { stash(); toast('Изменения шаблона сохранены'); }
+    if (!draftHandled && dirty()) { stash(); toast('Изменения шаблона сохранены'); }
     // Пустой «Новый дашборд», с которого ушли, не оставляем в списке. Проверяем
     // именно запись в STATE: если человек успел дать название или завести фильтр,
     // работа уже есть — такой дашборд остаётся.
