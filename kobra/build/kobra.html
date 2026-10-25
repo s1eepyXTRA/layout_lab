@@ -2054,6 +2054,93 @@ function mutate(label, fn) {
   return r;
 }
 
+/* =============================================================
+   Кобра · маршруты
+   Роутер на хэше: #/dashboards, #/d/<id>?edit=1&tune=1, #/charts,
+   #/explore/<id|new>, #/data[/<id>], #/templates. Каждая страница-рендерер
+   возвращает функцию очистки — её зовут при следующем переходе, там снимают
+   ResizeObserver и dispose() у ECharts. Без этого графики утекают.
+   ============================================================= */
+
+let pageCleanup = null;
+function go(hash) {
+  if (location.hash === hash) { route(); return; }
+  try { history.pushState(null, '', hash); route(); }
+  catch (e) { location.hash = hash; }
+}
+function parseRoute() {
+  const raw = (location.hash || '#/dashboards').slice(1);
+  const [path, qs] = raw.split('?');
+  const parts = path.split('/').filter(Boolean).map(decodeURIComponent);
+  const q = {};
+  (qs || '').split('&').filter(Boolean).forEach(kv => { const [k, v] = kv.split('='); q[k] = decodeURIComponent(v || ''); });
+  return { parts, q };
+}
+function route() {
+  closePop();
+  if (pageCleanup) { try { pageCleanup(); } catch (e) { console.error(e); } pageCleanup = null; }
+  const { parts, q } = parseRoute();
+  const main = document.querySelector('.main');
+  clear(main);
+  main.scrollTop = 0;
+  const sec = parts[0] || 'dashboards';
+  // Примеры шаблонов живут только пока на них смотрят
+  if (typeof purgePreviews === 'function') purgePreviews(sec === 'd' ? parts[1] : null);
+  document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.sec === (sec === 'd' ? 'dashboards' : sec === 'explore' ? 'charts' : sec)));
+  try {
+    if (sec === 'd' && parts[1]) pageCleanup = renderDashboard(main, parts[1], q);
+    else if (sec === 'templates') pageCleanup = renderTemplateList(main, q);
+    else if (sec === 'charts') pageCleanup = renderChartList(main);
+    else if (sec === 'explore') pageCleanup = renderExplore(main, parts, q);
+    else if (sec === 'data' && parts[1]) pageCleanup = renderDatasetPage(main, parts[1]);
+    else if (sec === 'data') pageCleanup = renderDatasetList(main);
+    else pageCleanup = renderDashboardList(main);
+  } catch (e) {
+    console.error(e);
+    main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Не удалось открыть страницу'), e.message, h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'К шаблонам'))));
+  }
+  document.title = 'Кобра — ' + ({ d: (STATE.dashboards[parts[1]] || {}).title || 'Шаблон', charts: 'Графики', explore: 'Конструктор графика', data: 'Данные', templates: 'Готовые шаблоны' }[sec] || 'Шаблоны');
+}
+
+/* =============================================================
+   Кобра · сетка дашборда
+   Своя сетка в 12 колонок с абсолютным позиционированием: размеры
+   блоков и уплотнение раскладки. Этим же пользуются генераторы —
+   черновик по набору и сборка из шаблона, — поэтому код лежит
+   отдельно от страницы дашборда.
+   ============================================================= */
+
+const G_COLS = 12, G_ROWH = 20, G_GAP = 12;
+
+function collides(a, b) { return a !== b && a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+function compactLayout(items, fixed) {
+  const sorted = [...items].sort((a, b) => (a === fixed ? -1 : b === fixed ? 1 : 0) || a.y - b.y || a.x - b.x);
+  const placed = [];
+  sorted.forEach(it => {
+    if (it !== fixed) {
+      while (placed.some(p => collides(it, p))) it.y++;
+    }
+    placed.push(it);
+  });
+  // Поднимаем вверх всё, что можно
+  const order = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+  const done = [];
+  order.forEach(it => {
+    while (it.y > 0 && !done.some(p => collides(Object.assign({}, it, { y: it.y - 1 }), p))) it.y--;
+    while (done.some(p => collides(it, p))) it.y++;
+    done.push(it);
+  });
+  return items;
+}
+function itemDefaultSize(type, chart) {
+  if (type === 'header') return { w: 12, h: 2 };
+  if (type === 'divider') return { w: 12, h: 1 };
+  if (type === 'markdown') return { w: 6, h: 6 };
+  if (chart && chart.viz.startsWith('big_number')) return { w: 3, h: 7 };
+  if (chart && (chart.viz === 'table' || chart.viz === 'pivot' || chart.viz === 'heatmap')) return { w: 12, h: 14 };
+  return { w: 6, h: 12 };
+}
+
 /* ============================================================
    Кобра · визуализации
    ============================================================ */
@@ -3248,47 +3335,6 @@ async function loadUploaded() {
   }
 }
 
-/* ---------- Роутер ---------- */
-let pageCleanup = null;
-function go(hash) {
-  if (location.hash === hash) { route(); return; }
-  try { history.pushState(null, '', hash); route(); }
-  catch (e) { location.hash = hash; }
-}
-function parseRoute() {
-  const raw = (location.hash || '#/dashboards').slice(1);
-  const [path, qs] = raw.split('?');
-  const parts = path.split('/').filter(Boolean).map(decodeURIComponent);
-  const q = {};
-  (qs || '').split('&').filter(Boolean).forEach(kv => { const [k, v] = kv.split('='); q[k] = decodeURIComponent(v || ''); });
-  return { parts, q };
-}
-function route() {
-  closePop();
-  if (pageCleanup) { try { pageCleanup(); } catch (e) { console.error(e); } pageCleanup = null; }
-  const { parts, q } = parseRoute();
-  const main = document.querySelector('.main');
-  clear(main);
-  main.scrollTop = 0;
-  const sec = parts[0] || 'dashboards';
-  // Примеры шаблонов живут только пока на них смотрят
-  if (typeof purgePreviews === 'function') purgePreviews(sec === 'd' ? parts[1] : null);
-  document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.sec === (sec === 'd' ? 'dashboards' : sec === 'explore' ? 'charts' : sec)));
-  try {
-    if (sec === 'd' && parts[1]) pageCleanup = renderDashboard(main, parts[1], q);
-    else if (sec === 'templates') pageCleanup = renderTemplateList(main, q);
-    else if (sec === 'charts') pageCleanup = renderChartList(main);
-    else if (sec === 'explore') pageCleanup = renderExplore(main, parts, q);
-    else if (sec === 'data' && parts[1]) pageCleanup = renderDatasetPage(main, parts[1]);
-    else if (sec === 'data') pageCleanup = renderDatasetList(main);
-    else pageCleanup = renderDashboardList(main);
-  } catch (e) {
-    console.error(e);
-    main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Не удалось открыть страницу'), e.message, h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'К шаблонам'))));
-  }
-  document.title = 'Кобра — ' + ({ d: (STATE.dashboards[parts[1]] || {}).title || 'Шаблон', charts: 'Графики', explore: 'Конструктор графика', data: 'Данные', templates: 'Готовые шаблоны' }[sec] || 'Шаблоны');
-}
-
 /* ---------- Каркас ---------- */
 function renderShell() {
   const app = document.getElementById('app');
@@ -3656,39 +3702,9 @@ function startApp() {
 /* ============================================================
    Кобра · дашборд
    ============================================================ */
-const G_COLS = 12, G_ROWH = 20, G_GAP = 12;
 const tabMemory = {};
 const crossMemory = {};
 let fbarOpen = !(window.innerWidth < 760);
-
-function collides(a, b) { return a !== b && a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
-function compactLayout(items, fixed) {
-  const sorted = [...items].sort((a, b) => (a === fixed ? -1 : b === fixed ? 1 : 0) || a.y - b.y || a.x - b.x);
-  const placed = [];
-  sorted.forEach(it => {
-    if (it !== fixed) {
-      while (placed.some(p => collides(it, p))) it.y++;
-    }
-    placed.push(it);
-  });
-  // Поднимаем вверх всё, что можно
-  const order = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
-  const done = [];
-  order.forEach(it => {
-    while (it.y > 0 && !done.some(p => collides(Object.assign({}, it, { y: it.y - 1 }), p))) it.y--;
-    while (done.some(p => collides(it, p))) it.y++;
-    done.push(it);
-  });
-  return items;
-}
-function itemDefaultSize(type, chart) {
-  if (type === 'header') return { w: 12, h: 2 };
-  if (type === 'divider') return { w: 12, h: 1 };
-  if (type === 'markdown') return { w: 6, h: 6 };
-  if (chart && chart.viz.startsWith('big_number')) return { w: 3, h: 7 };
-  if (chart && (chart.viz === 'table' || chart.viz === 'pivot' || chart.viz === 'heatmap')) return { w: 12, h: 14 };
-  return { w: 6, h: 12 };
-}
 
 function renderDashboard(main, id, q) {
   const saved = STATE.dashboards[id];
