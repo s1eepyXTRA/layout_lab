@@ -285,6 +285,14 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .spec-row-head .muted { font-size: 12.5px; }
 .spec-row-head select { max-width: 200px; }
 /* Каталог готовых шаблонов */
+/* Миниатюра раскладки: во всю ширину карточки, поэтому отрицательные поля */
+.tpl-thumb { height: 118px; margin: -16px -18px 12px; border-radius: var(--r-l) var(--r-l) 0 0; border-bottom: 1px solid var(--line); }
+.tpl-thumb i { display: flex; align-items: center; justify-content: center; }
+.tpl-thumb i svg { width: 16px; height: 16px; color: var(--ink-3); opacity: .62; }
+.tpl-thumb i.k { background: var(--primary-soft); border-color: transparent; }
+.tpl-thumb i.k svg { color: var(--primary); opacity: .65; }
+.tpl-thumb i.m { background: var(--surface-3); border-color: transparent; }
+.tpl-card.off .tpl-thumb { filter: grayscale(1); }
 .tpl-tags { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 16px; }
 .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 18px; }
 .tpl-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }
@@ -7147,6 +7155,46 @@ function purgePreviews(keepId) {
   return had;
 }
 
+/* ---------- Миниатюра раскладки ---------- */
+/* Карточку каталога выбирают глазами, а не чтением семи строк текста.
+   Раскладка считается по описанию блоков первого уровня — без набора
+   данных, поэтому миниатюра есть и у того, кто ещё не принёс свой файл.
+   Места те же, что потом расставит tplLayout: слева направо, с переносом. */
+function tplThumbItems(tpl) {
+  const lvl = (tpl.levels || [])[0];
+  if (!lvl) return [];
+  const items = [];
+  let x = 0, y = 0, rowH = 0;
+  (lvl.blocks || []).forEach(b => {
+    const viz = b.kind === 'kpi' ? 'big_number' : b.kind === 'docs' ? 'table' : b.viz;
+    const sz = b.size || (b.kind === 'kpi' ? { w: 4, h: 7 } : b.kind === 'docs' ? { w: 12, h: 10 } : itemDefaultSize('chart', { viz }));
+    if (x + sz.w > G_COLS) { y += rowH; x = 0; rowH = 0; }
+    items.push({ x, y, w: sz.w, h: sz.h, kind: b.kind === 'kpi' ? 'kpi' : 'viz', viz });
+    x += sz.w; rowH = Math.max(rowH, sz.h);
+  });
+  return items;
+}
+function tplThumb(tpl) {
+  const th = h('div', { class: 'dash-thumb tpl-thumb', 'aria-hidden': 'true' });
+  const items = tplThumbItems(tpl);
+  if (!items.length) return th;
+  const maxY = Math.max(12, ...items.map(i => i.y + i.h));
+  items.forEach(it => {
+    const cell = h('i', {
+      class: it.kind === 'kpi' ? 'k' : it.kind === 'md' ? 'm' : '',
+      style: {
+        left: `calc(${(it.x / 12 * 100).toFixed(2)}% + 5px)`, width: `calc(${(it.w / 12 * 100).toFixed(2)}% - 7px)`,
+        top: `calc(${(it.y / maxY * 100).toFixed(2)}% + 5px)`, height: `calc(${(it.h / maxY * 100).toFixed(2)}% - 5px)`,
+      },
+    });
+    // Иконка вида прямо в плитке: «три числа сверху, линия, два разреза»
+    // читается с одного взгляда, а серые прямоугольники — нет
+    if (it.kind !== 'md' && VIZ[it.viz]) cell.appendChild(ic(VIZ[it.viz].icon));
+    th.appendChild(cell);
+  });
+  return th;
+}
+
 /* ---------- Каталог ---------- */
 function renderTemplateList(main, q) {
   const page = h('div', { class: 'page' });
@@ -7184,6 +7232,7 @@ function renderTemplateList(main, q) {
     TEMPLATES.filter(tpl => !tag || (tpl.tags || []).includes(tag)).forEach(tpl => {
       const fit = ds ? templateFits(tpl, ds, roles) : { ok: true, missingLabels: [] };
       const card = h('div', { class: 'tpl-card' + (fit.ok ? '' : ' off') });
+      card.appendChild(tplThumb(tpl));
       card.appendChild(h('div', { class: 'tpl-head' }, h('b', null, tpl.name),
         fit.ok ? null : h('span', { class: 'pill' }, 'не подходит набору')));
       card.appendChild(h('p', null, tpl.desc));

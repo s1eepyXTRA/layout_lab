@@ -278,6 +278,14 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .spec-row-head .muted { font-size: 12.5px; }
 .spec-row-head select { max-width: 200px; }
 /* Каталог готовых шаблонов */
+/* Миниатюра раскладки: во всю ширину карточки, поэтому отрицательные поля */
+.tpl-thumb { height: 118px; margin: -16px -18px 12px; border-radius: var(--r-l) var(--r-l) 0 0; border-bottom: 1px solid var(--line); }
+.tpl-thumb i { display: flex; align-items: center; justify-content: center; }
+.tpl-thumb i svg { width: 16px; height: 16px; color: var(--ink-3); opacity: .62; }
+.tpl-thumb i.k { background: var(--primary-soft); border-color: transparent; }
+.tpl-thumb i.k svg { color: var(--primary); opacity: .65; }
+.tpl-thumb i.m { background: var(--surface-3); border-color: transparent; }
+.tpl-card.off .tpl-thumb { filter: grayscale(1); }
 .tpl-tags { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 16px; }
 .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 18px; }
 .tpl-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }

@@ -750,6 +750,46 @@ function purgePreviews(keepId) {
   return had;
 }
 
+/* ---------- Миниатюра раскладки ---------- */
+/* Карточку каталога выбирают глазами, а не чтением семи строк текста.
+   Раскладка считается по описанию блоков первого уровня — без набора
+   данных, поэтому миниатюра есть и у того, кто ещё не принёс свой файл.
+   Места те же, что потом расставит tplLayout: слева направо, с переносом. */
+function tplThumbItems(tpl) {
+  const lvl = (tpl.levels || [])[0];
+  if (!lvl) return [];
+  const items = [];
+  let x = 0, y = 0, rowH = 0;
+  (lvl.blocks || []).forEach(b => {
+    const viz = b.kind === 'kpi' ? 'big_number' : b.kind === 'docs' ? 'table' : b.viz;
+    const sz = b.size || (b.kind === 'kpi' ? { w: 4, h: 7 } : b.kind === 'docs' ? { w: 12, h: 10 } : itemDefaultSize('chart', { viz }));
+    if (x + sz.w > G_COLS) { y += rowH; x = 0; rowH = 0; }
+    items.push({ x, y, w: sz.w, h: sz.h, kind: b.kind === 'kpi' ? 'kpi' : 'viz', viz });
+    x += sz.w; rowH = Math.max(rowH, sz.h);
+  });
+  return items;
+}
+function tplThumb(tpl) {
+  const th = h('div', { class: 'dash-thumb tpl-thumb', 'aria-hidden': 'true' });
+  const items = tplThumbItems(tpl);
+  if (!items.length) return th;
+  const maxY = Math.max(12, ...items.map(i => i.y + i.h));
+  items.forEach(it => {
+    const cell = h('i', {
+      class: it.kind === 'kpi' ? 'k' : it.kind === 'md' ? 'm' : '',
+      style: {
+        left: `calc(${(it.x / 12 * 100).toFixed(2)}% + 5px)`, width: `calc(${(it.w / 12 * 100).toFixed(2)}% - 7px)`,
+        top: `calc(${(it.y / maxY * 100).toFixed(2)}% + 5px)`, height: `calc(${(it.h / maxY * 100).toFixed(2)}% - 5px)`,
+      },
+    });
+    // Иконка вида прямо в плитке: «три числа сверху, линия, два разреза»
+    // читается с одного взгляда, а серые прямоугольники — нет
+    if (it.kind !== 'md' && VIZ[it.viz]) cell.appendChild(ic(VIZ[it.viz].icon));
+    th.appendChild(cell);
+  });
+  return th;
+}
+
 /* ---------- Каталог ---------- */
 function renderTemplateList(main, q) {
   const page = h('div', { class: 'page' });
@@ -787,6 +827,7 @@ function renderTemplateList(main, q) {
     TEMPLATES.filter(tpl => !tag || (tpl.tags || []).includes(tag)).forEach(tpl => {
       const fit = ds ? templateFits(tpl, ds, roles) : { ok: true, missingLabels: [] };
       const card = h('div', { class: 'tpl-card' + (fit.ok ? '' : ' off') });
+      card.appendChild(tplThumb(tpl));
       card.appendChild(h('div', { class: 'tpl-head' }, h('b', null, tpl.name),
         fit.ok ? null : h('span', { class: 'pill' }, 'не подходит набору')));
       card.appendChild(h('p', null, tpl.desc));
