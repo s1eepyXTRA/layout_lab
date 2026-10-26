@@ -193,7 +193,8 @@ function renderDashboard(main, id, q) {
       mayEdit ? { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } } : null,
       mayEdit ? { label: 'Свойства шаблона', icon: 'settings', onClick: openProps } : null,
       { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(id) },
-      { label: 'Выгрузить ТЗ в Markdown…', icon: 'text', onClick: () => openSpecDialog(D) },
+      mayEdit ? { label: 'Заполнить ТЗ по блокам…', icon: 'edit', onClick: () => openSpecTable(D) } : null,
+      { label: 'Выгрузить ТЗ для аналитиков…', icon: 'text', onClick: () => openSpecDialog(D) },
       canShare(saved) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(saved, 'шаблону', () => { saveState(); paintHeadOnly(); }) } : null,
       !editing ? '-' : null,
       !editing ? { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(id) } : null,
@@ -210,14 +211,21 @@ function renderDashboard(main, id, q) {
         h('button', { class: 'btn', onclick: cancelEdit }, 'Отменить'),
         h('button', { class: 'btn primary', onclick: saveEdit }, ic('check'), 'Сохранить'), more);
     } else if (!mayEdit) {
+      // Тупик «нельзя править» бесполезен: копия — это то, что человеку нужно
       head.append(
         h('button', { class: 'btn', title: 'Обновить все графики', 'aria-label': 'Обновить все графики', onclick: () => refreshCharts() }, ic('refresh')),
-        h('button', { class: 'btn', title: whyReadOnly(saved), onclick: () => toast(whyReadOnly(saved)) }, ic('eye'), 'Почему нельзя править'), more);
+        h('button', { class: 'btn', title: whyReadOnly(saved), onclick: () => toast(whyReadOnly(saved)) }, ic('eye'), 'Почему только просмотр'),
+        h('button', { class: 'btn primary', title: 'Сделать свою копию: её можно править как угодно', onclick: () => duplicateDashboard(id) }, ic('copy'), 'Сделать копию'), more);
     } else {
+      /* На макете главный инструмент — простая правка, а конструктор нужен
+         аналитику. Раньше зелёной была «Редактировать», и человек, который
+         пришёл поменять подписи, попадал в палитру блоков. */
+      const mock = isMockupDs(dsGet((D.fromTemplate || {}).datasetId));
       head.append(aiBtn(),
-        h('button', { class: 'btn', title: 'Поменять названия и разрезы прямо на блоках', onclick: () => go('#/d/' + id + '?tune=1') }, ic('edit'), 'Названия и разрезы'),
+        h('button', { class: 'btn' + (mock ? ' primary' : ''), title: 'Поменять названия, показатели и разрезы прямо на блоках', onclick: () => go('#/d/' + id + '?tune=1') }, ic('edit'), 'Названия и разрезы'),
         h('button', { class: 'btn', title: 'Обновить все графики', 'aria-label': 'Обновить все графики', onclick: () => refreshCharts() }, ic('refresh')),
-        h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'), more);
+        h('button', { class: 'btn', title: 'Задание аналитикам данных: состав, формулы, разрезы', onclick: () => openSpecDialog(D) }, ic('text'), 'ТЗ'),
+        h('button', { class: 'btn' + (mock ? '' : ' primary'), title: 'Конструктор: блоки, вкладки, фильтры', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'), more);
     }
     return head;
   }
@@ -532,6 +540,7 @@ function renderDashboard(main, id, q) {
     const tools = editing ? h('div', { class: 'item-tools' }) : null;
     const dragBtn = () => { const b = h('button', { class: 'iconbtn sm drag-h', title: 'Перетащить', 'aria-label': 'Перетащить' }, ic('drag')); b.addEventListener('pointerdown', e => startDrag(e, it)); return b; };
     const delBtn = () => iconBtn('trash', 'Убрать из шаблона', () => removeItem(it), 'sm');
+    const cfgBtn = () => iconBtn('settings', 'Настроить блок: метрики, разрезы, фильтры', () => leaveTo('#/explore/' + it.chartId + '?back=' + id), 'sm');
     const moveBtn = () => D.tabs.length > 1 ? iconBtn('chevR', 'Перенести на другую вкладку', e => openMenu(e.currentTarget, D.tabs.filter(t => t.id !== tabId).map(t => ({ label: 'На вкладку «' + t.title + '»', onClick: () => moveItemToTab(it, t) }))), 'sm') : null;
     if (it.type === 'chart') {
       const chart = STATE.charts[it.chartId];
@@ -560,7 +569,9 @@ function renderDashboard(main, id, q) {
       Object.assign(cell, { root, badge, chartId: it.chartId });
       cell.ro = new ResizeObserver(debounce(() => { if (root._ec) root._ec.resize(); }, 60));
       cell.ro.observe(body);
-      if (editing) { tools.append(moveBtn() || '', delBtn()); }
+      // Кнопка настройки на виду: «три точки» читались как «удалить»,
+      // и путь к метрикам и фильтрам блока никто не находил
+      if (editing) { tools.append(cfgBtn(), moveBtn() || '', delBtn()); }
     } else if (it.type === 'markdown') {
       const isEd = editing && editingMd === it.i;
       const card = h('div', { class: 'card' });
@@ -735,7 +746,7 @@ function renderDashboard(main, id, q) {
     if (panelTab === 'charts' && isMockupDs(mockupDs)) {
       // В макете блок выбирается видом: данные под него уже есть
       body.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '0 0 10px' } },
-        'Выберите вид блока. Название, показатель и категории поменяете на самом блоке.'));
+        'Выберите вид блока. Название, показатель и категории меняются прямо на блоке, а метрики, фильтры и сортировка — по шестерёнке на самом блоке.'));
       mockupBlockOptions(mockupDs).forEach(b => body.appendChild(h('button', { class: 'comp', onclick: () => {
         const cid = createMockupChart(mockupDs, b.viz);
         if (!cid) { toast('Такой блок на этих данных не построить', true); return; }

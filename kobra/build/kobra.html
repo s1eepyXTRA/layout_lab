@@ -277,7 +277,15 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .row-inline { display: flex; gap: 8px; align-items: center; }
 .row-inline .input { flex: 1; min-width: 0; }
 .owner-tag { font-size: 12px; color: var(--ink-3); }
+/* ТЗ по блокам: карточка на блок читается лучше, чем таблица в пять колонок */
+.spec-rows { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.spec-row { border: 1px solid var(--line); border-radius: var(--r-m); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.spec-row-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.spec-row-head b { font-size: 14px; }
+.spec-row-head .muted { font-size: 12.5px; }
+.spec-row-head select { max-width: 200px; }
 /* Каталог готовых шаблонов */
+.tpl-tags { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 16px; }
 .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 18px; }
 .tpl-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }
 .tpl-card.off { opacity: .72; }
@@ -3798,15 +3806,46 @@ function createBlankDashboard() {
   saveState();
   go('#/d/' + id + '?edit=1');
 }
+/* Копия должна быть самостоятельной. Раньше копировался только дашборд, а
+   графики и придуманный набор оставались общими с исходником: правка в копии
+   меняла оригинал, а удаление одного из двух уносило набор у второго. */
 function duplicateDashboard(id) {
   const src = STATE.dashboards[id];
+  if (!src || !canView(src)) { toast('Шаблон недоступен', true); return; }
   const nid = uid('d_');
   const copy = clone(src);
   copy.id = nid; copy.title = src.title + ' (копия)'; copy.updated = Date.now();
+  // Копия достаётся тому, кто копирует, — иначе чужой шаблон так и останется
+  // недоступным для правки. Переписка с ассистентом личная и не копируется.
+  ['ownerLogin', 'team', 'shared', 'chat', 'chatBrief', 'chatBriefSkipped', 'chatTrimmed', 'preview'].forEach(k => delete copy[k]);
+
+  const srcDsId = (src.fromTemplate || {}).datasetId;
+  let dsFrom = null, dsTo = null;
+  if (srcDsId && DS[srcDsId] && DS[srcDsId].owner === id && STATE.datasets[srcDsId]) {
+    const meta = clone(STATE.datasets[srcDsId]);
+    meta.id = uid('ds_'); meta.owner = nid;
+    ['ownerLogin', 'team', 'shared'].forEach(k => delete meta[k]);
+    STATE.datasets[meta.id] = meta;
+    DS[meta.id] = Object.assign({}, meta, { rows: generateSchemaRows(meta.schema) });
+    dsFrom = srcDsId; dsTo = meta.id;
+    copy.fromTemplate = Object.assign({}, copy.fromTemplate, { datasetId: meta.id });
+  }
+  copy.tabs.forEach(t => t.items.forEach(i => {
+    const c = i.chartId && STATE.charts[i.chartId];
+    if (!c) return;
+    const n = clone(c);
+    n.id = uid('c_');
+    ['ownerLogin', 'team', 'shared', 'preview'].forEach(k => delete n[k]);
+    if (dsTo && n.datasetId === dsFrom) n.datasetId = dsTo;
+    STATE.charts[n.id] = n;
+    i.chartId = n.id;
+  }));
+  (copy.filters || []).forEach(f => { if (dsTo && f.datasetId === dsFrom) f.datasetId = dsTo; });
+
   STATE.dashboards[nid] = copy;
-  saveState();
-  toast('Шаблон скопирован');
-  route();
+  saveState();   // владельца копии проставит authStampAll
+  toast('Копия создана — она ваша, правьте как угодно');
+  go('#/d/' + nid);
 }
 /* Чей объект — пишем только у чужого: у своих это шум на каждой карточке */
 function ownerTag(obj) {
@@ -4162,7 +4201,8 @@ function renderDashboard(main, id, q) {
       mayEdit ? { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } } : null,
       mayEdit ? { label: 'Свойства шаблона', icon: 'settings', onClick: openProps } : null,
       { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(id) },
-      { label: 'Выгрузить ТЗ в Markdown…', icon: 'text', onClick: () => openSpecDialog(D) },
+      mayEdit ? { label: 'Заполнить ТЗ по блокам…', icon: 'edit', onClick: () => openSpecTable(D) } : null,
+      { label: 'Выгрузить ТЗ для аналитиков…', icon: 'text', onClick: () => openSpecDialog(D) },
       canShare(saved) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(saved, 'шаблону', () => { saveState(); paintHeadOnly(); }) } : null,
       !editing ? '-' : null,
       !editing ? { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(id) } : null,
@@ -4179,14 +4219,21 @@ function renderDashboard(main, id, q) {
         h('button', { class: 'btn', onclick: cancelEdit }, 'Отменить'),
         h('button', { class: 'btn primary', onclick: saveEdit }, ic('check'), 'Сохранить'), more);
     } else if (!mayEdit) {
+      // Тупик «нельзя править» бесполезен: копия — это то, что человеку нужно
       head.append(
         h('button', { class: 'btn', title: 'Обновить все графики', 'aria-label': 'Обновить все графики', onclick: () => refreshCharts() }, ic('refresh')),
-        h('button', { class: 'btn', title: whyReadOnly(saved), onclick: () => toast(whyReadOnly(saved)) }, ic('eye'), 'Почему нельзя править'), more);
+        h('button', { class: 'btn', title: whyReadOnly(saved), onclick: () => toast(whyReadOnly(saved)) }, ic('eye'), 'Почему только просмотр'),
+        h('button', { class: 'btn primary', title: 'Сделать свою копию: её можно править как угодно', onclick: () => duplicateDashboard(id) }, ic('copy'), 'Сделать копию'), more);
     } else {
+      /* На макете главный инструмент — простая правка, а конструктор нужен
+         аналитику. Раньше зелёной была «Редактировать», и человек, который
+         пришёл поменять подписи, попадал в палитру блоков. */
+      const mock = isMockupDs(dsGet((D.fromTemplate || {}).datasetId));
       head.append(aiBtn(),
-        h('button', { class: 'btn', title: 'Поменять названия и разрезы прямо на блоках', onclick: () => go('#/d/' + id + '?tune=1') }, ic('edit'), 'Названия и разрезы'),
+        h('button', { class: 'btn' + (mock ? ' primary' : ''), title: 'Поменять названия, показатели и разрезы прямо на блоках', onclick: () => go('#/d/' + id + '?tune=1') }, ic('edit'), 'Названия и разрезы'),
         h('button', { class: 'btn', title: 'Обновить все графики', 'aria-label': 'Обновить все графики', onclick: () => refreshCharts() }, ic('refresh')),
-        h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'), more);
+        h('button', { class: 'btn', title: 'Задание аналитикам данных: состав, формулы, разрезы', onclick: () => openSpecDialog(D) }, ic('text'), 'ТЗ'),
+        h('button', { class: 'btn' + (mock ? '' : ' primary'), title: 'Конструктор: блоки, вкладки, фильтры', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать'), more);
     }
     return head;
   }
@@ -4501,6 +4548,7 @@ function renderDashboard(main, id, q) {
     const tools = editing ? h('div', { class: 'item-tools' }) : null;
     const dragBtn = () => { const b = h('button', { class: 'iconbtn sm drag-h', title: 'Перетащить', 'aria-label': 'Перетащить' }, ic('drag')); b.addEventListener('pointerdown', e => startDrag(e, it)); return b; };
     const delBtn = () => iconBtn('trash', 'Убрать из шаблона', () => removeItem(it), 'sm');
+    const cfgBtn = () => iconBtn('settings', 'Настроить блок: метрики, разрезы, фильтры', () => leaveTo('#/explore/' + it.chartId + '?back=' + id), 'sm');
     const moveBtn = () => D.tabs.length > 1 ? iconBtn('chevR', 'Перенести на другую вкладку', e => openMenu(e.currentTarget, D.tabs.filter(t => t.id !== tabId).map(t => ({ label: 'На вкладку «' + t.title + '»', onClick: () => moveItemToTab(it, t) }))), 'sm') : null;
     if (it.type === 'chart') {
       const chart = STATE.charts[it.chartId];
@@ -4529,7 +4577,9 @@ function renderDashboard(main, id, q) {
       Object.assign(cell, { root, badge, chartId: it.chartId });
       cell.ro = new ResizeObserver(debounce(() => { if (root._ec) root._ec.resize(); }, 60));
       cell.ro.observe(body);
-      if (editing) { tools.append(moveBtn() || '', delBtn()); }
+      // Кнопка настройки на виду: «три точки» читались как «удалить»,
+      // и путь к метрикам и фильтрам блока никто не находил
+      if (editing) { tools.append(cfgBtn(), moveBtn() || '', delBtn()); }
     } else if (it.type === 'markdown') {
       const isEd = editing && editingMd === it.i;
       const card = h('div', { class: 'card' });
@@ -4704,7 +4754,7 @@ function renderDashboard(main, id, q) {
     if (panelTab === 'charts' && isMockupDs(mockupDs)) {
       // В макете блок выбирается видом: данные под него уже есть
       body.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '0 0 10px' } },
-        'Выберите вид блока. Название, показатель и категории поменяете на самом блоке.'));
+        'Выберите вид блока. Название, показатель и категории меняются прямо на блоке, а метрики, фильтры и сортировка — по шестерёнке на самом блоке.'));
       mockupBlockOptions(mockupDs).forEach(b => body.appendChild(h('button', { class: 'comp', onclick: () => {
         const cid = createMockupChart(mockupDs, b.viz);
         if (!cid) { toast('Такой блок на этих данных не построить', true); return; }
@@ -6563,9 +6613,19 @@ function docsLevelFits(ds, roles) {
    («Продажи и выручка») нельзя — человек решит, что выбирает чужой дашборд.
    Отчётное название лежит отдельно в `dash` и подставляется собранному
    дашборду. `examples` — для чего это бывает полезно, живыми словами. */
+/* Приём, а не отрасль: человек приходит с вопросом «как показать динамику»
+   или «сравнить план с фактом», а не с названием шаблона. Чипы над каталогом
+   переводят выбор на этот язык. */
+const TPL_TAGS = {
+  dynamics: 'Динамика во времени',
+  parts: 'Состав и доли',
+  stages: 'Этапы и переходы',
+  plan: 'План против факта',
+};
 const TEMPLATES = [
   {
     id: 'overview',
+    tags: ['dynamics', 'parts'],
     name: 'Показатель во времени и в разрезах',
     dash: 'Сводка процесса',
     desc: 'Самый универсальный скелет: один главный показатель — как он менялся, из чего складывается и какие строки за ним стоят. С него стоит начинать, если не уверены, что выбрать.',
@@ -6591,6 +6651,7 @@ const TEMPLATES = [
   },
   {
     id: 'sales',
+    tags: ['parts', 'dynamics'],
     name: 'Сумма денег и из чего она складывается',
     dash: 'Продажи и выручка',
     desc: 'Скелет для любой суммы в рублях: динамика, разрезы по товарам и каналам, средний чек и документы, из которых сумма набежала.',
@@ -6618,6 +6679,7 @@ const TEMPLATES = [
   },
   {
     id: 'funnel',
+    tags: ['stages'],
     name: 'Этапы и потери между ними',
     dash: 'Воронка и конверсия',
     desc: 'Скелет для процесса, который проходят по шагам: сколько дошло до каждого этапа, где отваливаются и чем различаются источники.',
@@ -6641,6 +6703,7 @@ const TEMPLATES = [
   },
   {
     id: 'flow',
+    tags: ['dynamics', 'parts'],
     name: 'Поступление и состояния',
     dash: 'Поток обращений',
     desc: 'Скелет там, где строка — это заявка или обращение: сколько пришло по неделям, в каких состояниях лежит и у кого.',
@@ -6666,6 +6729,7 @@ const TEMPLATES = [
   },
   {
     id: 'planfact',
+    tags: ['plan'],
     name: 'Факт против плана',
     dash: 'План и факт',
     desc: 'Скелет для случая, когда рядом с фактом лежит цель: выполнение по времени и по разрезам, процент и отставание. План должен быть в тех же данных, что и факт.',
@@ -7025,7 +7089,10 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
     // Что получится
     const derivedPlan = plannedDerived(tpl, ds, roles);
     const willAdd = derivedPlan.filter(d => !d.existing);
-    const plan = buildFromTemplate(tpl, ds, roles, Object.keys(levels).filter(k => levels[k]), Object.fromEntries(derivedPlan.map(d => [d.id, d.existing || { kind: 'saved', key: '~' }])));
+    // У показателя, которого в наборе ещё нет, метки взять неоткуда — поэтому
+    // подставляем имя из плана: иначе в составе печаталось «~ за месяц»
+    const plan = buildFromTemplate(tpl, ds, roles, Object.keys(levels).filter(k => levels[k]),
+      Object.fromEntries(derivedPlan.map(d => [d.id, d.existing || { kind: 'saved', key: '~', label: d.label }])));
     const nCharts = plan.levels.reduce((a, l) => a + l.charts.length, 0);
     const info = h('div', { class: 'tpl-plan' });
     info.appendChild(h('p', null, h('b', null, `Получится ${nCharts} ${plural(nCharts, 'блок', 'блока', 'блоков')} на ${plan.levels.length} ${plural(plan.levels.length, 'вкладке', 'вкладках', 'вкладках')}`)));
@@ -7181,13 +7248,25 @@ function renderTemplateList(main, q) {
         : 'Выберите готовый шаблон: Кобра соберёт его на придуманных данных, а вы переименуете блоки и категории под свой процесс. Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.')),
     h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем шаблонам')));
 
+  let tag = '';   // выбранный приём
+  const tagBar = h('div', { class: 'tpl-tags' });
+  const paintTags = () => {
+    clear(tagBar);
+    tagBar.appendChild(h('span', { class: 'muted', style: { fontSize: '13px', marginRight: '4px' } }, 'Что хотите показать:'));
+    [['', 'Всё'], ...Object.entries(TPL_TAGS)].forEach(([k, label]) => {
+      tagBar.appendChild(h('button', { class: 'btn sm' + (tag === k ? ' on' : ''), onclick: () => { tag = k; paintTags(); paint(); } }, label));
+    });
+  };
+  paintTags();
+  page.appendChild(tagBar);
+
   const grid = h('div', { class: 'tpl-grid' });
   const paint = () => {
     clear(grid);
     const ds = dsId ? DS[dsId] : null;
     if (dsId && !ds) { grid.appendChild(h('div', { class: 'empty' }, h('b', null, 'Набор данных не найден'), h('a', { class: 'btn', href: '#/data' }, 'К данным'))); return; }
     const roles = ds ? pickRoles(ds) : null;
-    TEMPLATES.forEach(tpl => {
+    TEMPLATES.filter(tpl => !tag || (tpl.tags || []).includes(tag)).forEach(tpl => {
       const fit = ds ? templateFits(tpl, ds, roles) : { ok: true, missingLabels: [] };
       const card = h('div', { class: 'tpl-card' + (fit.ok ? '' : ' off') });
       card.appendChild(h('div', { class: 'tpl-head' }, h('b', null, tpl.name),
@@ -8217,7 +8296,7 @@ function openSpecEditor(chart, onSave) {
   const draft = Object.assign({}, chart.spec || {});
   const body = h('div');
   body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 14px' } },
-    'Поля ТЗ на расчёты не влияют: они нужны, чтобы согласованный макет стал заданием. Попадают в «Выгрузить ТЗ в Markdown» и в файл .kobra.json.'));
+    'Поля ТЗ на расчёты не влияют: их читает аналитик данных, который будет собирать дашборд. Попадают в выгрузку ТЗ и в файл .kobra.json.'));
   SPEC_FIELDS.forEach(f => {
     if (f.select) {
       body.appendChild(field(f.label, selectEl([['', '— не задан —'], ...Object.entries(SPEC_PRIORITIES)], draft[f.key] || '', v => { draft[f.key] = v; }), f.hint));
@@ -8417,6 +8496,14 @@ function buildSpecMd(dash, opts = {}) {
   const head = [`Собрано в Кобре ${fmtDate(Date.now(), 'day')}`];
   if (opts.author) head.push(`автор — ${mdEsc(opts.author)}`);
   L.push(head.join(', ') + '.', '');
+  // Кому адресован файл — первым делом: его открывает аналитик данных, а не
+  // заказчик, и ему нужно сразу понимать, что от него хотят
+  L.push('**Кому.** Задание аналитику данных: собрать такой дашборд в целевой BI-системе.', '',
+    '**Что внутри.** Ниже — состав по вкладкам, по каждому блоку тип визуализации, набор данных, '
+    + 'показатели с формулами, разрезы с гранулярностью, фильтры, период и лимиты. Подписи и формулы '
+    + 'напечатаны теми же словами, что видел заказчик на макете, — расхождений быть не должно.', '',
+    '**Что от вас нужно.** Проверить, что показатели считаются из указанных источников, уточнить '
+    + 'спорные места из раздела «Что осталось заполнить» и собрать дашборд.', '');
   if (opts.note) L.push('> ' + mdEsc(opts.note), '');
   if (fake.length) {
     L.push(`> **Это макет, данные вымышленные.** ${plural(fake.length, 'Набор', 'Наборы', 'Наборы')} `
@@ -8481,6 +8568,78 @@ function specFileName(D) {
 }
 
 /* ---------- Диалог выгрузки ---------- */
+/* Поля ТЗ у всех блоков разом. Раньше они правились по одному — через
+   конструктор каждого графика, то есть двадцать заходов на двадцать блоков,
+   хотя заполняет их один человек и за один присест. */
+function openSpecTable(dash) {
+  const D = typeof dash === 'string' ? STATE.dashboards[dash] : dash;
+  if (!D) { toast('Шаблон не найден', true); return; }
+  const rows = D.tabs.flatMap(t => t.items
+    .filter(i => i.type === 'chart' && STATE.charts[i.chartId])
+    .map(i => ({ tab: t.title, chart: STATE.charts[i.chartId] })));
+  if (!rows.length) { toast('На шаблоне нет блоков', true); return; }
+
+  const draft = {};   // правки копим отдельно: «Отмена» должна отменять
+  rows.forEach(r => { draft[r.chart.id] = Object.assign({}, r.chart.spec || {}); });
+  let onlyEmpty = false;
+  const body = h('div');
+  const count = () => rows.filter(r => String(draft[r.chart.id].question || '').trim()).length;
+
+  const paint = () => {
+    clear(body);
+    body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 12px' } },
+      'Это поля для аналитиков данных: по ним они поймут, что считать и откуда брать. ',
+      h('b', null, `Бизнес-вопрос заполнен у ${count()} из ${rows.length}.`)));
+    body.appendChild(checkbox('Показывать только незаполненные', onlyEmpty, v => { onlyEmpty = v; paint(); }));
+    const list = h('div', { class: 'spec-rows' });
+    const shown = rows.filter(r => !onlyEmpty || !String(draft[r.chart.id].question || '').trim());
+    if (!shown.length) list.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Бизнес-вопрос есть у всех блоков.'));
+    shown.forEach(r => {
+      const d = draft[r.chart.id];
+      const put = (key, el) => { const take = () => { d[key] = el.value; }; el.addEventListener('input', take); el.addEventListener('change', take); return el; };
+      const q = h('textarea', { class: 'textarea', rows: 2, placeholder: 'На какой вопрос отвечает блок. Например: где просела выручка и за счёт какого филиала' });
+      q.value = d.question || '';
+      const src = h('input', { class: 'input', placeholder: 'Источник: витрина, таблица, выгрузка' });
+      src.value = d.source || '';
+      const ref = h('input', { class: 'input', placeholder: 'Обновление: раз в сутки к 8:00' });
+      ref.value = d.refresh || '';
+      list.appendChild(h('div', { class: 'spec-row' },
+        h('div', { class: 'spec-row-head' },
+          h('b', null, r.chart.name),
+          h('span', { class: 'muted' }, `${VIZ[r.chart.viz] ? VIZ[r.chart.viz].label : r.chart.viz} · вкладка «${r.tab}»`),
+          h('div', { class: 'grow' }),
+          selectEl([['', 'Приоритет не задан'], ...Object.entries(SPEC_PRIORITIES)], d.priority || '',
+            v => { d.priority = v; }, { 'aria-label': 'Приоритет блока ' + r.chart.name })),
+        put('question', q),
+        h('div', { class: 'row2' }, put('source', src), put('refresh', ref))));
+    });
+    body.appendChild(list);
+  };
+  paint();
+
+  openModal({
+    title: 'ТЗ по блокам', wide: 'x', body,
+    foot: close => [
+      h('button', { class: 'btn', onclick: close }, 'Отмена'),
+      h('button', { class: 'btn', onclick: () => { close(); openSpecDialog(D); } }, ic('download'), 'Сохранить и выгрузить ТЗ'),
+      h('button', { class: 'btn primary', onclick: () => { save(); close(); } }, ic('check'), 'Сохранить'),
+    ],
+  });
+
+  function save() {
+    mutate('Поля ТЗ', () => {
+      rows.forEach(r => {
+        const spec = normalizeSpec(draft[r.chart.id]);   // пустые поля дают null
+        const c = STATE.charts[r.chart.id];
+        if (!c) return;
+        if (spec) c.spec = spec; else delete c.spec;
+        c.updated = Date.now();
+      });
+    });
+    toast('Поля ТЗ сохранены');
+  }
+}
+
 function openSpecDialog(dash) {
   const D = typeof dash === 'string' ? STATE.dashboards[dash] : dash;
   if (!D) { toast('Шаблон не найден', true); return; }
@@ -8491,8 +8650,10 @@ function openSpecDialog(dash) {
   const filled = charts.filter(c => specValue(c, 'question')).length;
   const body = h('div');
   body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 14px' } },
-    'Кобра соберёт из шаблона готовое задание: по каждому графику — тип, набор данных, метрики с формулами, разрезы, фильтры и лимиты, плюс поля ТЗ. '
-    + 'Цифры и подписи в файле те же, что на экране.'));
+    'Файл для аналитиков данных, которые будут собирать этот дашборд в целевой BI-системе. '
+    + 'По каждому блоку: тип визуализации, набор данных, показатели с формулами, разрезы, фильтры и лимиты, '
+    + 'плюс поля ТЗ — бизнес-вопрос, источник, периодичность, приоритет. '
+    + 'Подписи и цифры в файле те же, что на экране, поэтому ТЗ не расходится с согласованным макетом.'));
   body.appendChild(h('div', { class: 'row2' },
     field('Автор', h('input', { class: 'input', value: author, placeholder: 'Кто составил ТЗ', oninput: e => { author = e.target.value; } })),
     field('Комментарий', h('input', { class: 'input', value: note, placeholder: 'Например: на согласование с дирекцией', oninput: e => { note = e.target.value; } }))));
@@ -8503,9 +8664,12 @@ function openSpecDialog(dash) {
 
   const make = () => buildSpecMd(D, { author: author.trim(), note: note.trim() });
   openModal({
-    title: 'Выгрузить ТЗ в Markdown', wide: true, body,
+    title: 'ТЗ для аналитиков данных', wide: true, body,
     foot: close => [
       h('button', { class: 'btn', onclick: close }, 'Отмена'),
+      nCharts && filled < nCharts
+        ? h('button', { class: 'btn', title: 'Заполнить бизнес-вопросы у всех блоков сразу', onclick: () => { close(); openSpecTable(D); } }, ic('edit'), `Заполнить (${nCharts - filled})`)
+        : null,
       h('button', { class: 'btn', onclick: async () => {
         try {
           await navigator.clipboard.writeText(make());

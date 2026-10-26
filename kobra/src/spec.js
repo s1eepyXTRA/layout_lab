@@ -38,7 +38,7 @@ function openSpecEditor(chart, onSave) {
   const draft = Object.assign({}, chart.spec || {});
   const body = h('div');
   body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 14px' } },
-    'Поля ТЗ на расчёты не влияют: они нужны, чтобы согласованный макет стал заданием. Попадают в «Выгрузить ТЗ в Markdown» и в файл .kobra.json.'));
+    'Поля ТЗ на расчёты не влияют: их читает аналитик данных, который будет собирать дашборд. Попадают в выгрузку ТЗ и в файл .kobra.json.'));
   SPEC_FIELDS.forEach(f => {
     if (f.select) {
       body.appendChild(field(f.label, selectEl([['', '— не задан —'], ...Object.entries(SPEC_PRIORITIES)], draft[f.key] || '', v => { draft[f.key] = v; }), f.hint));
@@ -238,6 +238,14 @@ function buildSpecMd(dash, opts = {}) {
   const head = [`Собрано в Кобре ${fmtDate(Date.now(), 'day')}`];
   if (opts.author) head.push(`автор — ${mdEsc(opts.author)}`);
   L.push(head.join(', ') + '.', '');
+  // Кому адресован файл — первым делом: его открывает аналитик данных, а не
+  // заказчик, и ему нужно сразу понимать, что от него хотят
+  L.push('**Кому.** Задание аналитику данных: собрать такой дашборд в целевой BI-системе.', '',
+    '**Что внутри.** Ниже — состав по вкладкам, по каждому блоку тип визуализации, набор данных, '
+    + 'показатели с формулами, разрезы с гранулярностью, фильтры, период и лимиты. Подписи и формулы '
+    + 'напечатаны теми же словами, что видел заказчик на макете, — расхождений быть не должно.', '',
+    '**Что от вас нужно.** Проверить, что показатели считаются из указанных источников, уточнить '
+    + 'спорные места из раздела «Что осталось заполнить» и собрать дашборд.', '');
   if (opts.note) L.push('> ' + mdEsc(opts.note), '');
   if (fake.length) {
     L.push(`> **Это макет, данные вымышленные.** ${plural(fake.length, 'Набор', 'Наборы', 'Наборы')} `
@@ -302,6 +310,78 @@ function specFileName(D) {
 }
 
 /* ---------- Диалог выгрузки ---------- */
+/* Поля ТЗ у всех блоков разом. Раньше они правились по одному — через
+   конструктор каждого графика, то есть двадцать заходов на двадцать блоков,
+   хотя заполняет их один человек и за один присест. */
+function openSpecTable(dash) {
+  const D = typeof dash === 'string' ? STATE.dashboards[dash] : dash;
+  if (!D) { toast('Шаблон не найден', true); return; }
+  const rows = D.tabs.flatMap(t => t.items
+    .filter(i => i.type === 'chart' && STATE.charts[i.chartId])
+    .map(i => ({ tab: t.title, chart: STATE.charts[i.chartId] })));
+  if (!rows.length) { toast('На шаблоне нет блоков', true); return; }
+
+  const draft = {};   // правки копим отдельно: «Отмена» должна отменять
+  rows.forEach(r => { draft[r.chart.id] = Object.assign({}, r.chart.spec || {}); });
+  let onlyEmpty = false;
+  const body = h('div');
+  const count = () => rows.filter(r => String(draft[r.chart.id].question || '').trim()).length;
+
+  const paint = () => {
+    clear(body);
+    body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 12px' } },
+      'Это поля для аналитиков данных: по ним они поймут, что считать и откуда брать. ',
+      h('b', null, `Бизнес-вопрос заполнен у ${count()} из ${rows.length}.`)));
+    body.appendChild(checkbox('Показывать только незаполненные', onlyEmpty, v => { onlyEmpty = v; paint(); }));
+    const list = h('div', { class: 'spec-rows' });
+    const shown = rows.filter(r => !onlyEmpty || !String(draft[r.chart.id].question || '').trim());
+    if (!shown.length) list.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Бизнес-вопрос есть у всех блоков.'));
+    shown.forEach(r => {
+      const d = draft[r.chart.id];
+      const put = (key, el) => { const take = () => { d[key] = el.value; }; el.addEventListener('input', take); el.addEventListener('change', take); return el; };
+      const q = h('textarea', { class: 'textarea', rows: 2, placeholder: 'На какой вопрос отвечает блок. Например: где просела выручка и за счёт какого филиала' });
+      q.value = d.question || '';
+      const src = h('input', { class: 'input', placeholder: 'Источник: витрина, таблица, выгрузка' });
+      src.value = d.source || '';
+      const ref = h('input', { class: 'input', placeholder: 'Обновление: раз в сутки к 8:00' });
+      ref.value = d.refresh || '';
+      list.appendChild(h('div', { class: 'spec-row' },
+        h('div', { class: 'spec-row-head' },
+          h('b', null, r.chart.name),
+          h('span', { class: 'muted' }, `${VIZ[r.chart.viz] ? VIZ[r.chart.viz].label : r.chart.viz} · вкладка «${r.tab}»`),
+          h('div', { class: 'grow' }),
+          selectEl([['', 'Приоритет не задан'], ...Object.entries(SPEC_PRIORITIES)], d.priority || '',
+            v => { d.priority = v; }, { 'aria-label': 'Приоритет блока ' + r.chart.name })),
+        put('question', q),
+        h('div', { class: 'row2' }, put('source', src), put('refresh', ref))));
+    });
+    body.appendChild(list);
+  };
+  paint();
+
+  openModal({
+    title: 'ТЗ по блокам', wide: 'x', body,
+    foot: close => [
+      h('button', { class: 'btn', onclick: close }, 'Отмена'),
+      h('button', { class: 'btn', onclick: () => { close(); openSpecDialog(D); } }, ic('download'), 'Сохранить и выгрузить ТЗ'),
+      h('button', { class: 'btn primary', onclick: () => { save(); close(); } }, ic('check'), 'Сохранить'),
+    ],
+  });
+
+  function save() {
+    mutate('Поля ТЗ', () => {
+      rows.forEach(r => {
+        const spec = normalizeSpec(draft[r.chart.id]);   // пустые поля дают null
+        const c = STATE.charts[r.chart.id];
+        if (!c) return;
+        if (spec) c.spec = spec; else delete c.spec;
+        c.updated = Date.now();
+      });
+    });
+    toast('Поля ТЗ сохранены');
+  }
+}
+
 function openSpecDialog(dash) {
   const D = typeof dash === 'string' ? STATE.dashboards[dash] : dash;
   if (!D) { toast('Шаблон не найден', true); return; }
@@ -312,8 +392,10 @@ function openSpecDialog(dash) {
   const filled = charts.filter(c => specValue(c, 'question')).length;
   const body = h('div');
   body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 14px' } },
-    'Кобра соберёт из шаблона готовое задание: по каждому графику — тип, набор данных, метрики с формулами, разрезы, фильтры и лимиты, плюс поля ТЗ. '
-    + 'Цифры и подписи в файле те же, что на экране.'));
+    'Файл для аналитиков данных, которые будут собирать этот дашборд в целевой BI-системе. '
+    + 'По каждому блоку: тип визуализации, набор данных, показатели с формулами, разрезы, фильтры и лимиты, '
+    + 'плюс поля ТЗ — бизнес-вопрос, источник, периодичность, приоритет. '
+    + 'Подписи и цифры в файле те же, что на экране, поэтому ТЗ не расходится с согласованным макетом.'));
   body.appendChild(h('div', { class: 'row2' },
     field('Автор', h('input', { class: 'input', value: author, placeholder: 'Кто составил ТЗ', oninput: e => { author = e.target.value; } })),
     field('Комментарий', h('input', { class: 'input', value: note, placeholder: 'Например: на согласование с дирекцией', oninput: e => { note = e.target.value; } }))));
@@ -324,9 +406,12 @@ function openSpecDialog(dash) {
 
   const make = () => buildSpecMd(D, { author: author.trim(), note: note.trim() });
   openModal({
-    title: 'Выгрузить ТЗ в Markdown', wide: true, body,
+    title: 'ТЗ для аналитиков данных', wide: true, body,
     foot: close => [
       h('button', { class: 'btn', onclick: close }, 'Отмена'),
+      nCharts && filled < nCharts
+        ? h('button', { class: 'btn', title: 'Заполнить бизнес-вопросы у всех блоков сразу', onclick: () => { close(); openSpecTable(D); } }, ic('edit'), `Заполнить (${nCharts - filled})`)
+        : null,
       h('button', { class: 'btn', onclick: async () => {
         try {
           await navigator.clipboard.writeText(make());

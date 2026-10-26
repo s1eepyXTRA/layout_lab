@@ -317,15 +317,46 @@ function createBlankDashboard() {
   saveState();
   go('#/d/' + id + '?edit=1');
 }
+/* Копия должна быть самостоятельной. Раньше копировался только дашборд, а
+   графики и придуманный набор оставались общими с исходником: правка в копии
+   меняла оригинал, а удаление одного из двух уносило набор у второго. */
 function duplicateDashboard(id) {
   const src = STATE.dashboards[id];
+  if (!src || !canView(src)) { toast('Шаблон недоступен', true); return; }
   const nid = uid('d_');
   const copy = clone(src);
   copy.id = nid; copy.title = src.title + ' (копия)'; copy.updated = Date.now();
+  // Копия достаётся тому, кто копирует, — иначе чужой шаблон так и останется
+  // недоступным для правки. Переписка с ассистентом личная и не копируется.
+  ['ownerLogin', 'team', 'shared', 'chat', 'chatBrief', 'chatBriefSkipped', 'chatTrimmed', 'preview'].forEach(k => delete copy[k]);
+
+  const srcDsId = (src.fromTemplate || {}).datasetId;
+  let dsFrom = null, dsTo = null;
+  if (srcDsId && DS[srcDsId] && DS[srcDsId].owner === id && STATE.datasets[srcDsId]) {
+    const meta = clone(STATE.datasets[srcDsId]);
+    meta.id = uid('ds_'); meta.owner = nid;
+    ['ownerLogin', 'team', 'shared'].forEach(k => delete meta[k]);
+    STATE.datasets[meta.id] = meta;
+    DS[meta.id] = Object.assign({}, meta, { rows: generateSchemaRows(meta.schema) });
+    dsFrom = srcDsId; dsTo = meta.id;
+    copy.fromTemplate = Object.assign({}, copy.fromTemplate, { datasetId: meta.id });
+  }
+  copy.tabs.forEach(t => t.items.forEach(i => {
+    const c = i.chartId && STATE.charts[i.chartId];
+    if (!c) return;
+    const n = clone(c);
+    n.id = uid('c_');
+    ['ownerLogin', 'team', 'shared', 'preview'].forEach(k => delete n[k]);
+    if (dsTo && n.datasetId === dsFrom) n.datasetId = dsTo;
+    STATE.charts[n.id] = n;
+    i.chartId = n.id;
+  }));
+  (copy.filters || []).forEach(f => { if (dsTo && f.datasetId === dsFrom) f.datasetId = dsTo; });
+
   STATE.dashboards[nid] = copy;
-  saveState();
-  toast('Шаблон скопирован');
-  route();
+  saveState();   // владельца копии проставит authStampAll
+  toast('Копия создана — она ваша, правьте как угодно');
+  go('#/d/' + nid);
 }
 /* Чей объект — пишем только у чужого: у своих это шум на каждой карточке */
 function ownerTag(obj) {

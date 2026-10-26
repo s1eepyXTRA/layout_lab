@@ -131,9 +131,19 @@ function docsLevelFits(ds, roles) {
    («Продажи и выручка») нельзя — человек решит, что выбирает чужой дашборд.
    Отчётное название лежит отдельно в `dash` и подставляется собранному
    дашборду. `examples` — для чего это бывает полезно, живыми словами. */
+/* Приём, а не отрасль: человек приходит с вопросом «как показать динамику»
+   или «сравнить план с фактом», а не с названием шаблона. Чипы над каталогом
+   переводят выбор на этот язык. */
+const TPL_TAGS = {
+  dynamics: 'Динамика во времени',
+  parts: 'Состав и доли',
+  stages: 'Этапы и переходы',
+  plan: 'План против факта',
+};
 const TEMPLATES = [
   {
     id: 'overview',
+    tags: ['dynamics', 'parts'],
     name: 'Показатель во времени и в разрезах',
     dash: 'Сводка процесса',
     desc: 'Самый универсальный скелет: один главный показатель — как он менялся, из чего складывается и какие строки за ним стоят. С него стоит начинать, если не уверены, что выбрать.',
@@ -159,6 +169,7 @@ const TEMPLATES = [
   },
   {
     id: 'sales',
+    tags: ['parts', 'dynamics'],
     name: 'Сумма денег и из чего она складывается',
     dash: 'Продажи и выручка',
     desc: 'Скелет для любой суммы в рублях: динамика, разрезы по товарам и каналам, средний чек и документы, из которых сумма набежала.',
@@ -186,6 +197,7 @@ const TEMPLATES = [
   },
   {
     id: 'funnel',
+    tags: ['stages'],
     name: 'Этапы и потери между ними',
     dash: 'Воронка и конверсия',
     desc: 'Скелет для процесса, который проходят по шагам: сколько дошло до каждого этапа, где отваливаются и чем различаются источники.',
@@ -209,6 +221,7 @@ const TEMPLATES = [
   },
   {
     id: 'flow',
+    tags: ['dynamics', 'parts'],
     name: 'Поступление и состояния',
     dash: 'Поток обращений',
     desc: 'Скелет там, где строка — это заявка или обращение: сколько пришло по неделям, в каких состояниях лежит и у кого.',
@@ -234,6 +247,7 @@ const TEMPLATES = [
   },
   {
     id: 'planfact',
+    tags: ['plan'],
     name: 'Факт против плана',
     dash: 'План и факт',
     desc: 'Скелет для случая, когда рядом с фактом лежит цель: выполнение по времени и по разрезам, процент и отставание. План должен быть в тех же данных, что и факт.',
@@ -593,7 +607,10 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
     // Что получится
     const derivedPlan = plannedDerived(tpl, ds, roles);
     const willAdd = derivedPlan.filter(d => !d.existing);
-    const plan = buildFromTemplate(tpl, ds, roles, Object.keys(levels).filter(k => levels[k]), Object.fromEntries(derivedPlan.map(d => [d.id, d.existing || { kind: 'saved', key: '~' }])));
+    // У показателя, которого в наборе ещё нет, метки взять неоткуда — поэтому
+    // подставляем имя из плана: иначе в составе печаталось «~ за месяц»
+    const plan = buildFromTemplate(tpl, ds, roles, Object.keys(levels).filter(k => levels[k]),
+      Object.fromEntries(derivedPlan.map(d => [d.id, d.existing || { kind: 'saved', key: '~', label: d.label }])));
     const nCharts = plan.levels.reduce((a, l) => a + l.charts.length, 0);
     const info = h('div', { class: 'tpl-plan' });
     info.appendChild(h('p', null, h('b', null, `Получится ${nCharts} ${plural(nCharts, 'блок', 'блока', 'блоков')} на ${plan.levels.length} ${plural(plan.levels.length, 'вкладке', 'вкладках', 'вкладках')}`)));
@@ -749,13 +766,25 @@ function renderTemplateList(main, q) {
         : 'Выберите готовый шаблон: Кобра соберёт его на придуманных данных, а вы переименуете блоки и категории под свой процесс. Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.')),
     h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем шаблонам')));
 
+  let tag = '';   // выбранный приём
+  const tagBar = h('div', { class: 'tpl-tags' });
+  const paintTags = () => {
+    clear(tagBar);
+    tagBar.appendChild(h('span', { class: 'muted', style: { fontSize: '13px', marginRight: '4px' } }, 'Что хотите показать:'));
+    [['', 'Всё'], ...Object.entries(TPL_TAGS)].forEach(([k, label]) => {
+      tagBar.appendChild(h('button', { class: 'btn sm' + (tag === k ? ' on' : ''), onclick: () => { tag = k; paintTags(); paint(); } }, label));
+    });
+  };
+  paintTags();
+  page.appendChild(tagBar);
+
   const grid = h('div', { class: 'tpl-grid' });
   const paint = () => {
     clear(grid);
     const ds = dsId ? DS[dsId] : null;
     if (dsId && !ds) { grid.appendChild(h('div', { class: 'empty' }, h('b', null, 'Набор данных не найден'), h('a', { class: 'btn', href: '#/data' }, 'К данным'))); return; }
     const roles = ds ? pickRoles(ds) : null;
-    TEMPLATES.forEach(tpl => {
+    TEMPLATES.filter(tpl => !tag || (tpl.tags || []).includes(tag)).forEach(tpl => {
       const fit = ds ? templateFits(tpl, ds, roles) : { ok: true, missingLabels: [] };
       const card = h('div', { class: 'tpl-card' + (fit.ok ? '' : ' off') });
       card.appendChild(h('div', { class: 'tpl-head' }, h('b', null, tpl.name),
