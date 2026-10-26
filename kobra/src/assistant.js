@@ -14,23 +14,25 @@ const AI_CSV_MAX = 50000;
    работает с личным эндпоинтом и с LiteLLM компании — меняется настройка. */
 function aiCfg() {
   const c = lsGet(AI_LS_CFG) || {};
-  return { url: c.url || '', token: c.token || '', model: c.model || '', sendSamples: false };
+  return { url: c.url || '', token: c.token || '', model: c.model || '', model2: c.model2 || '', sendSamples: false };
 }
-function aiSaveCfg(cfg) { lsSet(AI_LS_CFG, { url: cfg.url || '', token: cfg.token || '', model: cfg.model || '' }); }
+function aiSaveCfg(cfg) { lsSet(AI_LS_CFG, { url: cfg.url || '', token: cfg.token || '', model: cfg.model || '', model2: cfg.model2 || '' }); }
 const aiReady = () => { const c = aiCfg(); return !!(c.url && c.model); };
 
 /* Обращение к OpenAI-совместимому эндпоинту. Ошибки разделяем по видам:
    человеку нужно знать, чинить доступ, ждать лимита или смотреть сеть. */
-async function aiAsk(messages) {
+/** @param {{model?: string, temperature?: number}} [opts] */
+async function aiAsk(messages, opts = {}) {
   const c = aiCfg();
-  if (!c.url || !c.model) throw Object.assign(new Error('доступ к модели не настроен'), { kind: 'no_access' });
+  const model = opts.model || c.model;
+  if (!c.url || !model) throw Object.assign(new Error('доступ к модели не настроен'), { kind: 'no_access' });
   const url = c.url.replace(/\/+$/, '') + (/\/chat\/completions$/.test(c.url) ? '' : '/chat/completions');
   let res;
   try {
     res = await fetch(url, {
       method: 'POST',
       headers: Object.assign({ 'Content-Type': 'application/json' }, c.token ? { Authorization: 'Bearer ' + c.token } : {}),
-      body: JSON.stringify({ model: c.model, messages, temperature: 0.2 }),
+      body: JSON.stringify({ model, messages, temperature: opts.temperature != null ? opts.temperature : 0.2 }),
     });
   } catch (e) {
     // Сюда же приходит запрет по CORS: браузер не отличает его от обрыва сети
@@ -208,20 +210,23 @@ async function aiExportCsv(ds) {
 /* ---------- Настройки доступа ---------- */
 function openAiSettings(done) {
   const c = aiCfg();
-  let url = c.url, token = c.token, model = c.model;
+  let url = c.url, token = c.token, model = c.model, model2 = c.model2 || '';
   const body = h('div', null,
     field('Адрес эндпоинта', h('input', { class: 'input', value: url, placeholder: 'https://шлюз/v1', oninput: e => { url = e.target.value; } }),
       'OpenAI-совместимый: Кобра добавит /chat/completions сама. Сегодня ваш, завтра — шлюз компании.'),
     field('Модель', h('input', { class: 'input', value: model, placeholder: 'gpt-4o, claude-sonnet, свой алиас', oninput: e => { model = e.target.value; } })),
+    field('Вторая модель (необязательно)', h('input', { class: 'input', value: model2, placeholder: 'например, модель поменьше', oninput: e => { model2 = e.target.value; } }),
+      'Когда Кобра собирает два варианта на выбор, второй соберёт эта модель. Пусто — оба варианта соберёт первая, но с разным уклоном.'),
     field('Токен', h('input', { class: 'input', type: 'password', value: token, placeholder: 'Bearer-токен', oninput: e => { token = e.target.value; } }),
       'Хранится в этом браузере и виден любому, у кого есть к нему доступ. Берите персональный токен с лимитом, который не жалко отозвать.'),
     h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '6px 0 0' } },
-      'Если шлюз не разрешает запросы из браузера, обращение не уйдёт — тогда остаётся перенос вручную, он работает всегда.'));
+      'Если шлюз не разрешает запросы из браузера, обращение не уйдёт — тогда остаётся перенос вручную, он работает всегда.'),
+    aiChoiceLine());
   openModal({
     title: 'Доступ к модели', wide: true, body,
     foot: close => [
       h('button', { class: 'btn', onclick: close }, 'Отмена'),
-      h('button', { class: 'btn primary', onclick: () => { aiSaveCfg({ url, token, model }); close(); toast('Настройки доступа сохранены'); done && done(); } }, 'Сохранить')],
+      h('button', { class: 'btn primary', onclick: () => { aiSaveCfg({ url, token, model, model2 }); close(); toast('Настройки доступа сохранены'); done && done(); } }, 'Сохранить')],
   });
 }
 

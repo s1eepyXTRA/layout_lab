@@ -168,12 +168,21 @@ function renderDashboard(main, id, q) {
     /* Черновик по описанию: ничего ещё не сохранено, поэтому в шапке —
        «Сохранить», «Доработать» и «Отменить», а не обычные кнопки правки. */
     if (D.aiDraft) {
+      const vs = D.aiDraft.variants || null;
       head.append(
         h('button', { class: 'btn', title: 'Выбросить черновик', onclick: () => aiDraftDrop(id) }, 'Отменить'),
-        h('h1', null, D.title, h('span', { class: 'pill acc', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: 'Пока не сохранён: уйдёте со страницы — пропадёт' }, 'Черновик')),
-        h('div', { class: 'grow' }),
+        h('h1', null, D.title, h('span', { class: 'pill acc', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: 'Пока не сохранён: уйдёте со страницы — пропадёт' },
+          D.aiDraft.label ? 'Черновик · ' + D.aiDraft.label : 'Черновик')),
+        h('div', { class: 'grow' }));
+      // Переключатель вариантов: оба черновика уже собраны и ждут выбора
+      if (vs && vs.length > 1) head.appendChild(h('div', { class: 'seg' }, vs.map(vid => {
+        const v = STATE.dashboards[vid];
+        return h('button', { class: vid === id ? 'on' : '', onclick: () => go('#/d/' + vid) },
+          (v && v.aiDraft && v.aiDraft.label) || 'Вариант');
+      })));
+      head.append(
         h('button', { class: 'btn ai', title: 'Сказать, что поправить, и пересобрать', onclick: () => openAiComposer({ draftId: id }) }, 'Доработать'),
-        h('button', { class: 'btn primary', onclick: () => aiDraftSave(id) }, ic('check'), 'Сохранить шаблон'));
+        h('button', { class: 'btn primary', onclick: () => aiDraftSave(id) }, ic('check'), vs ? 'Сохранить этот' : 'Сохранить шаблон'));
       return head;
     }
     // Пример шаблона живёт только в памяти и пропадает при уходе со страницы:
