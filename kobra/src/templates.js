@@ -35,6 +35,15 @@ const TPL_DERIVED = {
     label: 'Средний чек', format: 'rub', need: ['money', 'docId'],
     expr: r => ratioExpr(metricAggOf(r.ds, r.roles.money), { agg: 'COUNT_DISTINCT', col: r.roles.docId }),
   },
+  avg_row: {
+    label: 'В среднем на запись', format: 'smart', need: ['main'],
+    expr: r => {
+      const num = metricAggOf(r.ds, r.roles.main);
+      // «В среднем на запись» от счётчика строк — это всегда единица
+      if (!num || num.col === '*') return null;
+      return ratioExpr(num, metricAggOf(r.ds, r.roles.rows));
+    },
+  },
   plan_done: {
     label: 'Выполнение плана', format: 'pct', need: ['plan'],
     expr: r => ratioExpr(metricAggOf(r.ds, r.roles.money || r.roles.count || r.roles.rows), metricAggOf(r.ds, r.roles.plan)),
@@ -150,11 +159,12 @@ const TEMPLATES = [
     examples: ['выручка по филиалам и месяцам', 'количество заявок по категориям', 'объём выпуска по цехам', 'затраты по статьям'],
     need: ['date', 'dim1'],
     demo: ['Дата', 'Подразделение', 'Категория', 'Статус', 'Сумма, ₽', 'Количество, шт.'],
-    derived: [],
+    derived: ['avg_row'],
     levels: [
       { id: 'sum', blocks: [
         { kind: 'kpi', metric: 'main', need: ['date'] },
         { kind: 'kpi', metric: 'rows', need: ['date'] },
+        { kind: 'kpi', metric: 'avg_row', derived: true, need: ['avg_row'] },
         { viz: 'line', metric: 'main', by: 'date', need: ['date'], size: { w: 12, h: 12 } },
         { viz: 'bar', metric: 'main', by: 'dim1', need: ['dim1'], size: { w: 6, h: 12 } },
         { viz: 'pie', metric: 'main', by: 'dim2', need: ['dim2'], size: { w: 6, h: 12 } },
@@ -232,7 +242,9 @@ const TEMPLATES = [
     levels: [
       { id: 'sum', blocks: [
         { kind: 'kpi', metric: 'rows', need: ['date'] },
-        { kind: 'kpi', metric: 'count', need: ['date', 'count'] },
+        // Сумма минут обработки мало о чём говорит, среднее — говорит
+        { kind: 'kpi', metric: 'count', agg: 'AVG', need: ['date', 'count'] },
+        { kind: 'kpi', metric: 'dim_uniq', need: ['date', 'dim1'] },
         { viz: 'line', metric: 'rows', by: 'date', need: ['date'], size: { w: 12, h: 12 }, params: { x_grain: 'week', rolling: 4 } },
         { viz: 'bar', metric: 'rows', by: 'dim1', need: ['dim1'], size: { w: 6, h: 12 } },
         { viz: 'bar', metric: 'rows', by: 'dim2', need: ['dim2'], size: { w: 6, h: 12 }, params: { horizontal: true, row_limit: 15 } },
@@ -283,7 +295,18 @@ function tplMetric(name, roles, derived) {
   if (derived && derived[name]) return derived[name];
   if (name === 'main') return roles.main;
   if (name === 'rows') return roles.rows;
+  // Охват главного разреза: сколько разных филиалов, ответственных, точек.
+  // Подпись задаём явно — иначе получилось бы «Уникальных: Ответственный».
+  if (name === 'dim_uniq') {
+    const d = roles.dim1;
+    return d && d.key ? { kind: 'simple', agg: 'COUNT_DISTINCT', col: d.key, label: `Сколько разных: ${d.label}` } : null;
+  }
   return roles[name] || null;
+}
+/* Та же колонка, другая агрегация: среднее время обработки вместо суммы минут */
+function tplMetricAgg(ds, met, agg) {
+  const col = met && metricCol(ds, met);
+  return col ? { kind: 'simple', agg, col } : met;
 }
 /* Роль разреза → ключ колонки */
 function tplDimKey(name, roles) {
@@ -326,10 +349,13 @@ function tplBlockChart(b, ds, roles, derived) {
 
   if (b.kind === 'kpi') {
     if (!met) return null;
-    const title = autoMetricTitle(ds, met);
+    const km = b.agg ? tplMetricAgg(ds, met, b.agg) : met;   // своя агрегация у блока
+    // autoMetricTitle убирает приставку агрегации: «Сумма: Выручка» → «Выручка».
+    // Для среднего так нельзя — «Время обработки за месяц» прочтут как итог.
+    const title = b.agg && b.agg !== 'SUM' ? `${AGGS[b.agg] || b.agg}: ${autoMetricTitle(ds, km)}` : autoMetricTitle(ds, km);
     if (roles.date) return { name: `${title} за месяц`, viz: 'big_number_trend', size: size || { w: 4, h: 7 },
-      params: p({ metric: met, time_col: roles.date, x_grain: 'month', value_mode: 'last', compare_lag: 1, skip_partial: true, subheader: title }) };
-    return { name: title, viz: 'big_number', size: size || { w: 4, h: 7 }, params: p({ metric: met, compare: 'none', subheader: `${title} за период` }) };
+      params: p({ metric: km, time_col: roles.date, x_grain: 'month', value_mode: 'last', compare_lag: 1, skip_partial: true, subheader: title }) };
+    return { name: title, viz: 'big_number', size: size || { w: 4, h: 7 }, params: p({ metric: km, compare: 'none', subheader: `${title} за период` }) };
   }
   if (b.kind === 'docs') {
     const cols = [];
@@ -419,8 +445,25 @@ function buildFromTemplate(tpl, ds, roles, levelIds, derived) {
       const miss = (b.need || []).filter(n => !tplHas(n, roles, derived));
       if (miss.length) { skipped.push({ level: lv.id, need: miss }); return; }
       const c = tplBlockChart(b, ds, roles, derived);
-      if (c) charts.push(c); else skipped.push({ level: lv.id, need: [b.metric || b.by || b.viz] });
+      // Два одинаковых больших числа рядом выглядят как ошибка вёрстки. Так
+      // бывает, когда главного показателя нет и он падает на счётчик строк.
+      const dup = c && /^big_number/.test(c.viz)
+        && charts.some(x => /^big_number/.test(x.viz) && sameMetric(x.params.metric, c.params.metric));
+      if (c && !dup) charts.push(c); else skipped.push({ level: lv.id, need: [b.metric || b.by || b.viz] });
     });
+    /* Пропущенный показатель не должен оставлять дыру в первом ряду: сколько
+       больших чисел собралось — столько и ширина. Два числа по 6, три по 4,
+       одно во всю строку. Правило общее, поэтому новый шаблон о нём не думает. */
+    const kpis = [];
+    for (const c of charts) {
+      if (/^big_number/.test(c.viz) && c.size && c.size.h <= 8) kpis.push(c); else break;
+    }
+    if (kpis.length) {
+      const w = Math.floor(G_COLS / kpis.length);
+      kpis.forEach((c, i) => {
+        c.size = Object.assign({}, c.size, { w: i === kpis.length - 1 ? G_COLS - w * (kpis.length - 1) : w });
+      });
+    }
     if (charts.length) levels.push({ id: lv.id, title: TPL_LEVELS[lv.id].title, charts });
   });
   const filters = [];
