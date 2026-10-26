@@ -635,6 +635,7 @@ function renderDashboard(main, id, q) {
     compactLayout(t.items); layoutGrid();
     if (!t.items.length) paintBody();
     paintPanel();
+    if (aiUi) aiUi.repaint();
   }
   function moveItemToTab(it, t) {
     curTab().items = curTab().items.filter(x => x !== it);
@@ -661,6 +662,7 @@ function renderDashboard(main, id, q) {
     t.items.push(item);
     if (item.type === 'markdown') editingMd = item.i;
     paintBody();
+    if (aiUi) aiUi.repaint();
     requestAnimationFrame(() => { const c = cells.get(item.i); c && c.el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
   }
 

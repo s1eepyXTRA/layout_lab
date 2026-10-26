@@ -4651,6 +4651,7 @@ function renderDashboard(main, id, q) {
     compactLayout(t.items); layoutGrid();
     if (!t.items.length) paintBody();
     paintPanel();
+    if (aiUi) aiUi.repaint();
   }
   function moveItemToTab(it, t) {
     curTab().items = curTab().items.filter(x => x !== it);
@@ -4677,6 +4678,7 @@ function renderDashboard(main, id, q) {
     t.items.push(item);
     if (item.type === 'markdown') editingMd = item.i;
     paintBody();
+    if (aiUi) aiUi.repaint();
     requestAnimationFrame(() => { const c = cells.get(item.i); c && c.el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
   }
 
@@ -7852,8 +7854,9 @@ function aiRowsToCsv(ds) {
 async function aiExportCsv(ds) {
   const n = Math.min(ds.rows.length, AI_CSV_MAX);
   const cut = ds.rows.length > AI_CSV_MAX ? ` Это первые ${fmtNum(AI_CSV_MAX, 'int')} из ${fmtNum(ds.rows.length, 'int')}.` : '';
-  if (!(await confirmDialog('Выгрузить данные в CSV',
-    `Будет выгружено ${fmtNum(n, 'int')} ${plural(n, 'строка', 'строки', 'строк')} и ${ds.columns.length} ${plural(ds.columns.length, 'колонка', 'колонки', 'колонок')}.${cut} Данные придуманные.`,
+  if (!(await confirmDialog('Выгрузить пример данных',
+    `Будет выгружено ${fmtNum(n, 'int')} ${plural(n, 'строка', 'строки', 'строк')} и ${ds.columns.length} ${plural(ds.columns.length, 'колонка', 'колонки', 'колонок')}.${cut} `
+    + 'Строки придуманы Коброй: файл показывает, какие колонки нужны под этот шаблон, а не настоящие цифры.',
     'Выгрузить', false))) return;
   const name = `kobra-vymyshlennye-dannye-${slugKey(ds.name, 0, new Set())}-${isoDate(Date.now())}.csv`;
   if (downloadFile(name, '﻿' + aiRowsToCsv(ds), 'text/csv')) toast('Файл сохранён');
@@ -7892,6 +7895,7 @@ function renderAssistant(D, host, api) {
   let busy = false;
   // Бриф показываем первым, пока на него не ответили и не закрыли
   let briefOpen = !aiBriefFilled(aiBrief(D)) && !D.chatBriefSkipped && !aiLog(D).length;
+  let draftQ = '';         // набранный вопрос: панель перерисовывается часто
   const ds = () => api.ds();
   /* Отправку собирает paint() — она замкнута на поле ввода, которое там же и
      создаётся. Форме брифа нужна та же отправка, но из своей области видимости
@@ -7993,10 +7997,13 @@ function renderAssistant(D, host, api) {
     }
 
     // Ввод
-    const ta = h('textarea', { class: 'textarea ai-input', rows: 3, placeholder: 'Что показать в шаблоне?', 'aria-label': 'Запрос AI-ассистенту' });
+    const ta = h('textarea', { class: 'textarea ai-input', rows: 3, placeholder: 'Что показать в шаблоне?', 'aria-label': 'Запрос AI-ассистенту',
+      oninput: e => { draftQ = e.target.value; } });
+    ta.value = draftQ;
     const send = async (/** @type {string} */ forced) => {
       const q = String(forced || ta.value).trim();
       if (!q || busy) return;
+      draftQ = '';
       if (!aiReady()) { toast('Доступ к модели не настроен — воспользуйтесь переносом вручную', true); return; }
       busy = true; paint();
       aiPush(D, 'user', q);
@@ -8048,7 +8055,16 @@ function renderAssistant(D, host, api) {
     host.appendChild(row);
     if (real) host.appendChild(checkbox('Приложить к запросу ' + AI_SAMPLE_ROWS + ' строк данных (на один раз)', samples, v => { samples = v; }));
     else host.appendChild(h('div', { class: 'ai-note' }, 'Данные придуманы, поэтому наружу уходят только названия полей и состав шаблона.'));
-    if (isMockupDs(ds())) host.appendChild(h('button', { class: 'btn sm', style: { marginTop: '8px' }, onclick: () => aiExportCsv(ds()) }, ic('download'), 'Выгрузить данные в CSV'));
+    /* Выгрузка придуманных строк нужна, когда блоки уже есть: это пример
+       таблицы, по которому аналитик поймёт, какие колонки нужны. На пустом
+       шаблоне выгружать нечего, а кнопка пугает: «какие данные, я же ничего
+       ещё не сделал». */
+    const hasBlocks = (D.tabs || []).some(t => (t.items || []).some(i => i.chartId));
+    if (isMockupDs(ds()) && hasBlocks) host.appendChild(h('button', {
+      class: 'btn sm', style: { marginTop: '8px' },
+      title: 'Придуманная таблица, на которой стоят блоки: пример того, какие колонки нужны аналитику',
+      onclick: () => aiExportCsv(ds()),
+    }, ic('download'), 'Выгрузить пример данных'));
     if (!aiReady()) host.appendChild(h('div', { class: 'ai-note' },
       'Доступ к модели не настроен: укажите адрес и модель в шестерёнке — или работайте переносом вручную, он не требует ни ключей, ни сети.'));
   };
