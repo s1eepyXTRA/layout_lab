@@ -356,7 +356,7 @@ function renderAssistant(D, host, api) {
         takeAnswer(text);
       } catch (e) {
         aiPush(D, 'system', 'Не получилось: ' + e.message + (e.kind === 'no_access' ? ' Проверьте настройки доступа.' : e.kind === 'network' ? ' Можно перенести запрос вручную.' : ''));
-        if (!forced) ta.value = q;   // введённое не теряем
+        if (!forced) { ta.value = q; draftQ = q; }   // введённое не теряем и при перерисовке
       }
       samples = false; busy = false; paint();
       if (ta.isConnected) ta.focus();
