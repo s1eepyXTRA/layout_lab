@@ -5,7 +5,7 @@
 import os, sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC, VENDOR = os.path.join(ROOT, 'src'), os.path.join(ROOT, 'vendor')
-ORDER = ['types.js', 'data.js', 'engine.js', 'ui.js', 'auth.js', 'store.js', 'router.js', 'grid.js', 'viz.js', 'app.js', 'dashboard.js', 'explore.js', 'datasets.js', 'schema.js', 'autodash.js', 'templates.js', 'guided.js', 'assistant.js', 'share.js', 'spec.js']
+ORDER = ['types.js', 'data.js', 'engine.js', 'ui.js', 'auth.js', 'store.js', 'router.js', 'grid.js', 'viz.js', 'app.js', 'dashboard.js', 'explore.js', 'datasets.js', 'schema.js', 'autodash.js', 'templates.js', 'guided.js', 'assistant.js', 'aidraft.js', 'share.js', 'spec.js']
 CDN = {
     'echarts.min.js': 'https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js',
     'marked.min.js': 'https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js',

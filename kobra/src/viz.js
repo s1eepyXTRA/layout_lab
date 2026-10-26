@@ -1050,12 +1050,15 @@ VIZ.treemap = {
 const VIZ_ORDER = ['line', 'mixed', 'bar', 'area', 'table', 'pivot', 'big_number', 'big_number_trend', 'funnel', 'bullet', 'heatmap', 'pie', 'treemap'];
 
 /* Отрисовка графика с перехватом ошибок */
+/* Возвращает текст ошибки, если блок не построился: AI-ассистент
+   прикладывает эти сообщения к доработке, чтобы человеку не приходилось
+   описывать поломку словами. */
 function renderChart(root, chart, opts = {}) {
   const ds = dsGet(chart.datasetId);
   const viz = VIZ[chart.viz];
   root._lastData = null;
-  if (!ds) return vizMsg(root, 'Набор данных не найден. Возможно, его удалили.', true);
-  if (!viz) return vizMsg(root, 'Неизвестный тип графика', true);
+  if (!ds) { vizMsg(root, 'Набор данных не найден. Возможно, его удалили.', true); return 'набор данных не найден'; }
+  if (!viz) { vizMsg(root, 'Неизвестный тип графика', true); return 'неизвестный тип графика'; }
   const scheme = COLOR_SCHEMES[opts.scheme || chart.params.color_scheme] || COLOR_SCHEMES.kobra;
   const params = Object.assign({}, viz.defaults(ds), chart.params);
   const ctx = {
@@ -1065,7 +1068,8 @@ function renderChart(root, chart, opts = {}) {
     cross: opts.onCross || null, crossActive: opts.crossActive || null,
   };
   try { viz.render(root, ctx); }
-  catch (e) { console.error(e); vizMsg(root, 'Ошибка построения: ' + e.message, true); }
+  catch (e) { console.error(e); vizMsg(root, 'Ошибка построения: ' + e.message, true); return e.message; }
+  return null;
 }
 function buildChartFilters(ds, params, extra) {
   const out = [];

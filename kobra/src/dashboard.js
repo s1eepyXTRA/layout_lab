@@ -2,6 +2,9 @@
    Кобра · дашборд
    ============================================================ */
 const tabMemory = {};
+/* Что не построилось: chartId → текст ошибки. Нужен AI-ассистенту при
+   доработке — он чинит то, что реально сломалось. */
+const chartErrors = {};
 const crossMemory = {};
 let fbarOpen = !(window.innerWidth < 760);
 
@@ -162,6 +165,17 @@ function renderDashboard(main, id, q) {
   function paintHead() {
     const head = h('div', { class: 'dash-head' + (D.preview ? ' ex' : '') });
     const aiBtn = () => h('button', { class: 'btn ai' + (aiOpen ? ' on' : ''), title: 'Описать задачу словами — AI-ассистент предложит блоки', onclick: aiToggle }, 'AI-ассистент');
+    /* Черновик по описанию: ничего ещё не сохранено, поэтому в шапке —
+       «Сохранить», «Доработать» и «Отменить», а не обычные кнопки правки. */
+    if (D.aiDraft) {
+      head.append(
+        h('button', { class: 'btn', title: 'Выбросить черновик', onclick: () => aiDraftDrop(id) }, 'Отменить'),
+        h('h1', null, D.title, h('span', { class: 'pill acc', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: 'Пока не сохранён: уйдёте со страницы — пропадёт' }, 'Черновик')),
+        h('div', { class: 'grow' }),
+        h('button', { class: 'btn ai', title: 'Сказать, что поправить, и пересобрать', onclick: () => openAiComposer({ draftId: id }) }, 'Доработать'),
+        h('button', { class: 'btn primary', onclick: () => aiDraftSave(id) }, ic('check'), 'Сохранить шаблон'));
+      return head;
+    }
     // Пример шаблона живёт только в памяти и пропадает при уходе со страницы:
     // править его бессмысленно, поэтому в шапке — возврат в каталог и выбор
     // шаблона. Шапка прилипает, иначе на длинном примере возврат уезжает вверх.
@@ -523,7 +537,8 @@ function renderDashboard(main, id, q) {
     if (!chart) return vizMsg(c.root, 'График удалён', true);
     const ex = extraFiltersFor(c.chartId);
     const ds = dsGet(chart.datasetId);
-    renderChart(c.root, chart, { scheme: D.scheme, extraFilters: ex, onCross: onCross(c.chartId), crossActive: (cross.find(x => x.source === c.chartId) || {}).filters });
+    const err = renderChart(c.root, chart, { scheme: D.scheme, extraFilters: ex, onCross: onCross(c.chartId), crossActive: (cross.find(x => x.source === c.chartId) || {}).filters });
+    if (err) chartErrors[c.chartId] = err; else delete chartErrors[c.chartId];
     if (c.badge) {
       const n = ds ? ex.filter(f => dsCol(ds, f.col)).length : 0;
       clear(c.badge);

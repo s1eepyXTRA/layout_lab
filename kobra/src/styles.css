@@ -286,6 +286,8 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .tpl-thumb i.k svg { color: var(--primary); opacity: .65; }
 .tpl-thumb i.m { background: var(--surface-3); border-color: transparent; }
 .tpl-card.off .tpl-thumb { filter: grayscale(1); }
+.ai-ex { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.ai-ex .muted { font-size: 13px; }
 .tpl-tags { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 16px; }
 .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 18px; }
 .tpl-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }
