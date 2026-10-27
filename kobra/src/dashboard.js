@@ -772,7 +772,7 @@ function renderDashboard(main, id, q) {
     if (panelTab === 'charts' && isMockupDs(mockupDs)) {
       // В макете блок выбирается видом: данные под него уже есть
       body.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '0 0 10px' } },
-        'Выберите вид блока. Название, показатель и категории меняются прямо на блоке, а метрики, фильтры и сортировка — по шестерёнке на самом блоке.'));
+        'Данные под блок уже есть — выберите вид.'));
       mockupBlockOptions(mockupDs).forEach(b => body.appendChild(h('button', { class: 'comp', onclick: () => {
         const cid = createMockupChart(mockupDs, b.viz);
         if (!cid) { toast('Такой блок на этих данных не построить', true); return; }
@@ -942,8 +942,8 @@ function renderDashboard(main, id, q) {
     if (editing) dmain.appendChild(h('div', { class: 'edit-banner' }, ic('edit'), 'Режим редактирования. Изменения появятся у всех после нажатия «Сохранить».'));
     if (tuning) dmain.appendChild(h('div', { class: 'edit-banner' }, ic('edit'),
       isMockupDs(dsGet((D.fromTemplate || {}).datasetId))
-        ? 'Меняйте названия, показатели, единицы и категории прямо на блоках. Категории и подписи живут в данных, поэтому поменяются сразу во всех блоках.'
-        : 'Меняйте названия блоков и разрезы прямо здесь. Данные набора при этом не трогаются — правятся только подписи.'));
+        ? 'Названия и категории правятся прямо на блоках — и сразу во всех.'
+        : 'Правятся только подписи блоков, данные не трогаются.'));
     const fakeNames = [...new Set(D.tabs.flatMap(t => t.items.map(i => i.chartId && (STATE.charts[i.chartId] || {}).datasetId))
       .filter(x => isSchemaDs(DS[x])).map(x => DS[x].name))];
     // У макета пометка маленькая, рядом с названием: большая полоса занимает
@@ -1035,7 +1035,7 @@ function openFilterEditorModal(D, onSave) {
         field('Тип фильтра', selectEl([['select', 'Значение'], ['time', 'Период'], ['range', 'Числовой диапазон']], f.type, v => { f.type = v; resetCol(); paintForm(); })),
         field('Набор данных', selectEl(dsIds.map(k => [k, DS[k].name]), f.datasetId, v => { f.datasetId = v; resetCol(); paintForm(); }))),
       field('Колонка', selectEl(colsFor().map(c => [c.key, c.label || c.key]), f.col, v => { f.col = v; f.def = f.type === 'time' ? { preset: 'all' } : f.type === 'range' ? ['', ''] : []; paintForm(); }),
-        'Фильтр применяется ко всем графикам в области действия, в наборах которых есть колонка с таким же ключом.'));
+        'Действует на блоки, где есть колонка с таким же ключом.'));
     if (f.type === 'select') {
       form.append(checkbox('Можно выбрать несколько значений', f.multi !== false, v => { f.multi = v; }),
         checkbox('Показывать только значения, подходящие под другие фильтры', !!f.dependent, v => { f.dependent = v; }),

@@ -256,7 +256,7 @@ function openUsersDialog() {
   const paint = () => {
     clear(body);
     body.appendChild(h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } },
-      'Список приходит из каталога LDAP. Роль по умолчанию даёт сопоставление групп (экран «Доступ»); здесь её можно переопределить вручную — как в Security → List Users.'));
+      'Список приходит из каталога LDAP; роль можно переопределить вручную.'));
     const tbl = h('table', { class: 'list' },
       h('thead', null, h('tr', null, h('th', null, 'Сотрудник'), h('th', null, 'Логин'), h('th', null, 'Команда'), h('th', null, 'Роль'))));
     const tb = h('tbody');
@@ -289,7 +289,7 @@ function openAuthCfgDialog() {
   const paint = () => {
     clear(body);
     body.appendChild(h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } },
-      'Те же настройки, что в superset_config.py: способ входа, подключение к каталогу и сопоставление групп ролям.'));
+      'Те же настройки, что в superset_config.py.'));
     body.appendChild(field('Способ входа (AUTH_TYPE)', selectEl(
       [['db', 'По логину и паролю (AUTH_DB)'], ['ldap', 'По LDAP (AUTH_LDAP)']], cfg.type, v => { cfg.type = v; paint(); }),
       cfg.type === 'ldap' ? 'Вход проверяется bind-ом в каталоге. В прототипе каталог вымышленный.' : 'Пароль хранится в базе приложения. В прототипе он не проверяется.'));
@@ -372,7 +372,7 @@ function renderSignIn(onDone) {
     h('button', { class: 'btn primary', type: 'submit', style: { width: '100%' } }, 'Войти'),
     h('div', { class: 'signin-note' },
       h('b', null, 'Это прототип: пароль не проверяется.'),
-      ' Права здесь показывают порядок доступа, а не защищают данные — всё состояние лежит в этом браузере. Настоящая проверка появится вместе с сервером.'),
+      ' Всё состояние лежит в этом браузере: права показывают порядок доступа, а не защищают данные.'),
     h('details', { class: 'signin-demo' }, h('summary', null, 'Кого можно попробовать'),
       h('ul', null, authUsers().map(u => h('li', null,
         h('b', null, u.login), ` — ${u.name}, ${u.team}, роль ${authRoleOf(u)}`)))));

@@ -49,7 +49,7 @@ function seedState() {
     id: 'd_demo', title: 'Продажи розничной сети', updated: Date.now(), crossFilter: true, scheme: null,
     tabs: [
       { id: 't1', title: 'Обзор', items: [
-        { i: uid('i'), type: 'markdown', x: 0, y: 0, w: 12, h: 3, text: '**Шаблон продаж.** Данные вымышленные: розничная сеть, январь 2024 — август 2026. Кликните по столбцу, сектору или строке — остальные графики отфильтруются.' },
+        { i: uid('i'), type: 'markdown', x: 0, y: 0, w: 12, h: 3, text: '**Шаблон продаж.** Данные вымышленные. Клик по столбцу или сектору фильтрует остальные блоки.' },
         ch('c_rev', 0, 3, 3, 7), ch('c_orders', 3, 3, 3, 7), ch('c_check', 6, 3, 3, 7), ch('c_marg', 9, 3, 3, 7),
         ch('c_mixed', 0, 10, 8, 13), ch('c_channel', 8, 10, 4, 13),
         ch('c_cat_bar', 0, 23, 6, 13), ch('c_cat_area', 6, 23, 6, 13),
@@ -220,24 +220,22 @@ function fmtWhen(ts) {
    «мои данные» — это не создание дашборда, а загрузка файла. */
 const START_WAYS = [
   { id: 'tpl', icon: 'schema', rec: true, title: 'Готовый шаблон',
-    desc: 'Заготовленные отчёты: выбираете подходящий, а дальше при необходимости дорабатываете. Кобра соберёт его на придуманных данных и разложит по уровням — общая картина, разбор, исходные строки.',
-    note: 'Зачастую подходит именно это: состав и оформление сделаны по стандартам визуализации, а названия блоков, показателей и категорий правятся прямо в шаблоне.',
+    desc: 'Скелет уже собран по стандартам — поправите названия под свой процесс.',
     act: () => go('#/templates') },
   { id: 'ai', icon: 'wand', title: 'Описать словами',
-    desc: 'Пишете, что хотите видеть, — AI-ассистент собирает шаблон целиком: вкладки, блоки и придуманные данные под них. Дальше можно дорабатывать той же строкой.',
+    desc: 'Опишите, что хотите видеть, — AI-ассистент соберёт шаблон целиком.',
     act: () => openAiComposer({}) },
   { id: 'blank', icon: 'plus', title: 'Начать с нуля',
-    desc: 'Пустой шаблон, в котором вы сами накидаете блоки, графики и вкладки. Данные под них Кобра придумает — выбирать набор не нужно.',
+    desc: 'Чистый лист: блоки добавляете сами, данные Кобра придумает.',
     act: () => createBlankDashboard() },
   { id: 'own', icon: 'upload', title: 'Мои данные', btn: 'Загрузить файл',
-    desc: 'Загружаете CSV или Excel и строите по своим цифрам: то же самое, но на настоящих данных вашей выгрузки.',
+    desc: 'CSV или Excel — то же самое, но на ваших цифрах.',
     act: () => go('#/data') },
 ];
 function startCard(w, onPick) {
   return h('div', { class: 'start-card' + (w.rec ? ' rec' : '') },
     h('div', { class: 'start-ic' }, ic(w.icon)),
     h('b', null, w.title), h('p', null, w.desc),
-    w.note ? h('p', { class: 'start-note' }, w.note) : null,
     h('button', { class: 'btn ' + (w.rec ? 'primary' : ''), onclick: () => { onPick && onPick(); w.act(); } }, w.btn || 'Выбрать'));
 }
 function startChoice(ids) {
@@ -252,8 +250,7 @@ function renderDashboardList(main) {
   const own = list.filter(d => d.id !== 'd_demo');
   if (!own.length) {
     page.appendChild(h('div', { class: 'page-head' },
-      h('div', { class: 'grow' }, h('h1', null, 'С чего начнём'),
-        h('p', null, 'Кобра собирает шаблоны по вашим данным. Выберите, как удобнее начать — потом всё можно поправить.')),
+      h('div', { class: 'grow' }, h('h1', null, 'С чего начнём')),
       h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла')));
     page.appendChild(startChoice());
     if (list.length) {

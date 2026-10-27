@@ -274,7 +274,7 @@ function openSchemaDialog(existingId) {
     })));
     body.appendChild(h('div', { class: 'field' },
       h('div', { class: 'lbl' }, 'Колонки'),
-      h('div', { class: 'hint', style: { marginBottom: '6px' } }, 'Вставьте шапку из Excel или перечислите названия через запятую — тип Кобра угадает по названию.'),
+      h('div', { class: 'hint', style: { marginBottom: '6px' } }, 'Вставьте шапку из Excel или перечислите названия через запятую.'),
       paste,
       h('div', { style: { display: 'flex', gap: '8px', marginTop: '8px' } },
         h('button', {
@@ -316,7 +316,7 @@ function openSchemaDialog(existingId) {
           h('td', { class: 'act' }, iconBtn('trash', 'Убрать колонку', () => { cols.splice(i, 1); paint(); }, 'sm'))))));
       body.appendChild(h('div', { class: 'tbl-wrap', style: { marginBottom: '14px' } }, tbl));
     } else {
-      body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px' } }, 'Пока ни одной колонки. Для шаблона обычно хватает одной даты, одного-двух текстовых разрезов и одного числа.'));
+      body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px' } }, 'Пока ни одной колонки. Обычно хватает даты, пары разрезов и числа.'));
     }
 
     body.appendChild(h('div', { class: 'row2' },

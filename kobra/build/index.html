@@ -14,8 +14,8 @@
   --bg: #EEF0F3; --surface: #FFFFFF; --surface-2: #F6F7F9; --surface-3: #E7EAEF;
   --ink: #1F2430; --ink-2: #4C5361; --ink-3: #7D8595; --line: #DCE0E7; --line-2: #C5CBD6;
   --primary: #0E7457; --primary-hover: #0B5F47; --primary-ink: #FFFFFF; --primary-soft: #DEF0E8;
-  --brand: #E06A1B;
-  --accent: #A8481A; --accent-soft: #FBE9DA; --accent-ink: #FFFFFF;
+  --brand: #E06A1B; --brand-2: #A8481A; --brand-soft: #FBE9DA; --brand-ink: #FFFFFF;
+  --accent: #4C5361; --accent-soft: #E7EAEF;
   --danger: #C22F3C; --danger-soft: #FBE5E8; --up: #18845A; --down: #C22F3C;
   --bar: #FFFFFF; --bar-ink: #1F2430; --bar-ink-2: #6E7684; --bar-hover: rgba(31, 36, 48, .07);
   --shadow: 0 1px 2px rgba(31, 36, 48, .06), 0 8px 24px -12px rgba(31, 36, 48, .20);
@@ -30,8 +30,8 @@
     --bg: #171B23; --surface: #1E222B; --surface-2: #262B36; --surface-3: #2F3542;
     --ink: #ECEFF4; --ink-2: #A9B2C0; --ink-3: #7B8595; --line: #333A47; --line-2: #414A59;
     --primary: #3DBB8C; --primary-hover: #5CCDA2; --primary-ink: #07261B; --primary-soft: #1B3A2F;
-    --brand: #E06A1B;
-    --accent: #F2A65A; --accent-soft: #3A2415; --accent-ink: #2A1405;
+    --brand: #E06A1B; --brand-2: #F2A65A; --brand-soft: #3A2415; --brand-ink: #2A1405;
+    --accent: #A9B2C0; --accent-soft: #2F3542;
     --danger: #F0727C; --danger-soft: #3B1D22; --up: #4CC98F; --down: #F0727C;
     --bar: #1E222B; --bar-ink: #ECEFF4; --bar-ink-2: #98A2B2; --bar-hover: rgba(255, 255, 255, .08);
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .5);
@@ -43,8 +43,8 @@
   --bg: #171B23; --surface: #1E222B; --surface-2: #262B36; --surface-3: #2F3542;
   --ink: #ECEFF4; --ink-2: #A9B2C0; --ink-3: #7B8595; --line: #333A47; --line-2: #414A59;
   --primary: #3DBB8C; --primary-hover: #5CCDA2; --primary-ink: #07261B; --primary-soft: #1B3A2F;
-  --brand: #E06A1B;
-  --accent: #F2A65A; --accent-soft: #3A2415; --accent-ink: #2A1405;
+  --brand: #E06A1B; --brand-2: #F2A65A; --brand-soft: #3A2415; --brand-ink: #2A1405;
+  --accent: #A9B2C0; --accent-soft: #2F3542;
   --danger: #F0727C; --danger-soft: #3B1D22; --up: #4CC98F; --down: #F0727C;
   --bar: #1E222B; --bar-ink: #ECEFF4; --bar-ink-2: #98A2B2; --bar-hover: rgba(255, 255, 255, .08);
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .5);
@@ -100,9 +100,9 @@ a { color: var(--primary); }
 .btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
 .btn.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 /* AI-ассистент — не рядовая кнопка: свой цвет, чтобы находиться глазами сразу */
-.btn.ai { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-.btn.ai:hover { border-color: var(--accent); }
-.btn.ai.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.ai { background: var(--brand-soft); border-color: var(--brand); color: var(--brand-2); }
+.btn.ai:hover { border-color: var(--brand-2); }
+.btn.ai.on { background: var(--brand-2); border-color: var(--brand-2); color: var(--brand-ink); }
 .btn.ghost { border-color: transparent; background: transparent; }
 .btn.ghost:hover { background: var(--surface-3); }
 .btn.danger { color: var(--danger); }
@@ -163,7 +163,7 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .vt { display: inline-flex; align-items: center; gap: 8px; }
 .vt svg { width: 18px; height: 18px; color: var(--primary); flex: none; }
 .pill { display: inline-block; padding: 1px 8px; border-radius: 99px; background: var(--surface-3); color: var(--ink-2); font-size: 12px; font-weight: 500; }
-.pill.acc { background: var(--accent-soft); color: var(--accent); }
+.pill.acc { background: var(--brand-soft); color: var(--brand-2); }
 .pill.pri { background: var(--primary-soft); color: var(--primary); }
 .empty { padding: 48px 24px; text-align: center; color: var(--ink-2); }
 .empty b { display: block; color: var(--ink); font-size: 16px; margin-bottom: 6px; }
@@ -182,7 +182,7 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .fbar-foot .btn { flex: 1; }
 .fbar .fitem { margin-bottom: 16px; }
 .fbar .fitem > .lbl { font-size: 13px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
-.fbar .fitem > .lbl .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.fbar .fitem > .lbl .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); }
 .fbar .sec { font-size: 12px; font-weight: 600; color: var(--ink-3); margin: 18px 0 8px; }
 .xf-chip { display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 10px; border-radius: var(--r-m); background: var(--accent-soft); margin-bottom: 6px; font-size: 13px; }
 .xf-chip span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -283,7 +283,7 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .share-row span { font-size: 12.5px; color: var(--ink-3); }
 .row-inline { display: flex; gap: 8px; align-items: center; }
 .row-inline .input { flex: 1; min-width: 0; }
-.owner-tag { font-size: 12px; color: var(--ink-3); }
+.owner-tag { display: block; font-size: 12px; color: var(--ink-3); }
 /* ТЗ по блокам: карточка на блок читается лучше, чем таблица в пять колонок */
 .spec-rows { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .spec-row { border: 1px solid var(--line); border-radius: var(--r-m); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
@@ -310,25 +310,22 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .tpl-head b { font: 600 16px/1.3 var(--font-display); }
 .tpl-card p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
 .tpl-card p.muted { color: var(--ink-3); font-size: 12.5px; }
-.tpl-levels { margin: 2px 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
-.tpl-levels li { margin: 2px 0; }
 .tpl-miss { background: var(--accent-soft); border-radius: var(--r-m); padding: 7px 10px; font-size: 12.5px; }
 .tpl-act { display: flex; gap: 8px; margin-top: auto; padding-top: 6px; }
 .tpl-plan { background: var(--surface-2); border-radius: var(--r-m); padding: 10px 12px; margin-top: 10px; }
 .tpl-plan p { margin: 0 0 6px; font-size: 13px; }
 .tpl-plan b { font-weight: 600; }
 /* Стартовый выбор пути */
-.start-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 8px; }
+.start-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 16px; margin-top: 8px; }
 .start-choice.tight { gap: 14px; margin-top: 0; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .start-choice.tight .start-card { padding: 16px 18px; box-shadow: none; }
-.start-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); padding: 22px 24px; display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
+.start-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }
 .start-card.rec { border-color: var(--primary); }
 .start-ic { width: 40px; height: 40px; border-radius: 10px; background: var(--surface-3); color: var(--ink-2); display: grid; place-items: center; }
 .start-card.rec .start-ic { background: var(--primary-soft); color: var(--primary); }
 .start-ic svg { width: 22px; height: 22px; }
 .start-card b { font: 600 18px/1.3 var(--font-display); }
 .start-card p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
-.start-card .start-note { color: var(--ink-3); font-size: 12.5px; }
 .start-card .btn { margin-top: auto; align-self: flex-start; }
 /* Простая правка */
 .tune-bar { border-top: 1px solid var(--line); padding: 8px 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--surface-2); border-radius: 0 0 var(--r-l) var(--r-l); }
@@ -2043,7 +2040,7 @@ function openUsersDialog() {
   const paint = () => {
     clear(body);
     body.appendChild(h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } },
-      'Список приходит из каталога LDAP. Роль по умолчанию даёт сопоставление групп (экран «Доступ»); здесь её можно переопределить вручную — как в Security → List Users.'));
+      'Список приходит из каталога LDAP; роль можно переопределить вручную.'));
     const tbl = h('table', { class: 'list' },
       h('thead', null, h('tr', null, h('th', null, 'Сотрудник'), h('th', null, 'Логин'), h('th', null, 'Команда'), h('th', null, 'Роль'))));
     const tb = h('tbody');
@@ -2076,7 +2073,7 @@ function openAuthCfgDialog() {
   const paint = () => {
     clear(body);
     body.appendChild(h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } },
-      'Те же настройки, что в superset_config.py: способ входа, подключение к каталогу и сопоставление групп ролям.'));
+      'Те же настройки, что в superset_config.py.'));
     body.appendChild(field('Способ входа (AUTH_TYPE)', selectEl(
       [['db', 'По логину и паролю (AUTH_DB)'], ['ldap', 'По LDAP (AUTH_LDAP)']], cfg.type, v => { cfg.type = v; paint(); }),
       cfg.type === 'ldap' ? 'Вход проверяется bind-ом в каталоге. В прототипе каталог вымышленный.' : 'Пароль хранится в базе приложения. В прототипе он не проверяется.'));
@@ -2159,7 +2156,7 @@ function renderSignIn(onDone) {
     h('button', { class: 'btn primary', type: 'submit', style: { width: '100%' } }, 'Войти'),
     h('div', { class: 'signin-note' },
       h('b', null, 'Это прототип: пароль не проверяется.'),
-      ' Права здесь показывают порядок доступа, а не защищают данные — всё состояние лежит в этом браузере. Настоящая проверка появится вместе с сервером.'),
+      ' Всё состояние лежит в этом браузере: права показывают порядок доступа, а не защищают данные.'),
     h('details', { class: 'signin-demo' }, h('summary', null, 'Кого можно попробовать'),
       h('ul', null, authUsers().map(u => h('li', null,
         h('b', null, u.login), ` — ${u.name}, ${u.team}, роль ${authRoleOf(u)}`)))));
@@ -3487,7 +3484,7 @@ function seedState() {
     id: 'd_demo', title: 'Продажи розничной сети', updated: Date.now(), crossFilter: true, scheme: null,
     tabs: [
       { id: 't1', title: 'Обзор', items: [
-        { i: uid('i'), type: 'markdown', x: 0, y: 0, w: 12, h: 3, text: '**Шаблон продаж.** Данные вымышленные: розничная сеть, январь 2024 — август 2026. Кликните по столбцу, сектору или строке — остальные графики отфильтруются.' },
+        { i: uid('i'), type: 'markdown', x: 0, y: 0, w: 12, h: 3, text: '**Шаблон продаж.** Данные вымышленные. Клик по столбцу или сектору фильтрует остальные блоки.' },
         ch('c_rev', 0, 3, 3, 7), ch('c_orders', 3, 3, 3, 7), ch('c_check', 6, 3, 3, 7), ch('c_marg', 9, 3, 3, 7),
         ch('c_mixed', 0, 10, 8, 13), ch('c_channel', 8, 10, 4, 13),
         ch('c_cat_bar', 0, 23, 6, 13), ch('c_cat_area', 6, 23, 6, 13),
@@ -3658,24 +3655,22 @@ function fmtWhen(ts) {
    «мои данные» — это не создание дашборда, а загрузка файла. */
 const START_WAYS = [
   { id: 'tpl', icon: 'schema', rec: true, title: 'Готовый шаблон',
-    desc: 'Заготовленные отчёты: выбираете подходящий, а дальше при необходимости дорабатываете. Кобра соберёт его на придуманных данных и разложит по уровням — общая картина, разбор, исходные строки.',
-    note: 'Зачастую подходит именно это: состав и оформление сделаны по стандартам визуализации, а названия блоков, показателей и категорий правятся прямо в шаблоне.',
+    desc: 'Скелет уже собран по стандартам — поправите названия под свой процесс.',
     act: () => go('#/templates') },
   { id: 'ai', icon: 'wand', title: 'Описать словами',
-    desc: 'Пишете, что хотите видеть, — AI-ассистент собирает шаблон целиком: вкладки, блоки и придуманные данные под них. Дальше можно дорабатывать той же строкой.',
+    desc: 'Опишите, что хотите видеть, — AI-ассистент соберёт шаблон целиком.',
     act: () => openAiComposer({}) },
   { id: 'blank', icon: 'plus', title: 'Начать с нуля',
-    desc: 'Пустой шаблон, в котором вы сами накидаете блоки, графики и вкладки. Данные под них Кобра придумает — выбирать набор не нужно.',
+    desc: 'Чистый лист: блоки добавляете сами, данные Кобра придумает.',
     act: () => createBlankDashboard() },
   { id: 'own', icon: 'upload', title: 'Мои данные', btn: 'Загрузить файл',
-    desc: 'Загружаете CSV или Excel и строите по своим цифрам: то же самое, но на настоящих данных вашей выгрузки.',
+    desc: 'CSV или Excel — то же самое, но на ваших цифрах.',
     act: () => go('#/data') },
 ];
 function startCard(w, onPick) {
   return h('div', { class: 'start-card' + (w.rec ? ' rec' : '') },
     h('div', { class: 'start-ic' }, ic(w.icon)),
     h('b', null, w.title), h('p', null, w.desc),
-    w.note ? h('p', { class: 'start-note' }, w.note) : null,
     h('button', { class: 'btn ' + (w.rec ? 'primary' : ''), onclick: () => { onPick && onPick(); w.act(); } }, w.btn || 'Выбрать'));
 }
 function startChoice(ids) {
@@ -3690,8 +3685,7 @@ function renderDashboardList(main) {
   const own = list.filter(d => d.id !== 'd_demo');
   if (!own.length) {
     page.appendChild(h('div', { class: 'page-head' },
-      h('div', { class: 'grow' }, h('h1', null, 'С чего начнём'),
-        h('p', null, 'Кобра собирает шаблоны по вашим данным. Выберите, как удобнее начать — потом всё можно поправить.')),
+      h('div', { class: 'grow' }, h('h1', null, 'С чего начнём')),
       h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла')));
     page.appendChild(startChoice());
     if (list.length) {
@@ -4732,7 +4726,7 @@ function renderDashboard(main, id, q) {
     if (panelTab === 'charts' && isMockupDs(mockupDs)) {
       // В макете блок выбирается видом: данные под него уже есть
       body.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '0 0 10px' } },
-        'Выберите вид блока. Название, показатель и категории меняются прямо на блоке, а метрики, фильтры и сортировка — по шестерёнке на самом блоке.'));
+        'Данные под блок уже есть — выберите вид.'));
       mockupBlockOptions(mockupDs).forEach(b => body.appendChild(h('button', { class: 'comp', onclick: () => {
         const cid = createMockupChart(mockupDs, b.viz);
         if (!cid) { toast('Такой блок на этих данных не построить', true); return; }
@@ -4902,8 +4896,8 @@ function renderDashboard(main, id, q) {
     if (editing) dmain.appendChild(h('div', { class: 'edit-banner' }, ic('edit'), 'Режим редактирования. Изменения появятся у всех после нажатия «Сохранить».'));
     if (tuning) dmain.appendChild(h('div', { class: 'edit-banner' }, ic('edit'),
       isMockupDs(dsGet((D.fromTemplate || {}).datasetId))
-        ? 'Меняйте названия, показатели, единицы и категории прямо на блоках. Категории и подписи живут в данных, поэтому поменяются сразу во всех блоках.'
-        : 'Меняйте названия блоков и разрезы прямо здесь. Данные набора при этом не трогаются — правятся только подписи.'));
+        ? 'Названия и категории правятся прямо на блоках — и сразу во всех.'
+        : 'Правятся только подписи блоков, данные не трогаются.'));
     const fakeNames = [...new Set(D.tabs.flatMap(t => t.items.map(i => i.chartId && (STATE.charts[i.chartId] || {}).datasetId))
       .filter(x => isSchemaDs(DS[x])).map(x => DS[x].name))];
     // У макета пометка маленькая, рядом с названием: большая полоса занимает
@@ -4995,7 +4989,7 @@ function openFilterEditorModal(D, onSave) {
         field('Тип фильтра', selectEl([['select', 'Значение'], ['time', 'Период'], ['range', 'Числовой диапазон']], f.type, v => { f.type = v; resetCol(); paintForm(); })),
         field('Набор данных', selectEl(dsIds.map(k => [k, DS[k].name]), f.datasetId, v => { f.datasetId = v; resetCol(); paintForm(); }))),
       field('Колонка', selectEl(colsFor().map(c => [c.key, c.label || c.key]), f.col, v => { f.col = v; f.def = f.type === 'time' ? { preset: 'all' } : f.type === 'range' ? ['', ''] : []; paintForm(); }),
-        'Фильтр применяется ко всем графикам в области действия, в наборах которых есть колонка с таким же ключом.'));
+        'Действует на блоки, где есть колонка с таким же ключом.'));
     if (f.type === 'select') {
       form.append(checkbox('Можно выбрать несколько значений', f.multi !== false, v => { f.multi = v; }),
         checkbox('Показывать только значения, подходящие под другие фильтры', !!f.dependent, v => { f.dependent = v; }),
@@ -6076,7 +6070,7 @@ function openSchemaDialog(existingId) {
     })));
     body.appendChild(h('div', { class: 'field' },
       h('div', { class: 'lbl' }, 'Колонки'),
-      h('div', { class: 'hint', style: { marginBottom: '6px' } }, 'Вставьте шапку из Excel или перечислите названия через запятую — тип Кобра угадает по названию.'),
+      h('div', { class: 'hint', style: { marginBottom: '6px' } }, 'Вставьте шапку из Excel или перечислите названия через запятую.'),
       paste,
       h('div', { style: { display: 'flex', gap: '8px', marginTop: '8px' } },
         h('button', {
@@ -6118,7 +6112,7 @@ function openSchemaDialog(existingId) {
           h('td', { class: 'act' }, iconBtn('trash', 'Убрать колонку', () => { cols.splice(i, 1); paint(); }, 'sm'))))));
       body.appendChild(h('div', { class: 'tbl-wrap', style: { marginBottom: '14px' } }, tbl));
     } else {
-      body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px' } }, 'Пока ни одной колонки. Для шаблона обычно хватает одной даты, одного-двух текстовых разрезов и одного числа.'));
+      body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px' } }, 'Пока ни одной колонки. Обычно хватает даты, пары разрезов и числа.'));
     }
 
     body.appendChild(h('div', { class: 'row2' },
@@ -6618,7 +6612,7 @@ const TEMPLATES = [
     tags: ['dynamics', 'parts'],
     name: 'Показатель во времени и в разрезах',
     dash: 'Сводка процесса',
-    desc: 'Самый универсальный скелет: один главный показатель — как он менялся, из чего складывается и какие строки за ним стоят. С него стоит начинать, если не уверены, что выбрать.',
+    desc: 'Один показатель: как менялся и из чего складывается. С него стоит начинать.',
     examples: ['выручка по филиалам и месяцам', 'количество заявок по категориям', 'объём выпуска по цехам', 'затраты по статьям'],
     need: ['date', 'dim1'],
     demo: ['Дата', 'Подразделение', 'Категория', 'Статус', 'Сумма, ₽', 'Количество, шт.'],
@@ -6645,7 +6639,7 @@ const TEMPLATES = [
     tags: ['parts', 'dynamics'],
     name: 'Сумма денег и из чего она складывается',
     dash: 'Продажи и выручка',
-    desc: 'Скелет для любой суммы в рублях: динамика, разрезы по товарам и каналам, средний чек и документы, из которых сумма набежала.',
+    desc: 'Сумма в рублях: динамика, разрезы, средний чек, документы.',
     examples: ['выручка по категориям товаров', 'продажи по каналам и городам', 'поступления по договорам', 'закупки по поставщикам'],
     need: ['date', 'money', 'dim1'],
     demo: ['Дата заказа', 'Категория', 'Канал продаж', 'Город', 'Номер заказа', 'Выручка, ₽', 'Количество, шт.'],
@@ -6673,7 +6667,7 @@ const TEMPLATES = [
     tags: ['stages'],
     name: 'Этапы и потери между ними',
     dash: 'Воронка и конверсия',
-    desc: 'Скелет для процесса, который проходят по шагам: сколько дошло до каждого этапа, где отваливаются и чем различаются источники.',
+    desc: 'Процесс по шагам: сколько дошло до каждого этапа и где отваливаются.',
     examples: ['путь от корзины до оплаты', 'подбор: от отклика до оффера', 'согласование заявки по стадиям', 'сделки по стадиям переговоров'],
     need: ['stage'],
     demo: ['Дата', { label: 'Этап', values: ['Посещение', 'Карточка товара', 'Корзина', 'Оформление', 'Оплата'] }, 'Источник трафика', 'Платформа', 'Пользователи, шт.'],
@@ -6697,7 +6691,7 @@ const TEMPLATES = [
     tags: ['dynamics', 'parts'],
     name: 'Поступление и состояния',
     dash: 'Поток обращений',
-    desc: 'Скелет там, где строка — это заявка или обращение: сколько пришло по неделям, в каких состояниях лежит и у кого.',
+    desc: 'Строка — заявка: сколько пришло, в каких состояниях и у кого.',
     examples: ['обращения в поддержку по статусам', 'заявки на закупку по ответственным', 'инциденты по типам', 'рекламации по подразделениям'],
     need: ['date', 'dim1'],
     demo: ['Дата заявки', 'Статус', 'Ответственный', 'Категория', 'Номер заявки', 'Время обработки, мин'],
@@ -6725,7 +6719,7 @@ const TEMPLATES = [
     tags: ['plan'],
     name: 'Факт против плана',
     dash: 'План и факт',
-    desc: 'Скелет для случая, когда рядом с фактом лежит цель: выполнение по времени и по разрезам, процент и отставание. План должен быть в тех же данных, что и факт.',
+    desc: 'Факт рядом с целью: выполнение по времени и по разрезам.',
     examples: ['план продаж по филиалам', 'бюджет: план и расход по статьям', 'производственный план по цехам', 'цели отдела за квартал'],
     need: ['plan', 'dim1'],
     demo: ['Дата', 'Подразделение', 'Категория', 'Факт, ₽', 'План, ₽'],
@@ -7079,7 +7073,7 @@ function openTemplateDialog(tpl, dsId, opts = {}) {
     body.appendChild(field('Название шаблона', h('input', { class: 'input', value: title, oninput: e => { title = e.target.value; } })));
 
     if (mockup) body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 12px' } },
-      'Данные Кобра придумает сама. Названия блоков, показателей и категорий поменяете прямо в шаблоне.'));
+      'Данные придуманные, названия поправите внутри.'));
     // Роли
     const rolesBox = h('div', { class: 'field' }, h('div', { class: 'lbl' }, 'Какие поля во что идут'),
       h('div', { class: 'hint', style: { marginBottom: '6px' } }, 'Кобра подобрала их сама — поменяйте, если взяла не то.'));
@@ -7311,8 +7305,8 @@ function renderTemplateList(main, q) {
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('h1', null, 'Готовые шаблоны'),
       h('p', null, ownData
-        ? `Выберите шаблон и приложите к набору «${DS[ownData].name}». Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.`
-        : 'Выберите готовый шаблон: Кобра соберёт его на придуманных данных, а вы переименуете блоки и категории под свой процесс. Каждый собран по стандартам визуализации: сверху общая картина, ниже разбор, в конце — исходные строки.')),
+        ? `Скелет приложится к набору «${DS[ownData].name}».`
+        : 'Кобра соберёт шаблон на придуманных данных — названия поправите внутри.')),
     h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем шаблонам')));
 
   let tag = '';   // выбранный приём
@@ -7340,10 +7334,7 @@ function renderTemplateList(main, q) {
       card.appendChild(h('div', { class: 'tpl-head' }, h('b', null, tpl.name),
         fit.ok ? null : h('span', { class: 'pill' }, 'не подходит набору')));
       card.appendChild(h('p', null, tpl.desc));
-      card.appendChild(h('p', { class: 'muted' }, 'Например: ' + (tpl.examples || []).join(' · ')));
-      const lvls = h('ul', { class: 'tpl-levels' });
-      tpl.levels.forEach(l => lvls.appendChild(h('li', null, h('b', null, TPL_LEVELS[l.id].title), ' — ' + TPL_LEVELS[l.id].q)));
-      card.appendChild(lvls);
+      card.appendChild(h('p', { class: 'muted' }, 'Например: ' + (tpl.examples || []).slice(0, 3).join(' · ')));
       if (ds) card.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } },
         'Нужны поля: ' + (tpl.need || []).map(n => (TPL_ROLES[n] || {}).label || n).join(', ')));
       if (!fit.ok) card.appendChild(h('div', { class: 'tpl-miss' }, 'В наборе «' + ds.name + '» не нашлось: ' + fit.missingLabels.join(', ')));
@@ -7359,11 +7350,11 @@ function renderTemplateList(main, q) {
     const own = h('div', { class: 'tpl-card' });
     if (ds) {
       own.appendChild(h('div', { class: 'tpl-head' }, h('b', null, 'Собрать по моим данным')));
-      own.appendChild(h('p', null, 'Ни один готовый не подошёл? Кобра посмотрит на колонки набора и соберёт черновик одной вкладкой.'));
+      own.appendChild(h('p', null, 'Кобра посмотрит на колонки набора и соберёт черновик.'));
       own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => openAutoDashDialog(dsId) }, ic('wand'), 'Собрать черновик')));
     } else {
       own.appendChild(h('div', { class: 'tpl-head' }, h('b', null, 'Пустой шаблон')));
-      own.appendChild(h('p', null, 'Ни один готовый не подошёл? Начните с чистого листа и добавляйте блоки сами — данные Кобра тоже придумает.'));
+      own.appendChild(h('p', null, 'Чистый лист: блоки добавляете сами.'));
       own.appendChild(h('div', { class: 'tpl-act' }, h('button', { class: 'btn sm', onclick: () => {
         const id = createMockup(null, { title: 'Новый шаблон', levels: ['sum'] });
         // Помечаем как только что созданный: брошенную пустышку уберут при уходе
@@ -7829,7 +7820,7 @@ async function aiExportCsv(ds) {
   const cut = ds.rows.length > AI_CSV_MAX ? ` Это первые ${fmtNum(AI_CSV_MAX, 'int')} из ${fmtNum(ds.rows.length, 'int')}.` : '';
   if (!(await confirmDialog('Выгрузить пример данных',
     `Будет выгружено ${fmtNum(n, 'int')} ${plural(n, 'строка', 'строки', 'строк')} и ${ds.columns.length} ${plural(ds.columns.length, 'колонка', 'колонки', 'колонок')}.${cut} `
-    + 'Строки придуманы Коброй: файл показывает, какие колонки нужны под этот шаблон, а не настоящие цифры.',
+    + 'Строки придуманы: файл показывает, какие колонки нужны.',
     'Выгрузить', false))) return;
   const name = `kobra-vymyshlennye-dannye-${slugKey(ds.name, 0, new Set())}-${isoDate(Date.now())}.csv`;
   if (downloadFile(name, '﻿' + aiRowsToCsv(ds), 'text/csv')) toast('Файл сохранён');
@@ -7844,11 +7835,11 @@ function openAiSettings(done) {
       'OpenAI-совместимый: Кобра добавит /chat/completions сама. Сегодня ваш, завтра — шлюз компании.'),
     field('Модель', h('input', { class: 'input', value: model, placeholder: 'gpt-4o, claude-sonnet, свой алиас', oninput: e => { model = e.target.value; } })),
     field('Вторая модель (необязательно)', h('input', { class: 'input', value: model2, placeholder: 'например, модель поменьше', oninput: e => { model2 = e.target.value; } }),
-      'Когда Кобра собирает два варианта на выбор, второй соберёт эта модель. Пусто — оба варианта соберёт первая, но с разным уклоном.'),
+      'Второй вариант соберёт эта модель. Пусто — оба соберёт первая.'),
     field('Токен', h('input', { class: 'input', type: 'password', value: token, placeholder: 'Bearer-токен', oninput: e => { token = e.target.value; } }),
-      'Хранится в этом браузере и виден любому, у кого есть к нему доступ. Берите персональный токен с лимитом, который не жалко отозвать.'),
+      'Хранится в этом браузере: берите токен, который не жалко отозвать.'),
     h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '6px 0 0' } },
-      'Если шлюз не разрешает запросы из браузера, обращение не уйдёт — тогда остаётся перенос вручную, он работает всегда.'),
+      'Если шлюз не пускает запросы из браузера, остаётся перенос вручную.'),
     aiChoiceLine());
   openModal({
     title: 'Доступ к модели', wide: true, body,
@@ -7887,7 +7878,7 @@ function renderAssistant(D, host, api) {
     box.appendChild(h('div', { class: 'ai-form-head' }, h('b', null, 'Коротко о шаблоне'), h('div', { class: 'grow' }),
       iconBtn('x', 'Закрыть форму', () => { briefOpen = false; D.chatBriefSkipped = true; saveSoon(); paint(); }, 'sm')));
     box.appendChild(h('div', { class: 'ai-note' },
-      'Ответы уходят с каждым запросом отдельным разделом — AI-ассистент меньше придумывает от себя. Можно заполнить частью или закрыть.'));
+      'Уходит с каждым запросом. Можно заполнить частью или закрыть.'));
     const add = (to, f) => {
       let ctl;
       if (f.pick) ctl = selectEl([['', 'Не указано']].concat(f.pick.map(v => [v, v[0].toUpperCase() + v.slice(1)])),
@@ -7937,8 +7928,8 @@ function renderAssistant(D, host, api) {
     if (D.chatTrimmed) log.appendChild(h('div', { class: 'ai-note' }, 'Часть старых сообщений отброшена: переписка хранится не целиком.'));
     if (briefOpen) log.appendChild(briefForm());
     else if (!aiLog(D).length) log.appendChild(h('div', { class: 'ai-note' },
-      mock ? 'Опишите свой процесс словами — AI-ассистент придумает под него данные и предложит блоки. Например: «заявки на кредит: приходят в отделения, проходят скоринг, часть одобряем».'
-        : 'Опишите, что хотите увидеть в шаблоне. AI-ассистент предложит блоки, а применять их или нет — решаете вы.'));
+      mock ? 'Опишите процесс словами — AI-ассистент придумает данные и предложит блоки.'
+        : 'Опишите, что хотите увидеть. Применять предложенное или нет — решаете вы.'));
     aiLog(D).forEach(m => {
       const el = h('div', { class: 'ai-msg ' + m.role });
       el.appendChild(h('div', { class: 'ai-text' }, m.text));
@@ -8042,7 +8033,7 @@ function renderAssistant(D, host, api) {
       onclick: () => aiExportCsv(ds()),
     }, ic('download'), 'Выгрузить пример данных'));
     if (!aiReady()) host.appendChild(h('div', { class: 'ai-note' },
-      'Доступ к модели не настроен: укажите адрес и модель в шестерёнке — или работайте переносом вручную, он не требует ни ключей, ни сети.'));
+      'Модель не настроена: укажите её в шестерёнке или переносите запрос вручную.'));
   };
   paint();
   return { repaint: paint };
@@ -8537,8 +8528,8 @@ function openAiComposer(opts = {}) {
   const paint = () => {
     clear(body);
     body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 12px' } }, refine
-      ? 'Напишите, что поправить. Кобра приложит к запросу состав черновика, так что описывать его заново не нужно.'
-      : 'Опишите процесс своими словами: что происходит, за чем следите, в каких разрезах смотрите. AI-ассистент соберёт шаблон целиком — вкладки, блоки и придуманные данные под них.'));
+      ? 'Напишите, что поправить: состав черновика Кобра приложит сама.'
+      : 'Опишите процесс словами — AI-ассистент соберёт шаблон целиком.'));
     body.appendChild(ta);
     if (!refine) {
       const ex = h('div', { class: 'ai-ex' }, h('span', { class: 'muted' }, 'Например:'));
@@ -8549,15 +8540,15 @@ function openAiComposer(opts = {}) {
     }
     if (!refine) body.appendChild(h('div', { style: { marginTop: '10px' } },
       checkbox('Собрать два варианта на выбор — компактный и подробный', two, v => { two = v; }),
-      h('div', { class: 'hint' }, 'Это два обращения к модели. Потом переключитесь между ними и сохраните тот, который ближе.')));
+      h('div', { class: 'hint' }, 'Два обращения к модели: сохраните тот, что ближе.')));
     if (errors.length) body.appendChild(h('div', { class: 'ai-note', style: { marginTop: '10px' } },
       h('b', null, `Не построилось блоков: ${errors.length}.`),
       ' Кобра приложит их к запросу — описывать словами не нужно: ',
       errors.map(e => e.name).join(', ') + '.'));
     body.appendChild(h('div', { class: 'ai-note', style: { marginTop: '10px' } },
-      'Наружу уходит только текст запроса и описание колонок. Черновик нигде не сохраняется, пока вы не нажмёте «Сохранить шаблон».'));
+      'Наружу уходит только текст запроса и описание колонок.'));
     if (!aiReady()) body.appendChild(h('div', { class: 'ai-note' },
-      'Доступ к модели не настроен: скопируйте запрос, задайте его во внешнем чате и вставьте ответ сюда — так работает и офлайн-сборка.'));
+      'Модель не настроена: скопируйте запрос во внешний чат и вставьте ответ сюда.'));
   };
   paint();
 
@@ -8753,8 +8744,8 @@ function openExportDialog(presetDashId) {
         h('button', { class: withData ? '' : 'on', onclick: () => { withData = false; paint(); } }, 'Без данных — только структура'),
         h('button', { class: withData ? 'on' : '', onclick: () => { withData = true; paint(); } }, 'Со строками данных')),
       h('div', { class: 'hint' }, withData
-        ? 'Строки загруженных наборов попадут в файл. Не отправляйте его по открытым каналам, если данные чувствительные.'
-        : 'Только структура: шаблоны, графики, метрики и описания наборов. Строки загруженных файлов не вкладываются.')));
+        ? 'Строки загруженных наборов попадут в файл.'
+        : 'Только структура: блоки, метрики и описания наборов, без строк.')));
     if (!withData) body.appendChild(checkbox('Подставить вымышленные данные, чтобы графики не были пустыми', fakeData, v => { fakeData = v; recount(); }));
 
     const list = h('div', { style: { display: 'grid', gap: '4px', marginTop: '4px' } });

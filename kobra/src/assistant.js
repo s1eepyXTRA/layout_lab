@@ -201,7 +201,7 @@ async function aiExportCsv(ds) {
   const cut = ds.rows.length > AI_CSV_MAX ? ` Это первые ${fmtNum(AI_CSV_MAX, 'int')} из ${fmtNum(ds.rows.length, 'int')}.` : '';
   if (!(await confirmDialog('Выгрузить пример данных',
     `Будет выгружено ${fmtNum(n, 'int')} ${plural(n, 'строка', 'строки', 'строк')} и ${ds.columns.length} ${plural(ds.columns.length, 'колонка', 'колонки', 'колонок')}.${cut} `
-    + 'Строки придуманы Коброй: файл показывает, какие колонки нужны под этот шаблон, а не настоящие цифры.',
+    + 'Строки придуманы: файл показывает, какие колонки нужны.',
     'Выгрузить', false))) return;
   const name = `kobra-vymyshlennye-dannye-${slugKey(ds.name, 0, new Set())}-${isoDate(Date.now())}.csv`;
   if (downloadFile(name, '﻿' + aiRowsToCsv(ds), 'text/csv')) toast('Файл сохранён');
@@ -216,11 +216,11 @@ function openAiSettings(done) {
       'OpenAI-совместимый: Кобра добавит /chat/completions сама. Сегодня ваш, завтра — шлюз компании.'),
     field('Модель', h('input', { class: 'input', value: model, placeholder: 'gpt-4o, claude-sonnet, свой алиас', oninput: e => { model = e.target.value; } })),
     field('Вторая модель (необязательно)', h('input', { class: 'input', value: model2, placeholder: 'например, модель поменьше', oninput: e => { model2 = e.target.value; } }),
-      'Когда Кобра собирает два варианта на выбор, второй соберёт эта модель. Пусто — оба варианта соберёт первая, но с разным уклоном.'),
+      'Второй вариант соберёт эта модель. Пусто — оба соберёт первая.'),
     field('Токен', h('input', { class: 'input', type: 'password', value: token, placeholder: 'Bearer-токен', oninput: e => { token = e.target.value; } }),
-      'Хранится в этом браузере и виден любому, у кого есть к нему доступ. Берите персональный токен с лимитом, который не жалко отозвать.'),
+      'Хранится в этом браузере: берите токен, который не жалко отозвать.'),
     h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '6px 0 0' } },
-      'Если шлюз не разрешает запросы из браузера, обращение не уйдёт — тогда остаётся перенос вручную, он работает всегда.'),
+      'Если шлюз не пускает запросы из браузера, остаётся перенос вручную.'),
     aiChoiceLine());
   openModal({
     title: 'Доступ к модели', wide: true, body,
@@ -259,7 +259,7 @@ function renderAssistant(D, host, api) {
     box.appendChild(h('div', { class: 'ai-form-head' }, h('b', null, 'Коротко о шаблоне'), h('div', { class: 'grow' }),
       iconBtn('x', 'Закрыть форму', () => { briefOpen = false; D.chatBriefSkipped = true; saveSoon(); paint(); }, 'sm')));
     box.appendChild(h('div', { class: 'ai-note' },
-      'Ответы уходят с каждым запросом отдельным разделом — AI-ассистент меньше придумывает от себя. Можно заполнить частью или закрыть.'));
+      'Уходит с каждым запросом. Можно заполнить частью или закрыть.'));
     const add = (to, f) => {
       let ctl;
       if (f.pick) ctl = selectEl([['', 'Не указано']].concat(f.pick.map(v => [v, v[0].toUpperCase() + v.slice(1)])),
@@ -309,8 +309,8 @@ function renderAssistant(D, host, api) {
     if (D.chatTrimmed) log.appendChild(h('div', { class: 'ai-note' }, 'Часть старых сообщений отброшена: переписка хранится не целиком.'));
     if (briefOpen) log.appendChild(briefForm());
     else if (!aiLog(D).length) log.appendChild(h('div', { class: 'ai-note' },
-      mock ? 'Опишите свой процесс словами — AI-ассистент придумает под него данные и предложит блоки. Например: «заявки на кредит: приходят в отделения, проходят скоринг, часть одобряем».'
-        : 'Опишите, что хотите увидеть в шаблоне. AI-ассистент предложит блоки, а применять их или нет — решаете вы.'));
+      mock ? 'Опишите процесс словами — AI-ассистент придумает данные и предложит блоки.'
+        : 'Опишите, что хотите увидеть. Применять предложенное или нет — решаете вы.'));
     aiLog(D).forEach(m => {
       const el = h('div', { class: 'ai-msg ' + m.role });
       el.appendChild(h('div', { class: 'ai-text' }, m.text));
@@ -414,7 +414,7 @@ function renderAssistant(D, host, api) {
       onclick: () => aiExportCsv(ds()),
     }, ic('download'), 'Выгрузить пример данных'));
     if (!aiReady()) host.appendChild(h('div', { class: 'ai-note' },
-      'Доступ к модели не настроен: укажите адрес и модель в шестерёнке — или работайте переносом вручную, он не требует ни ключей, ни сети.'));
+      'Модель не настроена: укажите её в шестерёнке или переносите запрос вручную.'));
   };
   paint();
   return { repaint: paint };

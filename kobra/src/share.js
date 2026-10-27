@@ -101,8 +101,8 @@ function openExportDialog(presetDashId) {
         h('button', { class: withData ? '' : 'on', onclick: () => { withData = false; paint(); } }, 'Без данных — только структура'),
         h('button', { class: withData ? 'on' : '', onclick: () => { withData = true; paint(); } }, 'Со строками данных')),
       h('div', { class: 'hint' }, withData
-        ? 'Строки загруженных наборов попадут в файл. Не отправляйте его по открытым каналам, если данные чувствительные.'
-        : 'Только структура: шаблоны, графики, метрики и описания наборов. Строки загруженных файлов не вкладываются.')));
+        ? 'Строки загруженных наборов попадут в файл.'
+        : 'Только структура: блоки, метрики и описания наборов, без строк.')));
     if (!withData) body.appendChild(checkbox('Подставить вымышленные данные, чтобы графики не были пустыми', fakeData, v => { fakeData = v; recount(); }));
 
     const list = h('div', { style: { display: 'grid', gap: '4px', marginTop: '4px' } });
