@@ -14,9 +14,9 @@ const AI_CSV_MAX = 50000;
    работает с личным эндпоинтом и с LiteLLM компании — меняется настройка. */
 function aiCfg() {
   const c = lsGet(AI_LS_CFG) || {};
-  return { url: c.url || '', token: c.token || '', model: c.model || '', model2: c.model2 || '', sendSamples: false };
+  return { url: c.url || '', token: c.token || '', model: c.model || '', sendSamples: false };
 }
-function aiSaveCfg(cfg) { lsSet(AI_LS_CFG, { url: cfg.url || '', token: cfg.token || '', model: cfg.model || '', model2: cfg.model2 || '' }); }
+function aiSaveCfg(cfg) { lsSet(AI_LS_CFG, { url: cfg.url || '', token: cfg.token || '', model: cfg.model || '' }); }
 const aiReady = () => { const c = aiCfg(); return !!(c.url && c.model); };
 
 /* Обращение к OpenAI-совместимому эндпоинту. Ошибки разделяем по видам:
@@ -210,23 +210,20 @@ async function aiExportCsv(ds) {
 /* ---------- Настройки доступа ---------- */
 function openAiSettings(done) {
   const c = aiCfg();
-  let url = c.url, token = c.token, model = c.model, model2 = c.model2 || '';
+  let url = c.url, token = c.token, model = c.model;
   const body = h('div', null,
     field('Адрес эндпоинта', h('input', { class: 'input', value: url, placeholder: 'https://шлюз/v1', oninput: e => { url = e.target.value; } }),
       'OpenAI-совместимый: Кобра добавит /chat/completions сама. Сегодня ваш, завтра — шлюз компании.'),
     field('Модель', h('input', { class: 'input', value: model, placeholder: 'gpt-4o, claude-sonnet, свой алиас', oninput: e => { model = e.target.value; } })),
-    field('Вторая модель (необязательно)', h('input', { class: 'input', value: model2, placeholder: 'например, модель поменьше', oninput: e => { model2 = e.target.value; } }),
-      'Второй вариант соберёт эта модель. Пусто — оба соберёт первая.'),
     field('Токен', h('input', { class: 'input', type: 'password', value: token, placeholder: 'Bearer-токен', oninput: e => { token = e.target.value; } }),
       'Хранится в этом браузере: берите токен, который не жалко отозвать.'),
     h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '6px 0 0' } },
-      'Если шлюз не пускает запросы из браузера, остаётся перенос вручную.'),
-    aiChoiceLine());
+      'Если шлюз не пускает запросы из браузера, остаётся перенос вручную.'));
   openModal({
     title: 'Доступ к модели', wide: true, body,
     foot: close => [
       h('button', { class: 'btn', onclick: close }, 'Отмена'),
-      h('button', { class: 'btn primary', onclick: () => { aiSaveCfg({ url, token, model, model2 }); close(); toast('Настройки доступа сохранены'); done && done(); } }, 'Сохранить')],
+      h('button', { class: 'btn primary', onclick: () => { aiSaveCfg({ url, token, model }); close(); toast('Настройки доступа сохранены'); done && done(); } }, 'Сохранить')],
   });
 }
 

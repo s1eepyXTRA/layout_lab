@@ -783,9 +783,7 @@ function templatePreview(tpl, backDsId) {
 /* Убираем примеры, когда человек ушёл с них: иначе они осядут в состоянии */
 function purgePreviews(keepId) {
   let had = false;
-  // Второй вариант черновика — не мусор: человек переключается между ними
-  const kept = STATE.dashboards[keepId];
-  const keep = new Set([keepId].concat((kept && kept.aiDraft && kept.aiDraft.variants) || []));
+  const keep = new Set([keepId]);
   Object.values(STATE.dashboards).forEach(d => {
     if (!d.preview || keep.has(d.id)) return;
     d.tabs.forEach(t => t.items.forEach(i => { if (i.chartId) delete STATE.charts[i.chartId]; }));

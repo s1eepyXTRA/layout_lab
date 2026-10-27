@@ -361,12 +361,6 @@ function aiBuildDraft(parsed, { prompt, answer }) {
 function aiDraftSave(id) {
   const D = STATE.dashboards[id];
   if (!D || !D.aiDraft) return;
-  // Выбрали один из вариантов — второй больше не нужен, а выбор запоминаем
-  const v = D.aiDraft;
-  if (v.variants) {
-    aiLogChoice(v.label, v.rounds);
-    v.variants.filter(x => x !== id).forEach(aiDraftRemove);
-  }
   const dsId = (D.fromTemplate || {}).datasetId;
   const ds = DS[dsId];
   if (ds) {
@@ -391,9 +385,7 @@ function aiDraftRemove(id) {
   if (dsId) delete DS[dsId];
 }
 function aiDraftDrop(id) {
-  const D = STATE.dashboards[id];
-  const sib = D && D.aiDraft && D.aiDraft.variants ? D.aiDraft.variants : [id];
-  sib.forEach(aiDraftRemove);     // отказались — выбрасываем оба варианта
+  aiDraftRemove(id);              // отказались — черновик просто выбрасываем
   go('#/dashboards');
 }
 
@@ -435,26 +427,6 @@ const AI_EXAMPLES = [
   { chip: 'План и факт', text: 'План и факт по отделам за год, с процентом выполнения' },
 ];
 
-/* Два варианта на выбор. Один и тот же запрос дважды даёт одно и то же,
-   поэтому варианты отличаются уклоном (и разбросом, а если в настройках
-   указана вторая модель — то и ею). Выбор человека — это и есть мера
-   качества: что выбрали чаще, то и лучше работает. */
-const AI_VARIANTS = [
-  { label: 'Вариант А', hint: 'компактный: одна вкладка, 4–6 блоков, только самое важное', temp: 0.2 },
-  { label: 'Вариант Б', hint: 'подробный: 2–3 вкладки — сводка, разбор и таблица исходных строк', temp: 0.7 },
-];
-const AI_LS_AB = 'kobra.ai.ab';
-function aiLogChoice(label, rounds) {
-  const log = (lsGet(AI_LS_AB) || []).slice(-49);
-  log.push({ at: Date.now(), выбран: label || '—', доработок: (rounds || 1) - 1 });
-  lsSet(AI_LS_AB, log);
-}
-function aiChoiceTally() {
-  const log = lsGet(AI_LS_AB) || [];
-  const out = {};
-  log.forEach(r => { out[r.выбран] = (out[r.выбран] || 0) + 1; });
-  return out;
-}
 
 /* Что не построилось в черновике — прикладываем к доработке сами */
 function aiDraftErrors(D) {
@@ -471,7 +443,6 @@ function openAiComposer(opts = {}) {
   const refine = !!(D && D.aiDraft);
   const errors = refine ? aiDraftErrors(D) : [];
   let busy = false;
-  let two = !refine;     // первый раз собираем два варианта, доработка — одна ветка
   const body = h('div');
   const ta = h('textarea', {
     class: 'textarea', rows: 4,
@@ -497,9 +468,6 @@ function openAiComposer(opts = {}) {
       }, e.chip)));
       body.appendChild(ex);
     }
-    if (!refine) body.appendChild(h('div', { style: { marginTop: '10px' } },
-      checkbox('Собрать два варианта на выбор — компактный и подробный', two, v => { two = v; }),
-      h('div', { class: 'hint' }, 'Два обращения к модели: сохраните тот, что ближе.')));
     if (errors.length) body.appendChild(h('div', { class: 'ai-note', style: { marginTop: '10px' } },
       h('b', null, `Не построилось блоков: ${errors.length}.`),
       ' Кобра приложит их к запросу — описывать словами не нужно: ',
@@ -534,15 +502,11 @@ function openAiComposer(opts = {}) {
         if (!aiReady()) { toast('Доступ к модели не настроен — скопируйте запрос и вставьте ответ', true); return; }
         if (busy) return;
         busy = true;
-        const vs = two && !refine ? AI_VARIANTS : [null];
-        toast(vs.length > 1 ? 'Собираю два варианта…' : 'Собираю…');
+        toast('Собираю…');
         try {
-          const texts = await Promise.all(vs.map((v, i) => aiAsk(
-            [{ role: 'system', content: AI_TPL_SYSTEM },
-              { role: 'user', content: prompt() + (v ? `\n\nУклон этого варианта: ${v.hint}.` : '') }],
-            { temperature: v ? v.temp : undefined, model: i === 1 ? (aiCfg().model2 || undefined) : undefined })));
+          const text = await aiAsk([{ role: 'system', content: AI_TPL_SYSTEM }, { role: 'user', content: prompt() }]);
           close();
-          aiApplyAnswers(texts, { prompt: q, draftId, labels: vs.map(v => v && v.label) });
+          aiApplyAnswer(text, { prompt: q, draftId });
         } catch (e) {
           toast('Не получилось: ' + e.message + (e.kind === 'network' ? ' Можно перенести запрос вручную.' : ''), true);
         }
@@ -554,48 +518,20 @@ function openAiComposer(opts = {}) {
   return m;
 }
 
-/* Ответы модели → черновики. Старые убирать не нужно: они помечены
-   preview, и purgePreviews уносит их при переходе на новый. */
-function aiApplyAnswers(texts, opts = {}) {
-  const list = (Array.isArray(texts) ? texts : [texts]).filter(t => String(t || '').trim());
+/* Ответ модели → черновик. Старый убирать не нужно: он помечен
+   preview, и purgePreviews уносит его при переходе на новый. */
+function aiApplyAnswer(text, opts = {}) {
   const prev = opts.draftId ? (STATE.dashboards[opts.draftId] || {}).aiDraft : null;
-  const ids = [];
-  let skipped = 0;
-  /** @type {any} */ let first = null;    // первый разобранный ответ: его показываем, если не вышло
-  list.forEach((text, i) => {
-    const r = aiParseTemplate(text);
-    if (!first) first = r;
-    skipped += r.пропущено || 0;
-    if (!r.блоки.length) return;
-    const id = aiBuildDraft(r, { prompt: opts.prompt, answer: r.ответ });
-    if (!id) return;
-    const d = STATE.dashboards[id].aiDraft;
-    d.label = (opts.labels || [])[i] || null;
-    if (prev) d.rounds = (prev.rounds || 1) + 1;
-    ids.push(id);
-  });
-  if (!ids.length) {
-    toast(first && first.plain ? 'В ответе нет шаблона — показываю текст как есть' : 'Не удалось собрать ни одного блока', true);
-    showTextModal('Что ответила модель', (first && first.ответ) || String(list[0] || ''));
+  const r = aiParseTemplate(text);
+  const id = r.блоки.length ? aiBuildDraft(r, { prompt: opts.prompt, answer: r.ответ }) : null;
+  if (!id) {
+    toast(r.plain ? 'В ответе нет шаблона — показываю текст как есть' : 'Не удалось собрать ни одного блока', true);
+    showTextModal('Что ответила модель', r.ответ || String(text || ''));
     return null;
   }
-  // Варианты знают друг о друге: по этому списку работает переключатель
-  if (ids.length > 1) ids.forEach(id => { STATE.dashboards[id].aiDraft.variants = ids.slice(); });
-  go('#/d/' + ids[0]);
-  const note = ids.length > 1 ? `Собрано вариантов: ${ids.length}. Переключайтесь и сохраните нужный.`
-    : ((first && first.ответ) ? first.ответ.slice(0, 90) : 'Черновик собран');
-  toast(note + (skipped ? ` Пропущено непонятных блоков: ${skipped}.` : ''));
-  return ids[0];
-}
-const aiApplyAnswer = (text, opts) => aiApplyAnswers([text], opts);
-
-/* Что выбирают чаще — строка в настройках доступа. Это и есть вся
-   «статистика» A/B, на которую способен браузерный прототип: выбор
-   одного человека на одной машине, без сбора и усреднения. */
-function aiChoiceLine() {
-  const t = aiChoiceTally();
-  const keys = Object.keys(t);
-  if (!keys.length) return null;
-  return h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '8px 0 0' } },
-    'Выбор между вариантами в этом браузере: ' + keys.map(k => `${k} — ${t[k]}`).join(', ') + '.');
+  if (prev) STATE.dashboards[id].aiDraft.rounds = (prev.rounds || 1) + 1;
+  go('#/d/' + id);
+  const skipped = r.пропущено || 0;
+  toast((r.ответ ? r.ответ.slice(0, 90) : 'Черновик собран') + (skipped ? ` Пропущено непонятных блоков: ${skipped}.` : ''));
+  return id;
 }

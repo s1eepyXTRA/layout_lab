@@ -34,7 +34,7 @@ function renderDashboard(main, id, q) {
   let cross = crossMemory[id] || (crossMemory[id] = []);
   let pending = {}; // id фильтра -> значение
   D.filters.forEach(f => { pending[f.id] = clone(f.value ?? f.def ?? null); });
-  let panelTab = 'charts';
+  let panelTab = '';      // вкладка палитры: blank | charts | els (выбирается при первой отрисовке)
   let editingMd = null;
   const cells = new Map(); // item.i -> {el, root, ro}
   const narrow = () => window.innerWidth < 760;
@@ -168,21 +168,12 @@ function renderDashboard(main, id, q) {
     /* Черновик по описанию: ничего ещё не сохранено, поэтому в шапке —
        «Сохранить», «Доработать» и «Отменить», а не обычные кнопки правки. */
     if (D.aiDraft) {
-      const vs = D.aiDraft.variants || null;
       head.append(
         h('button', { class: 'btn', title: 'Выбросить черновик', onclick: () => aiDraftDrop(id) }, 'Отменить'),
-        h('h1', null, D.title, h('span', { class: 'pill acc', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: 'Пока не сохранён: уйдёте со страницы — пропадёт' },
-          D.aiDraft.label ? 'Черновик · ' + D.aiDraft.label : 'Черновик')),
-        h('div', { class: 'grow' }));
-      // Переключатель вариантов: оба черновика уже собраны и ждут выбора
-      if (vs && vs.length > 1) head.appendChild(h('div', { class: 'seg' }, vs.map(vid => {
-        const v = STATE.dashboards[vid];
-        return h('button', { class: vid === id ? 'on' : '', onclick: () => go('#/d/' + vid) },
-          (v && v.aiDraft && v.aiDraft.label) || 'Вариант');
-      })));
-      head.append(
+        h('h1', null, D.title, h('span', { class: 'pill acc', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: 'Пока не сохранён: уйдёте со страницы — пропадёт' }, 'Черновик')),
+        h('div', { class: 'grow' }),
         h('button', { class: 'btn ai', title: 'Сказать, что поправить, и пересобрать', onclick: () => openAiComposer({ draftId: id }) }, 'Доработать'),
-        h('button', { class: 'btn primary', onclick: () => aiDraftSave(id) }, ic('check'), vs ? 'Сохранить этот' : 'Сохранить шаблон'));
+        h('button', { class: 'btn primary', onclick: () => aiDraftSave(id) }, ic('check'), 'Сохранить шаблон'));
       return head;
     }
     // Пример шаблона живёт только в памяти и пропадает при уходе со страницы:
@@ -762,14 +753,17 @@ function renderDashboard(main, id, q) {
   function paintPanel() {
     if (!panel) return;
     clear(panel);
+    const mockupDs = D.fromTemplate ? dsGet(D.fromTemplate.datasetId) : null;
+    // Заготовки есть только у макета: под них нужен придуманный набор
+    const blanks = isMockupDs(mockupDs);
+    if (!panelTab || (panelTab === 'blank' && !blanks)) panelTab = blanks ? 'blank' : 'charts';
+    const tab = (k, label) => h('button', { class: panelTab === k ? 'on' : '', onclick: () => { panelTab = k; paintPanel(); } }, label);
     const seg = h('div', { class: 'seg', role: 'tablist' },
-      h('button', { class: panelTab === 'charts' ? 'on' : '', onclick: () => { panelTab = 'charts'; paintPanel(); } }, 'Графики'),
-      h('button', { class: panelTab === 'els' ? 'on' : '', onclick: () => { panelTab = 'els'; paintPanel(); } }, 'Элементы'));
+      blanks ? tab('blank', 'Заготовки') : null, tab('charts', 'Графики'), tab('els', 'Элементы'));
     panel.appendChild(seg);
     const body = h('div', { class: 'edit-panel-body' });
     panel.appendChild(body);
-    const mockupDs = D.fromTemplate ? dsGet(D.fromTemplate.datasetId) : null;
-    if (panelTab === 'charts' && isMockupDs(mockupDs)) {
+    if (panelTab === 'blank') {
       // В макете блок выбирается видом: данные под него уже есть
       body.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '0 0 10px' } },
         'Данные под блок уже есть — выберите вид.'));

@@ -301,8 +301,7 @@ function createDashboard() {
   const m = openModal({
     title: 'Новый шаблон', wide: true,
     body: h('div', null,
-      h('p', { class: 'muted', style: { margin: '0 0 14px', fontSize: '13.5px' } },
-        'Оба пути ведут к одному: шаблон потом правится как угодно.'), host),
+      host),
     foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена')],
   });
   START_WAYS.filter(w => w.id !== 'own').forEach(w => host.appendChild(startCard(w, m.close)));
