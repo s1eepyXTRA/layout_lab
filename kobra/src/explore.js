@@ -274,7 +274,7 @@ function renderExplore(main, parts, q) {
           fmtSuffix(v) !== null ? [[v, formatLabel(v)], ...Object.entries(NUMBER_FORMATS)] : Object.entries(NUMBER_FORMATS),
           v || 'auto', val => set(c.key, val, false)));
       case 'scheme':
-        return field(c.label, selectEl(Object.entries(COLOR_SCHEMES).map(([k, s]) => [k, s.label]), v || 'kobra', val => set(c.key, val, false)));
+        return field(c.label, selectEl(Object.entries(COLOR_SCHEMES).map(([k, s]) => [k, s.label]), v || 'superset', val => set(c.key, val, false)));
       case 'seqscheme':
         return field(c.label, selectEl(Object.entries(SEQ_SCHEMES).map(([k, s]) => [k, s.label]), v || 'copper', val => set(c.key, val, false)));
     }

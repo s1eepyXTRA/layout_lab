@@ -13,11 +13,11 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
   --bg: #EEF0F3; --surface: #FFFFFF; --surface-2: #F6F7F9; --surface-3: #E7EAEF;
   --ink: #1F2430; --ink-2: #4C5361; --ink-3: #7D8595; --line: #DCE0E7; --line-2: #C5CBD6;
-  --primary: #BE5410; --primary-hover: #A2450B; --primary-ink: #FFFFFF; --primary-soft: #FBE9DA;
+  --primary: #0E7457; --primary-hover: #0B5F47; --primary-ink: #FFFFFF; --primary-soft: #DEF0E8;
   --brand: #E06A1B;
-  --accent: #43566E; --accent-soft: #DEE5EF; --accent-ink: #FFFFFF;
+  --accent: #A8481A; --accent-soft: #FBE9DA; --accent-ink: #FFFFFF;
   --danger: #C22F3C; --danger-soft: #FBE5E8; --up: #18845A; --down: #C22F3C;
-  --bar: #1F2430; --bar-ink: #F2F4F8; --bar-ink-2: #9BA4B4;
+  --bar: #FFFFFF; --bar-ink: #1F2430; --bar-ink-2: #6E7684; --bar-hover: rgba(31, 36, 48, .07);
   --shadow: 0 1px 2px rgba(31, 36, 48, .06), 0 8px 24px -12px rgba(31, 36, 48, .20);
   --shadow-pop: 0 12px 40px -8px rgba(31, 36, 48, .30), 0 2px 6px rgba(31, 36, 48, .08);
   --r-s: 4px; --r-m: 7px; --r-l: 12px;
@@ -29,11 +29,11 @@
   :root:not([data-theme="light"]) {
     --bg: #171B23; --surface: #1E222B; --surface-2: #262B36; --surface-3: #2F3542;
     --ink: #ECEFF4; --ink-2: #A9B2C0; --ink-3: #7B8595; --line: #333A47; --line-2: #414A59;
-    --primary: #EE8236; --primary-hover: #F79E5B; --primary-ink: #2A1405; --primary-soft: #3A2415;
+    --primary: #3DBB8C; --primary-hover: #5CCDA2; --primary-ink: #07261B; --primary-soft: #1B3A2F;
     --brand: #E06A1B;
-    --accent: #A9BDD6; --accent-soft: #263142; --accent-ink: #141821;
+    --accent: #F2A65A; --accent-soft: #3A2415; --accent-ink: #2A1405;
     --danger: #F0727C; --danger-soft: #3B1D22; --up: #4CC98F; --down: #F0727C;
-    --bar: #141821; --bar-ink: #F2F4F8; --bar-ink-2: #8F99A8;
+    --bar: #1E222B; --bar-ink: #ECEFF4; --bar-ink-2: #98A2B2; --bar-hover: rgba(255, 255, 255, .08);
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .5);
     --shadow-pop: 0 12px 40px -8px rgba(0, 0, 0, .6);
     color-scheme: dark;
@@ -42,11 +42,11 @@
 :root[data-theme="dark"] {
   --bg: #171B23; --surface: #1E222B; --surface-2: #262B36; --surface-3: #2F3542;
   --ink: #ECEFF4; --ink-2: #A9B2C0; --ink-3: #7B8595; --line: #333A47; --line-2: #414A59;
-  --primary: #EE8236; --primary-hover: #F79E5B; --primary-ink: #2A1405; --primary-soft: #3A2415;
+  --primary: #3DBB8C; --primary-hover: #5CCDA2; --primary-ink: #07261B; --primary-soft: #1B3A2F;
   --brand: #E06A1B;
-  --accent: #A9BDD6; --accent-soft: #263142; --accent-ink: #141821;
+  --accent: #F2A65A; --accent-soft: #3A2415; --accent-ink: #2A1405;
   --danger: #F0727C; --danger-soft: #3B1D22; --up: #4CC98F; --down: #F0727C;
-  --bar: #141821; --bar-ink: #F2F4F8; --bar-ink-2: #8F99A8;
+  --bar: #1E222B; --bar-ink: #ECEFF4; --bar-ink-2: #98A2B2; --bar-hover: rgba(255, 255, 255, .08);
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .5);
   --shadow-pop: 0 12px 40px -8px rgba(0, 0, 0, .6);
   color-scheme: dark;
@@ -66,11 +66,11 @@ a { color: var(--primary); }
 #app { height: 100%; display: flex; flex-direction: column; }
 .topbar {
   flex: none; display: flex; align-items: center; gap: 28px; height: 52px; padding: 0 18px;
-  background: var(--bar); color: var(--bar-ink); position: relative; z-index: 20;
+  background: var(--bar); color: var(--bar-ink); border-bottom: 1px solid var(--line); position: relative; z-index: 20;
 }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
-.brand svg { width: 26px; height: 26px; }
-.brand b { font: 700 17px/1 var(--font-display); letter-spacing: .01em; }
+.brand svg { width: 30px; height: 30px; }
+.brand b { font: 700 19px/1 var(--font-display); letter-spacing: .01em; }
 .nav { display: flex; gap: 4px; height: 100%; }
 .nav a {
   display: flex; align-items: center; padding: 0 12px; color: var(--bar-ink-2); text-decoration: none;
@@ -81,7 +81,7 @@ a { color: var(--primary); }
 .topbar .spacer { flex: 1; }
 .iconbtn-bar { background: none; border: 0; color: var(--bar-ink-2); width: 34px; height: 34px; border-radius: 6px; cursor: pointer; display: grid; place-items: center; }
 .iconbtn-bar svg { width: 19px; height: 19px; }
-.iconbtn-bar:hover { background: rgba(255,255,255,.08); color: var(--bar-ink); }
+.iconbtn-bar:hover { background: var(--bar-hover); color: var(--bar-ink); }
 .main { flex: 1; min-height: 0; overflow: auto; }
 .page { max-width: 1320px; margin: 0 auto; padding: 28px 24px 60px; }
 .page-head { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
@@ -264,8 +264,8 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 /* Вход и права */
 .signin { min-height: 100%; display: grid; place-items: center; padding: 32px 16px; background: var(--bg); }
 .signin-card { width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); box-shadow: var(--shadow); padding: 24px; display: flex; flex-direction: column; gap: 2px; }
-.signin-brand { display: flex; align-items: center; gap: 8px; color: var(--primary); font: 600 20px/1 var(--font-display); margin-bottom: 6px; }
-.signin-brand svg { width: 26px; height: 26px; }
+.signin-brand { display: flex; align-items: center; gap: 8px; color: var(--ink); font: 600 20px/1 var(--font-display); margin-bottom: 6px; }
+.signin-brand svg { width: 30px; height: 30px; }
 .signin-lead { margin: 0 0 10px; font-size: 13.5px; color: var(--ink-2); }
 .signin-way { font-size: 12.5px; color: var(--accent); background: var(--accent-soft); border-radius: var(--r-m); padding: 6px 10px; margin-bottom: 14px; }
 .signin-err { color: var(--danger); font-size: 13px; margin-bottom: 8px; }
@@ -275,7 +275,7 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .signin-demo ul { margin: 6px 0 0; padding-left: 18px; }
 .signin-demo b { color: var(--ink-2); }
 .who { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--bar-ink-2); background: transparent; color: var(--bar-ink); cursor: pointer; font-size: 13px; }
-.who:hover { background: rgba(255, 255, 255, .08); }
+.who:hover { background: var(--bar-hover); }
 .who .role { font-size: 11.5px; color: var(--bar-ink-2); }
 .share-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .share-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r-m); }
@@ -2443,8 +2443,8 @@ function itemDefaultSize(type, chart) {
    Кобра · визуализации
    ============================================================ */
 const COLOR_SCHEMES = {
-  kobra: { label: 'Кобра', colors: ['#E06A1B', '#3E6E8E', '#D9A42B', '#2E8B74', '#A8481A', '#5B6270', '#8E5BA6', '#C25570', '#7D8CA3', '#B5855B'] },
   superset: { label: 'Как в Superset', colors: ['#1FA8C9', '#454E7C', '#5AC189', '#FF7F44', '#666666', '#E04355', '#FCC700', '#A868B7', '#3CCCCB', '#A38F79'] },
+  kobra: { label: 'Кобра', colors: ['#E06A1B', '#3E6E8E', '#D9A42B', '#2E8B74', '#A8481A', '#5B6270', '#8E5BA6', '#C25570', '#7D8CA3', '#B5855B'] },
   warm: { label: 'Тёплая', colors: ['#9C2F1E', '#D25A2B', '#E88F3A', '#F2BE5C', '#B7864A', '#7A4A2A', '#E0635F', '#C73E61', '#8E5B3E', '#F0A58A'] },
   cold: { label: 'Холодная', colors: ['#0B3C5D', '#1D6A96', '#3E92CC', '#72B8D8', '#2A7F62', '#5FB49C', '#8AA1B1', '#4B5D8C', '#9BC4E2', '#305F72'] },
   jade: { label: 'Оттенки нефрита', colors: ['#0B5F47', '#0E7457', '#2E9474', '#56AE91', '#84C7AF', '#B3DDCD', '#1E4A3D', '#6C9C8B', '#3F7F6A', '#A2C8BA'] },
@@ -2705,7 +2705,7 @@ function xyDefaults(ds, kind) {
   return {
     x_col: kind === 'bar' ? firstStringCol(ds) : (dt || firstStringCol(ds)), x_grain: 'month',
     metrics: [firstMetric(ds)], series_col: null, series_limit: 8, row_limit: kind === 'bar' ? 30 : 1000,
-    time_range: { preset: 'all' }, adhoc_filters: [], color_scheme: 'kobra', y_format: 'auto',
+    time_range: { preset: 'all' }, adhoc_filters: [], color_scheme: 'superset', y_format: 'auto',
     show_legend: true, legend_pos: 'top', y_min_zero: true, smooth: kind === 'area', stacked: kind === 'area', opacity: 35, sort: 'value_desc', x_rotate: '0',
   };
 }
@@ -3178,7 +3178,7 @@ VIZ.funnel = {
       ...C_LEGEND, { key: 'min_size', type: 'number', label: 'Минимальная ширина, %', min: 0, max: 80, def: 10 },
     ] },
   ],
-  defaults: ds => ({ dim: firstStringCol(ds), metric: firstMetric(ds), order_by: null, row_limit: 10, label_type: 'pct_first', label_pos: 'right', show_legend: false, legend_pos: 'top', min_size: 10, color_scheme: 'kobra', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
+  defaults: ds => ({ dim: firstStringCol(ds), metric: firstMetric(ds), order_by: null, row_limit: 10, label_type: 'pct_first', label_pos: 'right', show_legend: false, legend_pos: 'top', min_size: 10, color_scheme: 'superset', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
   render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.dim || !p.metric) return vizMsg(root, 'Выберите измерение и метрику');
@@ -3378,7 +3378,7 @@ VIZ.pie = {
       ...C_LEGEND,
     ] },
   ],
-  defaults: ds => ({ dim: firstStringCol(ds), metric: firstMetric(ds), row_limit: 8, other: true, donut: true, rose: false, label_type: 'name_pct', total_center: true, show_legend: false, legend_pos: 'right', color_scheme: 'kobra', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
+  defaults: ds => ({ dim: firstStringCol(ds), metric: firstMetric(ds), row_limit: 8, other: true, donut: true, rose: false, label_type: 'name_pct', total_center: true, show_legend: false, legend_pos: 'right', color_scheme: 'superset', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
   render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.dim || !p.metric) return vizMsg(root, 'Выберите измерение и метрику');
@@ -3436,7 +3436,7 @@ VIZ.treemap = {
       { key: 'drill', type: 'check', label: 'Приближение по клику', def: true, hint: 'Когда включена кросс-фильтрация, клик фильтрует шаблон' },
     ] },
   ],
-  defaults: ds => ({ groupby: [firstStringCol(ds)], metric: firstMetric(ds), row_limit: 200, show_values: true, show_pct: false, drill: true, color_scheme: 'kobra', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
+  defaults: ds => ({ groupby: [firstStringCol(ds)], metric: firstMetric(ds), row_limit: 200, show_values: true, show_pct: false, drill: true, color_scheme: 'superset', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
   render(root, ctx) {
     const { ds, params: p } = ctx;
     const gb = (p.groupby || []).filter(k => dsCol(ds, k)).slice(0, 3);
@@ -3501,7 +3501,7 @@ function renderChart(root, chart, opts = {}) {
   root._lastData = null;
   if (!ds) { vizMsg(root, 'Набор данных не найден. Возможно, его удалили.', true); return 'набор данных не найден'; }
   if (!viz) { vizMsg(root, 'Неизвестный тип графика', true); return 'неизвестный тип графика'; }
-  const scheme = COLOR_SCHEMES[opts.scheme || chart.params.color_scheme] || COLOR_SCHEMES.kobra;
+  const scheme = COLOR_SCHEMES[opts.scheme || chart.params.color_scheme] || COLOR_SCHEMES.superset;
   const params = Object.assign({}, viz.defaults(ds), chart.params);
   const ctx = {
     ds, params, colors: scheme.colors,
@@ -5405,7 +5405,7 @@ function renderExplore(main, parts, q) {
           fmtSuffix(v) !== null ? [[v, formatLabel(v)], ...Object.entries(NUMBER_FORMATS)] : Object.entries(NUMBER_FORMATS),
           v || 'auto', val => set(c.key, val, false)));
       case 'scheme':
-        return field(c.label, selectEl(Object.entries(COLOR_SCHEMES).map(([k, s]) => [k, s.label]), v || 'kobra', val => set(c.key, val, false)));
+        return field(c.label, selectEl(Object.entries(COLOR_SCHEMES).map(([k, s]) => [k, s.label]), v || 'superset', val => set(c.key, val, false)));
       case 'seqscheme':
         return field(c.label, selectEl(Object.entries(SEQ_SCHEMES).map(([k, s]) => [k, s.label]), v || 'copper', val => set(c.key, val, false)));
     }

@@ -2,8 +2,8 @@
    Кобра · визуализации
    ============================================================ */
 const COLOR_SCHEMES = {
-  kobra: { label: 'Кобра', colors: ['#E06A1B', '#3E6E8E', '#D9A42B', '#2E8B74', '#A8481A', '#5B6270', '#8E5BA6', '#C25570', '#7D8CA3', '#B5855B'] },
   superset: { label: 'Как в Superset', colors: ['#1FA8C9', '#454E7C', '#5AC189', '#FF7F44', '#666666', '#E04355', '#FCC700', '#A868B7', '#3CCCCB', '#A38F79'] },
+  kobra: { label: 'Кобра', colors: ['#E06A1B', '#3E6E8E', '#D9A42B', '#2E8B74', '#A8481A', '#5B6270', '#8E5BA6', '#C25570', '#7D8CA3', '#B5855B'] },
   warm: { label: 'Тёплая', colors: ['#9C2F1E', '#D25A2B', '#E88F3A', '#F2BE5C', '#B7864A', '#7A4A2A', '#E0635F', '#C73E61', '#8E5B3E', '#F0A58A'] },
   cold: { label: 'Холодная', colors: ['#0B3C5D', '#1D6A96', '#3E92CC', '#72B8D8', '#2A7F62', '#5FB49C', '#8AA1B1', '#4B5D8C', '#9BC4E2', '#305F72'] },
   jade: { label: 'Оттенки нефрита', colors: ['#0B5F47', '#0E7457', '#2E9474', '#56AE91', '#84C7AF', '#B3DDCD', '#1E4A3D', '#6C9C8B', '#3F7F6A', '#A2C8BA'] },
@@ -264,7 +264,7 @@ function xyDefaults(ds, kind) {
   return {
     x_col: kind === 'bar' ? firstStringCol(ds) : (dt || firstStringCol(ds)), x_grain: 'month',
     metrics: [firstMetric(ds)], series_col: null, series_limit: 8, row_limit: kind === 'bar' ? 30 : 1000,
-    time_range: { preset: 'all' }, adhoc_filters: [], color_scheme: 'kobra', y_format: 'auto',
+    time_range: { preset: 'all' }, adhoc_filters: [], color_scheme: 'superset', y_format: 'auto',
     show_legend: true, legend_pos: 'top', y_min_zero: true, smooth: kind === 'area', stacked: kind === 'area', opacity: 35, sort: 'value_desc', x_rotate: '0',
   };
 }
@@ -737,7 +737,7 @@ VIZ.funnel = {
       ...C_LEGEND, { key: 'min_size', type: 'number', label: 'Минимальная ширина, %', min: 0, max: 80, def: 10 },
     ] },
   ],
-  defaults: ds => ({ dim: firstStringCol(ds), metric: firstMetric(ds), order_by: null, row_limit: 10, label_type: 'pct_first', label_pos: 'right', show_legend: false, legend_pos: 'top', min_size: 10, color_scheme: 'kobra', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
+  defaults: ds => ({ dim: firstStringCol(ds), metric: firstMetric(ds), order_by: null, row_limit: 10, label_type: 'pct_first', label_pos: 'right', show_legend: false, legend_pos: 'top', min_size: 10, color_scheme: 'superset', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
   render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.dim || !p.metric) return vizMsg(root, 'Выберите измерение и метрику');
@@ -937,7 +937,7 @@ VIZ.pie = {
       ...C_LEGEND,
     ] },
   ],
-  defaults: ds => ({ dim: firstStringCol(ds), metric: firstMetric(ds), row_limit: 8, other: true, donut: true, rose: false, label_type: 'name_pct', total_center: true, show_legend: false, legend_pos: 'right', color_scheme: 'kobra', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
+  defaults: ds => ({ dim: firstStringCol(ds), metric: firstMetric(ds), row_limit: 8, other: true, donut: true, rose: false, label_type: 'name_pct', total_center: true, show_legend: false, legend_pos: 'right', color_scheme: 'superset', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
   render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.dim || !p.metric) return vizMsg(root, 'Выберите измерение и метрику');
@@ -995,7 +995,7 @@ VIZ.treemap = {
       { key: 'drill', type: 'check', label: 'Приближение по клику', def: true, hint: 'Когда включена кросс-фильтрация, клик фильтрует шаблон' },
     ] },
   ],
-  defaults: ds => ({ groupby: [firstStringCol(ds)], metric: firstMetric(ds), row_limit: 200, show_values: true, show_pct: false, drill: true, color_scheme: 'kobra', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
+  defaults: ds => ({ groupby: [firstStringCol(ds)], metric: firstMetric(ds), row_limit: 200, show_values: true, show_pct: false, drill: true, color_scheme: 'superset', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
   render(root, ctx) {
     const { ds, params: p } = ctx;
     const gb = (p.groupby || []).filter(k => dsCol(ds, k)).slice(0, 3);
@@ -1060,7 +1060,7 @@ function renderChart(root, chart, opts = {}) {
   root._lastData = null;
   if (!ds) { vizMsg(root, 'Набор данных не найден. Возможно, его удалили.', true); return 'набор данных не найден'; }
   if (!viz) { vizMsg(root, 'Неизвестный тип графика', true); return 'неизвестный тип графика'; }
-  const scheme = COLOR_SCHEMES[opts.scheme || chart.params.color_scheme] || COLOR_SCHEMES.kobra;
+  const scheme = COLOR_SCHEMES[opts.scheme || chart.params.color_scheme] || COLOR_SCHEMES.superset;
   const params = Object.assign({}, viz.defaults(ds), chart.params);
   const ctx = {
     ds, params, colors: scheme.colors,
