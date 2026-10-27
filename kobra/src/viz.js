@@ -2,7 +2,7 @@
    Кобра · визуализации
    ============================================================ */
 const COLOR_SCHEMES = {
-  kobra: { label: 'Кобра', colors: ['#0E7457', '#D39A1E', '#3F6FB0', '#B8543C', '#7B5AA6', '#2A9DA0', '#8C9A3A', '#C77A9A', '#5B6B66', '#E0B98A'] },
+  kobra: { label: 'Кобра', colors: ['#E06A1B', '#3E6E8E', '#D9A42B', '#2E8B74', '#A8481A', '#5B6270', '#8E5BA6', '#C25570', '#7D8CA3', '#B5855B'] },
   superset: { label: 'Как в Superset', colors: ['#1FA8C9', '#454E7C', '#5AC189', '#FF7F44', '#666666', '#E04355', '#FCC700', '#A868B7', '#3CCCCB', '#A38F79'] },
   warm: { label: 'Тёплая', colors: ['#9C2F1E', '#D25A2B', '#E88F3A', '#F2BE5C', '#B7864A', '#7A4A2A', '#E0635F', '#C73E61', '#8E5B3E', '#F0A58A'] },
   cold: { label: 'Холодная', colors: ['#0B3C5D', '#1D6A96', '#3E92CC', '#72B8D8', '#2A7F62', '#5FB49C', '#8AA1B1', '#4B5D8C', '#9BC4E2', '#305F72'] },
@@ -10,6 +10,7 @@ const COLOR_SCHEMES = {
   orange: { label: 'Оранжевая', colors: ['#FC8507', '#333333', '#8A8A8A', '#FFB45C', '#5A5A5A', '#C96A00', '#BDBDBD', '#FFD3A1', '#1F1F1F', '#E07A10'] },
 };
 const SEQ_SCHEMES = {
+  copper: { label: 'Медь', colors: ['#FCEFE3', '#F3C396', '#DD7324', '#8E3A0C'] },
   jade: { label: 'Нефрит', colors: ['#EAF4EF', '#9FD2BD', '#3E9C7A', '#0B5F47'] },
   amber: { label: 'Янтарь', colors: ['#FBF3E0', '#F2CF7E', '#D39A1E', '#8A5A06'] },
   blue: { label: 'Синяя', colors: ['#EAF1FA', '#A7C4E8', '#4C80C4', '#1D3F73'] },
@@ -866,7 +867,7 @@ VIZ.heatmap = {
       { key: 'show_scale', type: 'check', label: 'Показывать шкалу', def: true },
     ] },
   ],
-  defaults: ds => ({ x_col: ds.mainDttm || firstStringCol(ds), y_col: firstStringCol(ds), x_grain: 'month', metric: firstMetric(ds), x_limit: 40, y_limit: 25, seq_scheme: 'jade', normalize: 'all', sort_y: 'value_desc', show_values: false, show_scale: true, y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
+  defaults: ds => ({ x_col: ds.mainDttm || firstStringCol(ds), y_col: firstStringCol(ds), x_grain: 'month', metric: firstMetric(ds), x_limit: 40, y_limit: 25, seq_scheme: 'copper', normalize: 'all', sort_y: 'value_desc', show_values: false, show_scale: true, y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
   render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.x_col || !p.y_col || !p.metric) return vizMsg(root, 'Выберите оси X, Y и метрику');

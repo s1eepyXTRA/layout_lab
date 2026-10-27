@@ -34,7 +34,7 @@ function seedState() {
   mk('c_bullet', 'Маржинальность направлений против средней', 'bullet', 'demo_sales', { metric: M('margin_pct'), dim: 'direction', target_mode: 'avg', ranges: '0,1; 0,18; 0,5', range_labels: 'Низкая, Нормальная, Высокая' });
   mk('c_brands', 'Группы товаров по линейкам', 'bar', 'demo_sales', { x_col: 'group', metrics: [M('revenue')], series_col: 'line', stacked: true, row_limit: 15, x_rotate: '45', series_limit: 3 });
   // Регионы
-  mk('c_heat', 'Выручка городов по месяцам', 'heatmap', 'demo_sales', { x_col: 'date', y_col: 'city', x_grain: 'month', metric: M('revenue'), normalize: 'y', seq_scheme: 'jade', y_limit: 25 });
+  mk('c_heat', 'Выручка городов по месяцам', 'heatmap', 'demo_sales', { x_col: 'date', y_col: 'city', x_grain: 'month', metric: M('revenue'), normalize: 'y', seq_scheme: 'copper', y_limit: 25 });
   mk('c_district', 'Регионы и каналы', 'bar', 'demo_sales', { x_col: 'region', metrics: [M('revenue')], series_col: 'channel', stacked: true, x_rotate: '30' });
   mk('c_stores', 'Точки продаж', 'table', 'demo_sales', { mode: 'agg', groupby: ['city', 'store'], metrics: [M('revenue'), M('orders'), M('avg_check')], row_limit: 100, page_size: '25', totals: true });
   // Интернет-магазин
@@ -150,7 +150,7 @@ function renderShell() {
     { label: 'Выйти', icon: 'back', onClick: authSignOut },
   ]));
   app.appendChild(h('header', { class: 'topbar' },
-    h('a', { class: 'brand', href: '#/dashboards', 'aria-label': 'Кобра — на главную' }, ic('cobra'), h('b', null, 'Кобра')),
+    h('a', { class: 'brand', href: '#/dashboards', 'aria-label': 'Кобра — на главную' }, brandMark(), h('b', null, 'Кобра')),
     h('nav', { class: 'nav' },
       h('a', { href: '#/dashboards', 'data-sec': 'dashboards' }, 'Шаблоны'),
       h('a', { href: '#/charts', 'data-sec': 'charts' }, 'Графики'),

@@ -276,7 +276,7 @@ function renderExplore(main, parts, q) {
       case 'scheme':
         return field(c.label, selectEl(Object.entries(COLOR_SCHEMES).map(([k, s]) => [k, s.label]), v || 'kobra', val => set(c.key, val, false)));
       case 'seqscheme':
-        return field(c.label, selectEl(Object.entries(SEQ_SCHEMES).map(([k, s]) => [k, s.label]), v || 'jade', val => set(c.key, val, false)));
+        return field(c.label, selectEl(Object.entries(SEQ_SCHEMES).map(([k, s]) => [k, s.label]), v || 'copper', val => set(c.key, val, false)));
     }
     return null;
   }

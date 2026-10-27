@@ -76,7 +76,6 @@ const ICONS = {
   eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   reset: '<path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/>',
   wand: '<path d="M4 20L13.5 10.5"/><path d="M17 3l.9 2.1L20 6l-2.1.9L17 9l-.9-2.1L14 6l2.1-.9zM7.5 4l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6L5.2 6.3l1.6-.7zM19 14.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z"/>',
-  cobra: '<path d="M12 2.5c-3.3 0-6 2.6-6 6.3 0 2.4 1.2 4 2.6 5.2.8.7 1.1 1.4 1.1 2.4V21h4.6v-4.6c0-1 .3-1.7 1.1-2.4 1.4-1.2 2.6-2.8 2.6-5.2 0-3.7-2.7-6.3-6-6.3z" fill="currentColor" stroke="none"/><circle cx="10" cy="8" r=".9" fill="var(--bar)" stroke="none"/><circle cx="14" cy="8" r=".9" fill="var(--bar)" stroke="none"/><path d="M12 12.2v1.4m-.9.8l.9-.8.9.8" stroke="var(--bar)" stroke-width="1"/>',
   // Иконки визуализаций
   v_line: '<path d="M3 20h18"/><path d="M4 16l5-6 4 3 7-8"/>',
   v_mixed: '<path d="M3 20h18"/><rect x="5" y="12" width="3" height="8" rx=".5"/><rect x="11" y="9" width="3" height="11" rx=".5"/><rect x="17" y="13" width="3" height="7" rx=".5"/><path d="M4 9l6-4 5 3 6-4"/>',
@@ -103,6 +102,19 @@ function ic(name, cls) {
 }
 function iconBtn(name, title, onClick, cls = '') {
   return h('button', { class: 'iconbtn ' + cls, title, 'aria-label': title, type: 'button', onclick: e => { e.stopPropagation(); onClick(e); } }, ic(name));
+}
+
+/* Знак «Кобры»: разорванное кольцо из четырёх секторов, цвета зашиты — это логотип,
+   он одинаков в обеих темах. plate — тёмная плашка под знаком (как у иконки приложения). */
+const BRAND_RING = '<path fill="#5B6270" d="M122.13 115.35A55 55 0 0 1 65.97 133.18L73.54 112.36A33 33 0 0 0 105.28 101.21Z"/><path fill="#A8481A" d="M56.57 129.76A55 55 0 0 1 25.23 85L47.38 85A33 33 0 0 0 64.15 108.94Z"/><path fill="#F2A65A" d="M25.23 75A55 55 0 0 1 56.57 30.24L64.15 51.06A33 33 0 0 0 47.38 75Z"/><path fill="#E06A1B" d="M65.97 26.82A55 55 0 0 1 122.13 44.65L105.28 58.79A33 33 0 0 0 73.54 47.64Z"/>';
+const BRAND_PLATE = '<rect width="160" height="160" rx="36" fill="#1F2430"/>';
+function brandMark(size = 26, plate = false) {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 160 160');
+  s.setAttribute('width', String(size)); s.setAttribute('height', String(size));
+  s.setAttribute('aria-hidden', 'true');
+  s.innerHTML = (plate ? BRAND_PLATE : '') + BRAND_RING;
+  return s;
 }
 
 /* ---------- Тосты ---------- */

@@ -4,19 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Кобра — прототипы дашбордов</title>
+<link rel="icon" href="data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20160%20160%22%3E%3Crect%20width%3D%22160%22%20height%3D%22160%22%20rx%3D%2236%22%20fill%3D%22%231F2430%22/%3E%3Cpath%20fill%3D%22%235B6270%22%20d%3D%22M122.13%20115.35A55%2055%200%200%201%2065.97%20133.18L73.54%20112.36A33%2033%200%200%200%20105.28%20101.21Z%22/%3E%3Cpath%20fill%3D%22%23A8481A%22%20d%3D%22M56.57%20129.76A55%2055%200%200%201%2025.23%2085L47.38%2085A33%2033%200%200%200%2064.15%20108.94Z%22/%3E%3Cpath%20fill%3D%22%23F2A65A%22%20d%3D%22M25.23%2075A55%2055%200%200%201%2056.57%2030.24L64.15%2051.06A33%2033%200%200%200%2047.38%2075Z%22/%3E%3Cpath%20fill%3D%22%23E06A1B%22%20d%3D%22M65.97%2026.82A55%2055%200%200%201%20122.13%2044.65L105.28%2058.79A33%2033%200%200%200%2073.54%2047.64Z%22/%3E%3C/svg%3E">
+<meta name="theme-color" content="#1F2430">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@500;600;700&display=swap" rel="stylesheet">
 <style>:root {
   box-sizing: border-box;
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  --bg: #EDF0EE; --surface: #FFFFFF; --surface-2: #F5F7F6; --surface-3: #E8ECEA;
-  --ink: #16221E; --ink-2: #4A5853; --ink-3: #7B8983; --line: #DAE0DD; --line-2: #C7D0CC;
-  --primary: #0E7457; --primary-hover: #0B5F47; --primary-ink: #FFFFFF; --primary-soft: #DEF0E8;
-  --accent: #C98A0B; --accent-soft: #FBF0D6;
-  --danger: #B63A2B; --danger-soft: #FBE7E3; --up: #1B8456; --down: #C0412F;
-  --bar: #0C3A2E; --bar-ink: #E6F2EC; --bar-ink-2: #9CC4B3;
-  --shadow: 0 1px 2px rgba(18, 38, 31, .06), 0 8px 24px -12px rgba(18, 38, 31, .18);
-  --shadow-pop: 0 12px 40px -8px rgba(12, 40, 30, .28), 0 2px 6px rgba(12, 40, 30, .08);
+  --bg: #EEF0F3; --surface: #FFFFFF; --surface-2: #F6F7F9; --surface-3: #E7EAEF;
+  --ink: #1F2430; --ink-2: #4C5361; --ink-3: #7D8595; --line: #DCE0E7; --line-2: #C5CBD6;
+  --primary: #BE5410; --primary-hover: #A2450B; --primary-ink: #FFFFFF; --primary-soft: #FBE9DA;
+  --brand: #E06A1B;
+  --accent: #43566E; --accent-soft: #DEE5EF; --accent-ink: #FFFFFF;
+  --danger: #C22F3C; --danger-soft: #FBE5E8; --up: #18845A; --down: #C22F3C;
+  --bar: #1F2430; --bar-ink: #F2F4F8; --bar-ink-2: #9BA4B4;
+  --shadow: 0 1px 2px rgba(31, 36, 48, .06), 0 8px 24px -12px rgba(31, 36, 48, .20);
+  --shadow-pop: 0 12px 40px -8px rgba(31, 36, 48, .30), 0 2px 6px rgba(31, 36, 48, .08);
   --r-s: 4px; --r-m: 7px; --r-l: 12px;
   --font: 'Onest', 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-display: 'Unbounded', 'Onest', 'Segoe UI', system-ui, sans-serif;
@@ -24,22 +27,26 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #111715; --surface: #19211E; --surface-2: #1F2926; --surface-3: #27332F;
-    --ink: #E6EEEA; --ink-2: #A8B6B0; --ink-3: #7A8983; --line: #2B3833; --line-2: #3A4943;
-    --primary: #3DBB8C; --primary-hover: #5CCDA2; --primary-ink: #07261B; --primary-soft: #1B3A2F;
-    --accent: #E3AA3C; --accent-soft: #3A2F18; --danger: #E26A58; --danger-soft: #3B1F1B; --up: #4CC98F; --down: #EE7A66;
-    --bar: #0A2A21; --bar-ink: #DDEEE6; --bar-ink-2: #86B3A1;
+    --bg: #171B23; --surface: #1E222B; --surface-2: #262B36; --surface-3: #2F3542;
+    --ink: #ECEFF4; --ink-2: #A9B2C0; --ink-3: #7B8595; --line: #333A47; --line-2: #414A59;
+    --primary: #EE8236; --primary-hover: #F79E5B; --primary-ink: #2A1405; --primary-soft: #3A2415;
+    --brand: #E06A1B;
+    --accent: #A9BDD6; --accent-soft: #263142; --accent-ink: #141821;
+    --danger: #F0727C; --danger-soft: #3B1D22; --up: #4CC98F; --down: #F0727C;
+    --bar: #141821; --bar-ink: #F2F4F8; --bar-ink-2: #8F99A8;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .5);
     --shadow-pop: 0 12px 40px -8px rgba(0, 0, 0, .6);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #111715; --surface: #19211E; --surface-2: #1F2926; --surface-3: #27332F;
-  --ink: #E6EEEA; --ink-2: #A8B6B0; --ink-3: #7A8983; --line: #2B3833; --line-2: #3A4943;
-  --primary: #3DBB8C; --primary-hover: #5CCDA2; --primary-ink: #07261B; --primary-soft: #1B3A2F;
-  --accent: #E3AA3C; --accent-soft: #3A2F18; --danger: #E26A58; --danger-soft: #3B1F1B; --up: #4CC98F; --down: #EE7A66;
-  --bar: #0A2A21; --bar-ink: #DDEEE6; --bar-ink-2: #86B3A1;
+  --bg: #171B23; --surface: #1E222B; --surface-2: #262B36; --surface-3: #2F3542;
+  --ink: #ECEFF4; --ink-2: #A9B2C0; --ink-3: #7B8595; --line: #333A47; --line-2: #414A59;
+  --primary: #EE8236; --primary-hover: #F79E5B; --primary-ink: #2A1405; --primary-soft: #3A2415;
+  --brand: #E06A1B;
+  --accent: #A9BDD6; --accent-soft: #263142; --accent-ink: #141821;
+  --danger: #F0727C; --danger-soft: #3B1D22; --up: #4CC98F; --down: #F0727C;
+  --bar: #141821; --bar-ink: #F2F4F8; --bar-ink-2: #8F99A8;
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .5);
   --shadow-pop: 0 12px 40px -8px rgba(0, 0, 0, .6);
   color-scheme: dark;
@@ -70,7 +77,7 @@ a { color: var(--primary); }
   font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -0px;
 }
 .nav a:hover { color: var(--bar-ink); }
-.nav a.on { color: var(--bar-ink); border-bottom-color: var(--accent); }
+.nav a.on { color: var(--bar-ink); border-bottom-color: var(--brand); }
 .topbar .spacer { flex: 1; }
 .iconbtn-bar { background: none; border: 0; color: var(--bar-ink-2); width: 34px; height: 34px; border-radius: 6px; cursor: pointer; display: grid; place-items: center; }
 .iconbtn-bar svg { width: 19px; height: 19px; }
@@ -95,7 +102,7 @@ a { color: var(--primary); }
 /* AI-ассистент — не рядовая кнопка: свой цвет, чтобы находиться глазами сразу */
 .btn.ai { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .btn.ai:hover { border-color: var(--accent); }
-.btn.ai.on { background: var(--accent); border-color: var(--accent); color: var(--bar); }
+.btn.ai.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.ghost { border-color: transparent; background: transparent; }
 .btn.ghost:hover { background: var(--surface-3); }
 .btn.danger { color: var(--danger); }
@@ -504,8 +511,8 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .prev-tbl th .select, .prev-tbl th .input { display: block; width: 100%; height: 28px; font-size: 12.5px; margin-top: 4px; min-width: 130px; }
 .loading { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); z-index: 500; }
 .loading div { display: flex; flex-direction: column; align-items: center; gap: 14px; color: var(--ink-2); }
-.loading svg { width: 48px; height: 48px; color: var(--primary); animation: sway 1.4s ease-in-out infinite; }
-@keyframes sway { 50% { transform: rotate(-8deg) translateY(-3px); } }
+.loading svg { width: 48px; height: 48px; animation: spin 1.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .kbd { font-size: 12px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line-2); background: var(--surface-2); }
 
 @media (max-width: 1100px) {
@@ -540,7 +547,7 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 </head>
 <body>
-<div class="loading" role="status"><div><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5c-3.3 0-6 2.6-6 6.3 0 2.4 1.2 4 2.6 5.2.8.7 1.1 1.4 1.1 2.4V21h4.6v-4.6c0-1 .3-1.7 1.1-2.4 1.4-1.2 2.6-2.8 2.6-5.2 0-3.7-2.7-6.3-6-6.3z"/></svg><span>Готовлю демо-данные…</span></div></div>
+<div class="loading" role="status"><div><svg viewBox="0 0 160 160" aria-hidden="true"><path fill="#5B6270" d="M122.13 115.35A55 55 0 0 1 65.97 133.18L73.54 112.36A33 33 0 0 0 105.28 101.21Z"/><path fill="#A8481A" d="M56.57 129.76A55 55 0 0 1 25.23 85L47.38 85A33 33 0 0 0 64.15 108.94Z"/><path fill="#F2A65A" d="M25.23 75A55 55 0 0 1 56.57 30.24L64.15 51.06A33 33 0 0 0 47.38 75Z"/><path fill="#E06A1B" d="M65.97 26.82A55 55 0 0 1 122.13 44.65L105.28 58.79A33 33 0 0 0 73.54 47.64Z"/></svg><span>Готовлю демо-данные…</span></div></div>
 <div id="app"></div>
 <script>
 /* =============================================================
@@ -1498,7 +1505,6 @@ const ICONS = {
   eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   reset: '<path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/>',
   wand: '<path d="M4 20L13.5 10.5"/><path d="M17 3l.9 2.1L20 6l-2.1.9L17 9l-.9-2.1L14 6l2.1-.9zM7.5 4l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6L5.2 6.3l1.6-.7zM19 14.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z"/>',
-  cobra: '<path d="M12 2.5c-3.3 0-6 2.6-6 6.3 0 2.4 1.2 4 2.6 5.2.8.7 1.1 1.4 1.1 2.4V21h4.6v-4.6c0-1 .3-1.7 1.1-2.4 1.4-1.2 2.6-2.8 2.6-5.2 0-3.7-2.7-6.3-6-6.3z" fill="currentColor" stroke="none"/><circle cx="10" cy="8" r=".9" fill="var(--bar)" stroke="none"/><circle cx="14" cy="8" r=".9" fill="var(--bar)" stroke="none"/><path d="M12 12.2v1.4m-.9.8l.9-.8.9.8" stroke="var(--bar)" stroke-width="1"/>',
   // Иконки визуализаций
   v_line: '<path d="M3 20h18"/><path d="M4 16l5-6 4 3 7-8"/>',
   v_mixed: '<path d="M3 20h18"/><rect x="5" y="12" width="3" height="8" rx=".5"/><rect x="11" y="9" width="3" height="11" rx=".5"/><rect x="17" y="13" width="3" height="7" rx=".5"/><path d="M4 9l6-4 5 3 6-4"/>',
@@ -1525,6 +1531,19 @@ function ic(name, cls) {
 }
 function iconBtn(name, title, onClick, cls = '') {
   return h('button', { class: 'iconbtn ' + cls, title, 'aria-label': title, type: 'button', onclick: e => { e.stopPropagation(); onClick(e); } }, ic(name));
+}
+
+/* Знак «Кобры»: разорванное кольцо из четырёх секторов, цвета зашиты — это логотип,
+   он одинаков в обеих темах. plate — тёмная плашка под знаком (как у иконки приложения). */
+const BRAND_RING = '<path fill="#5B6270" d="M122.13 115.35A55 55 0 0 1 65.97 133.18L73.54 112.36A33 33 0 0 0 105.28 101.21Z"/><path fill="#A8481A" d="M56.57 129.76A55 55 0 0 1 25.23 85L47.38 85A33 33 0 0 0 64.15 108.94Z"/><path fill="#F2A65A" d="M25.23 75A55 55 0 0 1 56.57 30.24L64.15 51.06A33 33 0 0 0 47.38 75Z"/><path fill="#E06A1B" d="M65.97 26.82A55 55 0 0 1 122.13 44.65L105.28 58.79A33 33 0 0 0 73.54 47.64Z"/>';
+const BRAND_PLATE = '<rect width="160" height="160" rx="36" fill="#1F2430"/>';
+function brandMark(size = 26, plate = false) {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 160 160');
+  s.setAttribute('width', String(size)); s.setAttribute('height', String(size));
+  s.setAttribute('aria-hidden', 'true');
+  s.innerHTML = (plate ? BRAND_PLATE : '') + BRAND_RING;
+  return s;
 }
 
 /* ---------- Тосты ---------- */
@@ -2131,7 +2150,7 @@ function renderSignIn(onDone) {
     onDone();
   };
   const form = h('form', { class: 'signin-card', onsubmit: e => { e.preventDefault(); submit(); } },
-    h('div', { class: 'signin-brand' }, ic('cobra'), h('b', null, 'Кобра')),
+    h('div', { class: 'signin-brand' }, brandMark(28), h('b', null, 'Кобра')),
     h('p', { class: 'signin-lead' }, 'Конструктор шаблонов дашбордов. Войдите, чтобы увидеть свои шаблоны и шаблоны своей команды.'),
     h('div', { class: 'signin-way' }, ldap ? 'Вход по LDAP · ' + cfg.ldap.server : 'Вход по логину и паролю'),
     field('Логин', loginInp),
@@ -2339,7 +2358,7 @@ function itemDefaultSize(type, chart) {
    Кобра · визуализации
    ============================================================ */
 const COLOR_SCHEMES = {
-  kobra: { label: 'Кобра', colors: ['#0E7457', '#D39A1E', '#3F6FB0', '#B8543C', '#7B5AA6', '#2A9DA0', '#8C9A3A', '#C77A9A', '#5B6B66', '#E0B98A'] },
+  kobra: { label: 'Кобра', colors: ['#E06A1B', '#3E6E8E', '#D9A42B', '#2E8B74', '#A8481A', '#5B6270', '#8E5BA6', '#C25570', '#7D8CA3', '#B5855B'] },
   superset: { label: 'Как в Superset', colors: ['#1FA8C9', '#454E7C', '#5AC189', '#FF7F44', '#666666', '#E04355', '#FCC700', '#A868B7', '#3CCCCB', '#A38F79'] },
   warm: { label: 'Тёплая', colors: ['#9C2F1E', '#D25A2B', '#E88F3A', '#F2BE5C', '#B7864A', '#7A4A2A', '#E0635F', '#C73E61', '#8E5B3E', '#F0A58A'] },
   cold: { label: 'Холодная', colors: ['#0B3C5D', '#1D6A96', '#3E92CC', '#72B8D8', '#2A7F62', '#5FB49C', '#8AA1B1', '#4B5D8C', '#9BC4E2', '#305F72'] },
@@ -2347,6 +2366,7 @@ const COLOR_SCHEMES = {
   orange: { label: 'Оранжевая', colors: ['#FC8507', '#333333', '#8A8A8A', '#FFB45C', '#5A5A5A', '#C96A00', '#BDBDBD', '#FFD3A1', '#1F1F1F', '#E07A10'] },
 };
 const SEQ_SCHEMES = {
+  copper: { label: 'Медь', colors: ['#FCEFE3', '#F3C396', '#DD7324', '#8E3A0C'] },
   jade: { label: 'Нефрит', colors: ['#EAF4EF', '#9FD2BD', '#3E9C7A', '#0B5F47'] },
   amber: { label: 'Янтарь', colors: ['#FBF3E0', '#F2CF7E', '#D39A1E', '#8A5A06'] },
   blue: { label: 'Синяя', colors: ['#EAF1FA', '#A7C4E8', '#4C80C4', '#1D3F73'] },
@@ -3203,7 +3223,7 @@ VIZ.heatmap = {
       { key: 'show_scale', type: 'check', label: 'Показывать шкалу', def: true },
     ] },
   ],
-  defaults: ds => ({ x_col: ds.mainDttm || firstStringCol(ds), y_col: firstStringCol(ds), x_grain: 'month', metric: firstMetric(ds), x_limit: 40, y_limit: 25, seq_scheme: 'jade', normalize: 'all', sort_y: 'value_desc', show_values: false, show_scale: true, y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
+  defaults: ds => ({ x_col: ds.mainDttm || firstStringCol(ds), y_col: firstStringCol(ds), x_grain: 'month', metric: firstMetric(ds), x_limit: 40, y_limit: 25, seq_scheme: 'copper', normalize: 'all', sort_y: 'value_desc', show_values: false, show_scale: true, y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
   render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.x_col || !p.y_col || !p.metric) return vizMsg(root, 'Выберите оси X, Y и метрику');
@@ -3452,7 +3472,7 @@ function seedState() {
   mk('c_bullet', 'Маржинальность направлений против средней', 'bullet', 'demo_sales', { metric: M('margin_pct'), dim: 'direction', target_mode: 'avg', ranges: '0,1; 0,18; 0,5', range_labels: 'Низкая, Нормальная, Высокая' });
   mk('c_brands', 'Группы товаров по линейкам', 'bar', 'demo_sales', { x_col: 'group', metrics: [M('revenue')], series_col: 'line', stacked: true, row_limit: 15, x_rotate: '45', series_limit: 3 });
   // Регионы
-  mk('c_heat', 'Выручка городов по месяцам', 'heatmap', 'demo_sales', { x_col: 'date', y_col: 'city', x_grain: 'month', metric: M('revenue'), normalize: 'y', seq_scheme: 'jade', y_limit: 25 });
+  mk('c_heat', 'Выручка городов по месяцам', 'heatmap', 'demo_sales', { x_col: 'date', y_col: 'city', x_grain: 'month', metric: M('revenue'), normalize: 'y', seq_scheme: 'copper', y_limit: 25 });
   mk('c_district', 'Регионы и каналы', 'bar', 'demo_sales', { x_col: 'region', metrics: [M('revenue')], series_col: 'channel', stacked: true, x_rotate: '30' });
   mk('c_stores', 'Точки продаж', 'table', 'demo_sales', { mode: 'agg', groupby: ['city', 'store'], metrics: [M('revenue'), M('orders'), M('avg_check')], row_limit: 100, page_size: '25', totals: true });
   // Интернет-магазин
@@ -3568,7 +3588,7 @@ function renderShell() {
     { label: 'Выйти', icon: 'back', onClick: authSignOut },
   ]));
   app.appendChild(h('header', { class: 'topbar' },
-    h('a', { class: 'brand', href: '#/dashboards', 'aria-label': 'Кобра — на главную' }, ic('cobra'), h('b', null, 'Кобра')),
+    h('a', { class: 'brand', href: '#/dashboards', 'aria-label': 'Кобра — на главную' }, brandMark(), h('b', null, 'Кобра')),
     h('nav', { class: 'nav' },
       h('a', { href: '#/dashboards', 'data-sec': 'dashboards' }, 'Шаблоны'),
       h('a', { href: '#/charts', 'data-sec': 'charts' }, 'Графики'),
@@ -5302,7 +5322,7 @@ function renderExplore(main, parts, q) {
       case 'scheme':
         return field(c.label, selectEl(Object.entries(COLOR_SCHEMES).map(([k, s]) => [k, s.label]), v || 'kobra', val => set(c.key, val, false)));
       case 'seqscheme':
-        return field(c.label, selectEl(Object.entries(SEQ_SCHEMES).map(([k, s]) => [k, s.label]), v || 'jade', val => set(c.key, val, false)));
+        return field(c.label, selectEl(Object.entries(SEQ_SCHEMES).map(([k, s]) => [k, s.label]), v || 'copper', val => set(c.key, val, false)));
     }
     return null;
   }
@@ -6851,7 +6871,7 @@ function tplBlockChart(b, ds, roles, derived) {
       const y = tplDimKey(b.y, roles);
       if (!roles.date || !y) return null;
       return { name: `${autoMetricTitle(ds, met)}: ${tplDimLabel(ds, y)} по месяцам`, viz: 'heatmap', size,
-        params: p({ x_col: roles.date, y_col: y, x_grain: 'month', metric: met, seq_scheme: 'jade', normalize: 'all', y_limit: 20 }) };
+        params: p({ x_col: roles.date, y_col: y, x_grain: 'month', metric: met, seq_scheme: 'copper', normalize: 'all', y_limit: 20 }) };
     }
     case 'pivot': {
       const cols = tplDimKey(b.cols, roles);

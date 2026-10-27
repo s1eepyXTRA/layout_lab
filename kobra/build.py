@@ -3,6 +3,7 @@
   python3 build.py offline   → build/kobra.html   (все библиотеки внутри файла, работает без интернета)
 """
 import os, sys
+from urllib.parse import quote
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC, VENDOR = os.path.join(ROOT, 'src'), os.path.join(ROOT, 'vendor')
 ORDER = ['types.js', 'data.js', 'engine.js', 'ui.js', 'auth.js', 'store.js', 'router.js', 'grid.js', 'viz.js', 'app.js', 'dashboard.js', 'explore.js', 'datasets.js', 'schema.js', 'autodash.js', 'templates.js', 'guided.js', 'assistant.js', 'aidraft.js', 'share.js', 'spec.js']
@@ -39,17 +40,26 @@ else:
     fonts = ('<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
              '<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@500;600;700&display=swap" rel="stylesheet">')
 
+# Знак логотипа: кольцо на тёмной плашке. Тот же знак рисует brandMark() в ui.js,
+# но экран загрузки показывается до запуска скриптов, поэтому разметка нужна и здесь.
+PLATE = '<rect width="160" height="160" rx="36" fill="#1F2430"/>'
+RING = '<path fill="#5B6270" d="M122.13 115.35A55 55 0 0 1 65.97 133.18L73.54 112.36A33 33 0 0 0 105.28 101.21Z"/><path fill="#A8481A" d="M56.57 129.76A55 55 0 0 1 25.23 85L47.38 85A33 33 0 0 0 64.15 108.94Z"/><path fill="#F2A65A" d="M25.23 75A55 55 0 0 1 56.57 30.24L64.15 51.06A33 33 0 0 0 47.38 75Z"/><path fill="#E06A1B" d="M65.97 26.82A55 55 0 0 1 122.13 44.65L105.28 58.79A33 33 0 0 0 73.54 47.64Z"/>'
+mark = '<svg viewBox="0 0 160 160" aria-hidden="true">' + RING + '</svg>'
+favicon = 'data:image/svg+xml;charset=utf-8,' + quote('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">' + PLATE + RING + '</svg>')
+
 html = f'''<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Кобра — прототипы дашбордов</title>
+<link rel="icon" href="{favicon}">
+<meta name="theme-color" content="#1F2430">
 {fonts}
 <style>{css}</style>
 {libs}</head>
 <body>
-<div class="loading" role="status"><div><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5c-3.3 0-6 2.6-6 6.3 0 2.4 1.2 4 2.6 5.2.8.7 1.1 1.4 1.1 2.4V21h4.6v-4.6c0-1 .3-1.7 1.1-2.4 1.4-1.2 2.6-2.8 2.6-5.2 0-3.7-2.7-6.3-6-6.3z"/></svg><span>Готовлю демо-данные…</span></div></div>
+<div class="loading" role="status"><div>{mark}<span>Готовлю демо-данные…</span></div></div>
 <div id="app"></div>
 <script>
 {js}

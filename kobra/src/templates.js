@@ -408,7 +408,7 @@ function tplBlockChart(b, ds, roles, derived) {
       const y = tplDimKey(b.y, roles);
       if (!roles.date || !y) return null;
       return { name: `${autoMetricTitle(ds, met)}: ${tplDimLabel(ds, y)} по месяцам`, viz: 'heatmap', size,
-        params: p({ x_col: roles.date, y_col: y, x_grain: 'month', metric: met, seq_scheme: 'jade', normalize: 'all', y_limit: 20 }) };
+        params: p({ x_col: roles.date, y_col: y, x_grain: 'month', metric: met, seq_scheme: 'copper', normalize: 'all', y_limit: 20 }) };
     }
     case 'pivot': {
       const cols = tplDimKey(b.cols, roles);
