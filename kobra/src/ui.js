@@ -57,8 +57,6 @@ const ICONS = {
   table: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 10v10"/>',
   expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   drag: '<circle cx="9" cy="6" r="1.2" fill="currentColor"/><circle cx="15" cy="6" r="1.2" fill="currentColor"/><circle cx="9" cy="12" r="1.2" fill="currentColor"/><circle cx="15" cy="12" r="1.2" fill="currentColor"/><circle cx="9" cy="18" r="1.2" fill="currentColor"/><circle cx="15" cy="18" r="1.2" fill="currentColor"/>',
-  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
-  moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
   db: '<ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v13c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-13M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
   text: '<path d="M5 6h14M5 12h10M5 18h12"/>',
@@ -105,7 +103,7 @@ function iconBtn(name, title, onClick, cls = '') {
 }
 
 /* Знак «Кобры»: разорванное кольцо из четырёх секторов, цвета зашиты — это логотип,
-   он одинаков в обеих темах. plate — тёмная плашка под знаком (как у иконки приложения). */
+   это логотип. plate — тёмная плашка под знаком (как у иконки приложения). */
 const BRAND_RING = '<path fill="#5B6270" d="M122.13 115.35A55 55 0 0 1 65.97 133.18L73.54 112.36A33 33 0 0 0 105.28 101.21Z"/><path fill="#A8481A" d="M56.57 129.76A55 55 0 0 1 25.23 85L47.38 85A33 33 0 0 0 64.15 108.94Z"/><path fill="#F2A65A" d="M25.23 75A55 55 0 0 1 56.57 30.24L64.15 51.06A33 33 0 0 0 47.38 75Z"/><path fill="#E06A1B" d="M65.97 26.82A55 55 0 0 1 122.13 44.65L105.28 58.79A33 33 0 0 0 73.54 47.64Z"/>';
 const BRAND_PLATE = '<rect width="160" height="160" rx="36" fill="#1F2430"/>';
 function brandMark(size = 26, plate = false) {

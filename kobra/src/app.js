@@ -13,7 +13,7 @@ const saveSoon = debounce(saveState, 300);
 
 /* ---------- Демо-наполнение ---------- */
 function seedState() {
-  const S = { v: 2, charts: {}, dashboards: {}, datasets: {}, dsMetrics: {}, theme: null };
+  const S = { v: 2, charts: {}, dashboards: {}, datasets: {}, dsMetrics: {} };
   const mk = (id, name, viz, ds, params) => { S.charts[id] = { id, name, viz, datasetId: ds, params: Object.assign(VIZ[viz].defaults(DS[ds]), params), updated: Date.now() }; return id; };
   const M = key => ({ kind: 'saved', key });
   const noTime = { time_range: { preset: 'all' } };
@@ -122,14 +122,9 @@ async function loadUploaded() {
 }
 
 /* ---------- Каркас ---------- */
-let themeBtnEl = null;   // перерисовать иконку темы можно и без тайника в window
 function renderShell() {
   const app = document.getElementById('app');
   clear(app);
-  const themeBtn = h('button', { class: 'iconbtn-bar', title: 'Сменить тему', 'aria-label': 'Сменить тему', onclick: toggleTheme });
-  const paintTheme = () => { clear(themeBtn).appendChild(ic(isDark() ? 'sun' : 'moon')); };
-  paintTheme();
-  themeBtn._paint = paintTheme;
   const settingsBtn = h('button', { class: 'iconbtn-bar', title: 'Настройки', 'aria-label': 'Настройки' }, ic('settings'));
   settingsBtn.addEventListener('click', () => openMenu(settingsBtn, [
     { label: 'Экспорт в файл…', icon: 'download', onClick: () => openExportDialog() },
@@ -155,21 +150,8 @@ function renderShell() {
       h('a', { href: '#/dashboards', 'data-sec': 'dashboards' }, 'Шаблоны'),
       h('a', { href: '#/charts', 'data-sec': 'charts' }, 'Графики'),
       h('a', { href: '#/data', 'data-sec': 'data' }, 'Данные')),
-    h('div', { class: 'spacer' }), whoBtn, themeBtn, settingsBtn));
+    h('div', { class: 'spacer' }), whoBtn, settingsBtn));
   app.appendChild(h('main', { class: 'main' }));
-  themeBtnEl = themeBtn;
-}
-function isDark() {
-  const t = document.documentElement.getAttribute('data-theme');
-  if (t) return t === 'dark';
-  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-}
-function toggleTheme() {
-  const next = isDark() ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  try { localStorage.setItem('kobra.theme', next); } catch (e) { }
-  themeBtnEl && themeBtnEl._paint();
-  route();
 }
 async function restoreDemo() {
   const seed = seedState();
@@ -468,8 +450,6 @@ function newChartDialog(opts = {}) {
 
 /* ---------- Запуск ---------- */
 async function boot() {
-  const theme = (() => { try { return localStorage.getItem('kobra.theme'); } catch (e) { return null; } })();
-  if (theme) document.documentElement.setAttribute('data-theme', theme);
   await new Promise(r => setTimeout(r, 30));
   if (typeof echarts === 'undefined') {
     document.querySelector('.loading div span').textContent = 'Не загрузилась библиотека графиков. Проверьте подключение к интернету и обновите страницу.';
@@ -509,7 +489,6 @@ function startApp() {
   }, true);
   let lastW = window.innerWidth;
   window.addEventListener('resize', debounce(() => { if (Math.abs(window.innerWidth - lastW) > 40 && (lastW < 760) !== (window.innerWidth < 760)) route(); lastW = window.innerWidth; }, 200));
-  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!document.documentElement.getAttribute('data-theme')) { themeBtnEl && themeBtnEl._paint(); route(); } });
   if (!location.hash) { try { history.replaceState(null, '', '#/d/d_demo'); } catch (e) { } }
   route();
   const ld = document.querySelector('.loading');
