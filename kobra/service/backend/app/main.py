@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.auth import router as auth_router
+from app.objects import charts_router, dashboards_router, datasets_router
 from app.users import router as users_router
 from app.core import engine
 
@@ -23,6 +24,9 @@ app = FastAPI(title="Кобра", docs_url="/api/docs", openapi_url="/api/openap
 
 app.include_router(auth_router)
 app.include_router(users_router)
+app.include_router(dashboards_router)
+app.include_router(charts_router)
+app.include_router(datasets_router)
 
 
 @app.get("/healthz")

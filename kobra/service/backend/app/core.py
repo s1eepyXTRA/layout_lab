@@ -9,6 +9,9 @@ import bcrypt
 import jwt
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String, Text, create_engine
+# shared ищут запросом («покажи, что мне выдали»), а JSON такого не умеет —
+# для этой колонки нужен JSONB с оператором включения
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # ---------- Настройки ----------
@@ -93,13 +96,20 @@ class Dataset(Base):
     metrics = Column(JSON, default=list)
     owner_login = Column(String(120))  # владелец: тот, кто создал
     team = Column(String(200), default="")  # команда владельца на момент создания
-    shared = Column(JSON, default=list)  # логины соправителей (owners в Superset)
+    shared = Column(JSONB, default=list)  # логины соправителей (owners в Superset)
     main_dttm = Column(String(200))
     time_anchor = Column(String(10), default="now")  # now | data
     stats = Column(JSON, default=dict)
     description = Column(Text, default="")
     file_name = Column(String(300))
+    # Клиентский объект как есть: описание схемы, подписи, единицы. Колонки выше
+    # остаются под будущий путь «набор поверх таблицы в базе».
+    body = Column(JSON, default=dict)
+    # Скрытый набор макета принадлежит шаблону: такой не показывают в списке данных
+    owner_dashboard_id = Column(String(64))
+    version = Column(Integer, nullable=False, default=1, server_default="1")
     updated_at = Column(DateTime(timezone=True), default=now, onupdate=now)
+    updated_by = Column(String(120))
 
 
 class Chart(Base):
@@ -109,9 +119,11 @@ class Chart(Base):
     viz = Column(String(40), nullable=False)
     dataset_id = Column(String(64), nullable=False)
     params = Column(JSON, default=dict)
+    body = Column(JSON, default=dict)  # клиентский объект целиком: spec, autoName и прочее
     owner_login = Column(String(120))  # владелец: тот, кто создал
     team = Column(String(200), default="")  # команда владельца на момент создания
-    shared = Column(JSON, default=list)  # логины соправителей (owners в Superset)
+    shared = Column(JSONB, default=list)  # логины соправителей (owners в Superset)
+    version = Column(Integer, nullable=False, default=1, server_default="1")
     updated_at = Column(DateTime(timezone=True), default=now, onupdate=now)
     updated_by = Column(String(120))
 
@@ -120,10 +132,11 @@ class Dashboard(Base):
     __tablename__ = "kobra_dashboards"
     id = Column(String(64), primary_key=True)
     title = Column(String(300), nullable=False)
-    body = Column(JSON, default=dict)
+    body = Column(JSON, default=dict)  # вкладки, фильтры, fromTemplate — клиентский объект
     owner_login = Column(String(120))  # владелец: тот, кто создал
     team = Column(String(200), default="")  # команда владельца на момент создания
-    shared = Column(JSON, default=list)  # логины соправителей (owners в Superset)
+    shared = Column(JSONB, default=list)  # логины соправителей (owners в Superset)
+    version = Column(Integer, nullable=False, default=1, server_default="1")
     updated_at = Column(DateTime(timezone=True), default=now, onupdate=now)
     updated_by = Column(String(120))
 
