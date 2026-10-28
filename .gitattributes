@@ -1,0 +1,11 @@
+# build/ — это результат склейки src/*.js и styles.css в один HTML-файл: тот же код,
+# посчитанный второй раз. Для GitHub он сгенерированный, чтобы не попадать в статистику
+# языков и сворачиваться в диффах. Файлы при этом остаются в репозитории: их открывают
+# двойным щелчком, и test/build.test.js следит за их свежестью.
+kobra/build/** linguist-generated=true
+
+# Библиотеки целиком чужие — ECharts, marked, DOMPurify, SheetJS, PapaParse.
+kobra/vendor/** linguist-vendored=true
+
+# Демо-выгрузки для бэкенда — данные, а не код.
+kobra/service/backend/app/demo/** linguist-generated=true
