@@ -24,6 +24,7 @@ from app.rows import router as rows_router
 from app.users import router as users_router
 from app.core import FRONTEND_DIR, engine
 from app.settings import router as settings_router
+from app.upload import router as upload_router
 
 app = FastAPI(title="Кобра", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
@@ -35,6 +36,7 @@ app.include_router(charts_router)
 app.include_router(rows_router)
 app.include_router(datasets_router)
 app.include_router(settings_router)
+app.include_router(upload_router)
 
 
 @app.get("/api/ping")

@@ -10,3 +10,7 @@ psycopg[binary]>=3.2,<4.0
 PyJWT>=2.9,<3.0
 bcrypt>=4.2,<6.0
 cryptography>=43,<47
+celery>=5.4,<6.0
+redis>=5.0,<7.0
+openpyxl>=3.1,<4.0
+python-multipart>=0.0.9,<1.0

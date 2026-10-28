@@ -17,6 +17,8 @@ os.environ["KOBRA_DATABASE_URL"] = TEST_DB_URL
 os.environ.setdefault("KOBRA_SECRET_KEY", "test-secret-key-dlinnee-32-baytov-rovno")
 os.environ.setdefault("KOBRA_ADMIN_USER", "admin")
 os.environ.setdefault("KOBRA_ADMIN_PASSWORD", "admin")
+# Отдельная база Redis под тесты: состояние задач не должно мешать разработке
+os.environ.setdefault("KOBRA_REDIS_URL", "redis://localhost:6380/1")
 
 import psycopg  # noqa: E402
 import pytest  # noqa: E402
@@ -26,6 +28,12 @@ from sqlalchemy import text  # noqa: E402
 
 from app.core import UPLOAD_SCHEMA, Base, SessionLocal, User, engine, hash_password  # noqa: E402
 from app.main import app  # noqa: E402
+from app.queue import celery_app  # noqa: E402
+
+# В тестах задача выполняется на месте: проверяем разбор, а не доставку очереди —
+# её проверяет живой воркер в compose
+celery_app.conf.task_always_eager = True
+celery_app.conf.task_eager_propagates = True
 
 
 def _ensure_database() -> None:

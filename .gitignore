@@ -3,3 +3,7 @@ __pycache__/
 .venv/
 venv/
 .env
+# Временные файлы загрузок и тестовые выгрузки
+kobra/service/backend/uploads/
+*.csv.tmp
+bolshoy.csv
