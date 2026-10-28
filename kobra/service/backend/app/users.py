@@ -1,0 +1,50 @@
+"""Сотрудники: список, роль вручную, отключение.
+
+Экран админа. Роль, назначенная руками, помечается `role_manual` и переживает
+повторный вход: при входе через каталог роль выводится из групп
+(`AUTH_ROLES_MAPPING`), и без этой пометки назначение админа затёрлось бы
+следующим же входом сотрудника.
+"""
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.auth import require_admin, user_out
+from app.core import ROLES, User
+from app.db import get_db
+
+router = APIRouter(prefix="/api/users", tags=["users"])
+
+
+class UserPatch(BaseModel):
+    role: Optional[str] = None
+    active: Optional[bool] = None
+
+
+@router.get("")
+def list_users(db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    users = db.query(User).order_by(User.username).all()
+    return [dict(user_out(u), role_manual=bool(u.role_manual)) for u in users]
+
+
+@router.patch("/{login}")
+def patch_user(login: str, body: UserPatch, db: Session = Depends(get_db),
+               admin: User = Depends(require_admin)):
+    u = db.query(User).filter(User.username == login).one_or_none()
+    if u is None:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+    if body.role is not None:
+        if body.role not in ROLES:
+            raise HTTPException(status_code=422, detail=f"Роль должна быть одной из: {', '.join(ROLES)}")
+        u.role = body.role
+        u.role_manual = True          # назначенное руками важнее того, что придёт из каталога
+    if body.active is not None:
+        # Себя отключить нельзя: админ запрёт сам себя, и чинить будет некому
+        if not body.active and u.id == admin.id:
+            raise HTTPException(status_code=422, detail="Нельзя отключить самого себя")
+        u.active = body.active
+    db.commit()
+    db.refresh(u)
+    return dict(user_out(u), role_manual=bool(u.role_manual))

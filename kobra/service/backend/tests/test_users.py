@@ -1,0 +1,62 @@
+"""Экран «Сотрудники»: список, роль вручную, отключение. Только для админа."""
+
+
+def admin_headers(client, make_user, login, auth):
+    make_user("i.petrov", role="Admin", team="Отдел данных")
+    return auth(login("i.petrov"))
+
+
+def test_spisok_tolko_dlya_admina(client, make_user, login, auth):
+    make_user("a.smirnova")
+    r = client.get("/api/users", headers=auth(login("a.smirnova")))
+    assert r.status_code == 403
+
+
+def test_admin_vidit_spisok(client, make_user, login, auth):
+    h = admin_headers(client, make_user, login, auth)
+    make_user("a.smirnova", team="Продажи")
+    r = client.get("/api/users", headers=h)
+    assert r.status_code == 200
+    logins = [u["login"] for u in r.json()]
+    assert "a.smirnova" in logins and "i.petrov" in logins
+
+
+def test_rol_naznachaetsya_rukami_i_perezhivaet_povtornyi_vhod(client, make_user, login, auth):
+    h = admin_headers(client, make_user, login, auth)
+    make_user("a.smirnova", role="Gamma")
+    r = client.patch("/api/users/a.smirnova", json={"role": "Alpha"}, headers=h)
+    assert r.status_code == 200
+    assert r.json()["role"] == "Alpha"
+    assert r.json()["role_manual"] is True
+    # Повторный вход сотрудника: роль осталась назначенной
+    me = client.get("/api/auth/me", headers=auth(login("a.smirnova")))
+    assert me.json()["role"] == "Alpha"
+
+
+def test_nevernaya_rol_otklonena(client, make_user, login, auth):
+    h = admin_headers(client, make_user, login, auth)
+    make_user("a.smirnova")
+    r = client.patch("/api/users/a.smirnova", json={"role": "Бухгалтер"}, headers=h)
+    assert r.status_code == 422
+
+
+def test_otklyuchenie_sotrudnika(client, make_user, login, auth):
+    h = admin_headers(client, make_user, login, auth)
+    make_user("e.kuznecova")
+    token = login("e.kuznecova")
+    assert client.patch("/api/users/e.kuznecova", json={"active": False}, headers=h).status_code == 200
+    # Выданный раньше токен перестаёт работать на следующем же запросе
+    assert client.get("/api/auth/me", headers=auth(token)).status_code == 403
+    # И войти заново нельзя
+    assert client.post("/api/auth/login", json={"username": "e.kuznecova", "password": "secret"}).status_code == 403
+
+
+def test_admin_ne_otklyuchaet_sam_sebya(client, make_user, login, auth):
+    h = admin_headers(client, make_user, login, auth)
+    r = client.patch("/api/users/i.petrov", json={"active": False}, headers=h)
+    assert r.status_code == 422
+
+
+def test_neizvestnyi_sotrudnik(client, make_user, login, auth):
+    h = admin_headers(client, make_user, login, auth)
+    assert client.patch("/api/users/net-takogo", json={"role": "Alpha"}, headers=h).status_code == 404

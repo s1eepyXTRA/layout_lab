@@ -32,7 +32,8 @@ FRONTEND_DIR = os.environ.get("KOBRA_FRONTEND_DIR", os.path.join(os.path.dirname
 UPLOAD_SCHEMA = "kobra_uploads"
 DEMO_SCHEMA = "kobra_demo"
 INTERNAL_CONN = "__internal__"
-ROLES = ("viewer", "editor", "admin")
+# Роли как в Superset и в клиенте: Admin — всё, Alpha — видит чужое, Gamma — своё
+ROLES = ("Admin", "Alpha", "Gamma")
 
 # ---------- База метаданных ----------
 engine = create_engine(
@@ -60,7 +61,12 @@ class User(Base):
     full_name = Column(String(200), default="")
     team = Column(String(200), default="")  # подразделение: команда видит работу друг друга
     role = Column(String(20), nullable=False, default="Gamma")  # Admin | Alpha | Gamma
+    # Роль назначена руками: при входе через каталог она не перетирается группами
+    role_manual = Column(Boolean, nullable=False, default=False, server_default="false")
     groups = Column(JSON, default=list)  # группы LDAP, по которым выдана роль
+    # Отключённый сотрудник перестаёт работать сразу: признак смотрят на каждом
+    # запросе, а не только при входе
+    active = Column(Boolean, nullable=False, default=True, server_default="true")
     created_at = Column(DateTime(timezone=True), default=now)
 
 

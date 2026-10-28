@@ -41,6 +41,7 @@ py -m venv .venv && .venv/Scripts/python.exe -m pip install -r requirements.txt
 export KOBRA_DATABASE_URL="postgresql+psycopg://kobra:kobra@localhost:5433/kobra"
 .venv/Scripts/python.exe -m alembic upgrade head        # схема; откат — alembic downgrade base
 .venv/Scripts/python.exe -m uvicorn app.main:app --port 8000
+.venv/Scripts/python.exe -m pytest -q                   # тесты: отдельная база kobra_test
 ```
 
 Драйвер — psycopg 3 (`postgresql+psycopg://`), а не psycopg2: у второго нет колёс под свежий Python.
