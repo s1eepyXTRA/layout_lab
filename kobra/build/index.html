@@ -308,29 +308,7 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .tune-f > span { font-size: 12px; font-weight: 600; color: var(--ink-3); flex: none; }
 .tune-f .input, .tune-f .select { height: 30px; font-size: 13px; }
 /* AI-ассистент */
-.ai-panel { width: 340px; flex: none; border-left: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; overflow: auto; transition: width .18s; }
-.ai-panel.closed { width: 0; padding: 0; border: 0; overflow: hidden; }
-.ai-head { display: flex; align-items: center; gap: 8px; }
-.ai-head b { font: 600 15px/1.2 var(--font-display); }
-.ai-log { flex: 1 1 auto; min-height: 120px; max-height: 46vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
-.ai-msg { border-radius: var(--r-m); padding: 8px 10px; font-size: 13px; line-height: 1.45; }
-.ai-msg.user { background: var(--primary-soft); align-self: flex-end; max-width: 92%; }
-.ai-msg.assistant { background: var(--surface-2); }
-.ai-msg.system { background: var(--accent-soft); font-size: 12.5px; }
-.ai-text { white-space: pre-wrap; }
-.ai-blocks { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-2); }
 .ai-note { color: var(--ink-3); font-size: 12.5px; line-height: 1.45; }
-.ai-offer { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-m); padding: 10px; font-size: 13px; display: grid; gap: 8px; }
-.ai-row { display: flex; gap: 6px; flex-wrap: wrap; }
-.ai-input { font-size: 13px; }
-.ai-form { border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface-2); padding: 10px; display: grid; gap: 8px; }
-.ai-form-head b { font: 600 13.5px/1.2 var(--font-display); }
-.ai-form .field { margin: 0; }
-.ai-form .field label { font-size: 12.5px; }
-.ai-form .input, .ai-form .textarea { font-size: 13px; }
-.ai-form summary { cursor: pointer; font-size: 12.5px; color: var(--ink-2); }
-.ai-form details[open] summary { margin-bottom: 8px; }
-.ai-form details { display: grid; gap: 8px; }
 @media (max-width: 1100px) { .ai-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 40; box-shadow: var(--shadow-pop); } }
 .edit-banner svg { flex: none; }
 
@@ -704,10 +682,6 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
  * @property {string} [previewBack]
  * @property {string|null} [previewDs]
  * @property {{tplId:string|null, datasetId:string, levels:string[], roles:Record<string,any>}} [fromTemplate]
- * @property {{role:string, text:string, blocks?:any[], schemaCols?:any[]}[]} [chat]
- * @property {Record<string, string>} [chatBrief]
- * @property {boolean} [chatBriefSkipped]
- * @property {boolean} [chatTrimmed]
  * @property {string} [ownerLogin]
  * @property {string} [team]
  * @property {string[]} [shared]
@@ -3537,6 +3511,8 @@ function renderShell() {
     { label: 'Экспорт в файл…', icon: 'download', onClick: () => openExportDialog() },
     { label: 'Импорт из файла…', icon: 'upload', onClick: openImportDialog },
     '-',
+    { label: 'Доступ к модели…', icon: 'wand', onClick: () => openAiSettings() },
+    '-',
     { label: 'Вернуть демо-шаблон', icon: 'reset', onClick: restoreDemo },
     { label: 'Сбросить всё к начальному состоянию', icon: 'trash', danger: true, onClick: resetAll },
   ]));
@@ -3716,7 +3692,7 @@ function duplicateDashboard(id) {
   copy.id = nid; copy.title = src.title + ' (копия)'; copy.updated = Date.now();
   // Копия достаётся тому, кто копирует, — иначе чужой шаблон так и останется
   // недоступным для правки. Переписка с ассистентом личная и не копируется.
-  ['ownerLogin', 'team', 'shared', 'chat', 'chatBrief', 'chatBriefSkipped', 'chatTrimmed', 'preview'].forEach(k => delete copy[k]);
+  ['ownerLogin', 'team', 'shared', 'preview'].forEach(k => delete copy[k]);
 
   const srcDsId = (src.fromTemplate || {}).datasetId;
   let dsFrom = null, dsTo = null;
@@ -3948,13 +3924,8 @@ function renderDashboard(main, id, q) {
   const fbar = h('aside', { class: 'fbar' + (fbarOpen ? '' : ' closed'), 'aria-label': 'Фильтры шаблона' });
   const dmain = h('div', { class: 'dash-main' });
   const panel = editing ? h('aside', { class: 'edit-panel', 'aria-label': 'Добавление элементов' }) : null;
-  const aiHost = h('aside', { class: 'ai-panel', 'aria-label': 'AI-ассистент' });
-  let aiOpen = !editing && aiIsOpen(id);
-  let aiUi = null;
-  let aiSnap = null;            // снимок перед применением предложения
   dash.append(fbar, dmain);
   if (panel) dash.appendChild(panel);
-  dash.appendChild(aiHost);
 
   const curTab = () => D.tabs.find(t => t.id === tabId) || D.tabs[0];
   const markDirty = () => { /* черновик сравнивается при выходе */ };
@@ -4068,7 +4039,6 @@ function renderDashboard(main, id, q) {
   /* ---------- Шапка ---------- */
   function paintHead() {
     const head = h('div', { class: 'dash-head' + (D.preview ? ' ex' : '') });
-    const aiBtn = () => h('button', { class: 'btn ai' + (aiOpen ? ' on' : ''), title: 'Описать задачу словами — AI-ассистент предложит блоки', onclick: aiToggle }, 'AI-ассистент');
     /* Черновик по описанию: ничего ещё не сохранено, поэтому в шапке —
        «Сохранить», «Доработать» и «Отменить», а не обычные кнопки правки. */
     if (D.aiDraft) {
@@ -4106,7 +4076,6 @@ function renderDashboard(main, id, q) {
     head.appendChild(h('div', { class: 'grow' }));
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
-      tuning ? { label: aiOpen ? 'Скрыть AI-ассистента' : 'Спросить AI-ассистента', icon: 'wand', onClick: aiToggle } : null,
       mayEdit ? { label: 'Настроить фильтры', icon: 'filter', onClick: openFilterEditor } : null,
       mayEdit ? { label: (D.crossFilter ? 'Выключить' : 'Включить') + ' кросс-фильтрацию', icon: 'link', onClick: () => { D.crossFilter = !D.crossFilter; if (!editing) saveState(); if (!D.crossFilter) { cross = crossMemory[id] = []; } paintFilterBar(); refreshCharts(); toast(D.crossFilter ? 'Кросс-фильтрация включена: кликните по элементу графика' : 'Кросс-фильтрация выключена'); } } : null,
       mayEdit ? { label: 'Свойства шаблона', icon: 'settings', onClick: openProps } : null,
@@ -4124,7 +4093,6 @@ function renderDashboard(main, id, q) {
         h('button', { class: 'btn', title: 'Полное редактирование', onclick: () => leaveTo('#/d/' + id + '?edit=1') }, ic('edit'), 'Больше настроек'),
         h('button', { class: 'btn primary', onclick: tuneDone }, ic('check'), 'Готово'), more);
     } else if (editing) {
-      if (!aiBtnInGrid()) head.appendChild(aiBtn());
       head.append(
         h('button', { class: 'btn', onclick: cancelEdit }, 'Отменить'),
         h('button', { class: 'btn primary', onclick: saveEdit }, ic('check'), 'Сохранить'), more);
@@ -4139,7 +4107,7 @@ function renderDashboard(main, id, q) {
          аналитику. Раньше зелёной была «Редактировать», и человек, который
          пришёл поменять подписи, попадал в палитру блоков. */
       const mock = isMockupDs(dsGet((D.fromTemplate || {}).datasetId));
-      head.append(aiBtn(),
+      head.append(
         h('button', { class: 'btn' + (mock ? ' primary' : ''), title: 'Поменять названия, показатели и разрезы прямо на блоках', onclick: () => go('#/d/' + id + '?tune=1') }, ic('edit'), 'Названия и разрезы'),
         h('button', { class: 'btn', title: 'Обновить все графики', 'aria-label': 'Обновить все графики', onclick: () => refreshCharts() }, ic('refresh')),
         h('button', { class: 'btn', title: 'Задание аналитикам данных: состав, формулы, разрезы', onclick: () => openSpecDialog(D) }, ic('text'), 'ТЗ'),
@@ -4303,10 +4271,9 @@ function renderDashboard(main, id, q) {
     gridEl = h('div', { class: 'dgrid' + (editing ? ' editing' : '') });
     if (!t.items.length) {
       const empty = h('div', { class: 'empty' }, h('b', null, editing ? 'Пустая вкладка' : 'Здесь пока ничего нет'),
-        editing ? 'Добавьте блоки с панели справа — или опишите задачу AI-ассистенту, и он предложит их сам.' : 'Откройте режим редактирования и добавьте графики.',
+        editing ? 'Добавьте блоки с панели справа.' : 'Откройте режим редактирования и добавьте графики.',
         h('br'),
-        editing
-          ? (aiOpen ? null : h('button', { class: 'btn ai', onclick: aiToggle }, 'Спросить AI-ассистента'))
+        editing ? null
           : mayEdit ? h('button', { class: 'btn primary', onclick: () => go('#/d/' + id + '?edit=1') }, ic('edit'), 'Редактировать') : null);
       return h('div', { class: 'grid-wrap' }, empty);
     }
@@ -4554,7 +4521,6 @@ function renderDashboard(main, id, q) {
     compactLayout(t.items); layoutGrid();
     if (!t.items.length) paintBody();
     paintPanel();
-    if (aiUi) aiUi.repaint();
   }
   function moveItemToTab(it, t) {
     curTab().items = curTab().items.filter(x => x !== it);
@@ -4581,7 +4547,6 @@ function renderDashboard(main, id, q) {
     t.items.push(item);
     if (item.type === 'markdown') editingMd = item.i;
     paintBody();
-    if (aiUi) aiUi.repaint();
     requestAnimationFrame(() => { const c = cells.get(item.i); c && c.el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
   }
 
@@ -4736,101 +4701,6 @@ function renderDashboard(main, id, q) {
     });
   }
 
-  /* ---------- AI-ассистент ---------- */
-  const aiDs = () => dsGet((D.fromTemplate || {}).datasetId) || dsGet(((STATE.charts[(D.tabs.flatMap(t => t.items).find(i => i.chartId) || {}).chartId] || {}).datasetId));
-  /* AI-ассистент открывается из трёх мест. В правке его состояние не запоминаем:
-     иначе конструктор открывался бы с AI-ассистентом вместо палитры блоков. */
-  function aiToggle() { aiOpen = !aiOpen; if (!editing) aiSetOpen(id, aiOpen); paintAi(); paintBody(); }
-  /* Кнопка AI-ассистента одна: пока вкладка в конструкторе пуста, она стоит на
-     самой вкладке, и в шапке её нет — две одинаковые кнопки рядом сбивают. */
-  function aiBtnInGrid() { return editing && !aiOpen && !curTab().items.length; }
-  function paintAi() {
-    aiHost.className = 'ai-panel' + (aiOpen ? '' : ' closed');
-    // Справа помещается одна колонка: AI-ассистент встаёт на место палитры блоков
-    if (panel) panel.style.display = aiOpen ? 'none' : '';
-    clear(aiHost);
-    if (!aiOpen) { aiUi = null; setTimeout(layoutGrid, 220); return; }
-    aiUi = renderAssistant(D, aiHost, {
-      ds: aiDs,
-      close: () => { aiOpen = false; paintAi(); paintHeadOnly(); },
-      // Название из брифа — это название дашборда: два разных человек не ведёт
-      renameDash: title => { D.title = title; D.updated = Date.now(); saveState(); paintHeadOnly(); },
-      canRollback: () => canUndo(aiSnap),
-      rollback: () => {
-        if (!aiSnap) return;
-        undoState(aiSnap);          // снимок возвращается в те же объекты
-        aiSnap = null;
-        aiPush(D, 'system', 'Откатано.');
-        saveState();
-        paintAll();                 // из режима не выходим: страница та же
-      },
-      applyBlocks: blocks => {
-        const ds = aiDs();
-        if (!ds) { toast('Нет данных, на которых строить блоки', true); return; }
-        snapshotForAi();
-        touched = true;
-        const t = curTab();
-        let y = Math.max(0, ...t.items.map(i => i.y + i.h), 0), x = 0, rowH = 0;
-        blocks.forEach(b => {
-          const cid = createMockupChart(ds, b.viz);
-          if (!cid) return;
-          if (b.name) { STATE.charts[cid].name = b.name; STATE.charts[cid].autoName = false; }
-          const sz = itemDefaultSize('chart', STATE.charts[cid]);
-          if (x + sz.w > G_COLS) { y += rowH; x = 0; rowH = 0; }
-          t.items.push({ i: uid('i'), type: 'chart', chartId: cid, x, y, w: sz.w, h: sz.h });
-          x += sz.w; rowH = Math.max(rowH, sz.h);
-        });
-        compactLayout(t.items);
-        D.updated = Date.now();
-        saveState();
-        paintBody();
-      },
-      applySchema: schema => {
-        const ds = aiDs();
-        if (!isMockupDs(ds)) { toast('Подставить придуманные данные можно только в макет', true); return; }
-        snapshotForAi();
-        touched = true;
-        ds.schema = normalizeSchema(schema);
-        ds.columns = ds.schema.columns.map(c => ({ key: c.key, label: c.label, type: c.type }));
-        ds.metrics = schemaMetrics(ds.columns, null);
-        ds.mainDttm = (ds.columns.find(c => c.type === 'date') || {}).key || null;
-        ds.rows = generateSchemaRows(ds.schema);
-        delete ds._maxCache;
-        persistDs(ds);
-        rebuildMockupBlocks(ds);
-        paintAll();
-      },
-    });
-    setTimeout(layoutGrid, 220);
-  }
-  /* Снимок перед применением предложения — тот же, что у «Отменить»:
-     состояние целиком, вместе с графиками и придуманными данными. */
-  function snapshotForAi() {
-    if (!canUndo(aiSnap)) aiSnap = snapState('Предложение AI-ассистента');
-  }
-  /* Данные сменились целиком — блоки пересобираем под новые поля */
-  function rebuildMockupBlocks(ds) {
-    D.tabs.forEach(t => {
-      t.items = t.items.filter(i => {
-        if (!i.chartId) return true;
-        const c = STATE.charts[i.chartId];
-        if (!c) return false;
-        const fresh = createMockupChart(ds, c.viz);
-        if (!fresh) { delete STATE.charts[i.chartId]; return false; }
-        const keepName = c.autoName === false ? c.name : null;
-        STATE.charts[i.chartId] = Object.assign(STATE.charts[fresh], { id: i.chartId });
-        delete STATE.charts[fresh];
-        if (keepName) { STATE.charts[i.chartId].name = keepName; STATE.charts[i.chartId].autoName = false; }
-        // Заданное человеком имя бережём, остальным даём подпись из новых полей,
-        // иначе после подмены данных дашборд превращается в «Столбцы, Столбцы»
-        else guidedRetitle(ds, STATE.charts[i.chartId]);
-        return true;
-      });
-    });
-    D.filters = (D.filters || []).filter(f => dsCol(ds, f.col));
-    D.updated = Date.now();
-    saveState();
-  }
   function paintHeadOnly() { paintBody(); }
 
   /* ---------- Сборка ---------- */
@@ -4855,7 +4725,7 @@ function renderDashboard(main, id, q) {
     dmain.appendChild(paintGrid());
     paintPanel();
   }
-  function paintAll() { paintFilterBar(); paintBody(); paintAi(); }
+  function paintAll() { paintFilterBar(); paintBody(); }
   paintAll();
 
   return () => {
@@ -7560,22 +7430,20 @@ function guidedWhat(ds, chart) {
 }
 
 /* ============================================================
-   Кобра · AI-ассистент на дашборде
-   Человек описывает задачу словами — AI-ассистент предлагает состав
-   дашборда или описание данных. Ничего не применяется без
-   подтверждения, наружу уходит описание, а не строки данных.
+   Кобра · доступ к модели
+   Транспорт и настройки для единственного места, где Кобра обращается
+   к модели, — «Шаблон по описанию» (aidraft.js). Панель AI-ассистента
+   на дашборде была и снята: разговор поверх готового шаблона не прижился,
+   а сборка по описанию — прижилась.
    ============================================================ */
 const AI_LS_CFG = 'kobra.ai.cfg';          // адрес, токен и модель — только в этом браузере
-const AI_MAX_MSGS = 40;                     // предел хранимой переписки
-const AI_SAMPLE_ROWS = 20;                  // сколько строк уходит при согласии
-const AI_CSV_MAX = 50000;
 
 /* ---------- Доступ к модели ---------- */
 /* Транспорт назван по протоколу, а не по имени шлюза: один и тот же код
    работает с личным эндпоинтом и с LiteLLM компании — меняется настройка. */
 function aiCfg() {
   const c = lsGet(AI_LS_CFG) || {};
-  return { url: c.url || '', token: c.token || '', model: c.model || '', sendSamples: false };
+  return { url: c.url || '', token: c.token || '', model: c.model || '' };
 }
 function aiSaveCfg(cfg) { lsSet(AI_LS_CFG, { url: cfg.url || '', token: cfg.token || '', model: cfg.model || '' }); }
 const aiReady = () => { const c = aiCfg(); return !!(c.url && c.model); };
@@ -7608,164 +7476,11 @@ async function aiAsk(messages, opts = {}) {
   return String(text);
 }
 
-/* ---------- Бриф: первый диалог ----------
-   Четыре вопроса, которые заказчик и так держит в голове, плюс уточнения.
-   Форма необязательная — её закрывают, если макет уже начат и от AI-ассистента
-   нужно только дополнение. Ответы хранятся в дашборде и уходят с каждым
-   запросом отдельным разделом: модель перестаёт угадывать название,
-   показатели и разрезы. `tag` — короткая подпись для запроса: в форме вопрос
-   звучит по-человечески, а в промпте нужна одна строка без вопросительного знака. */
-const AI_BRIEF_FIELDS = [
-  { key: 'title', tag: 'Название шаблона', label: 'Название шаблона', ph: 'Продажи филиалов' },
-  { key: 'problem', tag: 'Какие проблемы решает', label: 'Какие проблемы поможет решить шаблон?', ph: 'Не видно, где падает выручка и из-за чего', area: true },
-  { key: 'metrics', tag: 'Показатели, за которыми следят', label: 'За какими показателями необходимо следить?', ph: 'Выручка, средний чек, доля возвратов' },
-  { key: 'docs', tag: 'Проваливаться до документов', label: 'Необходимо ли проваливаться до документов?', pick: ['да', 'нет'],
-    hint: 'Нижний уровень — таблица исходных строк: заказы, заявки, чеки' },
-  { key: 'dims', tag: 'Разрезы', label: 'В каких разрезах смотрите?', ph: 'Филиалы, категории, менеджеры', more: true },
-  { key: 'period', tag: 'Период и шаг', label: 'Период и шаг', ph: 'Последний год по месяцам', more: true },
-  { key: 'compare', tag: 'С чем сравнивать', label: 'С чем сравнивать', ph: 'План, прошлый год, норматив', more: true },
-  { key: 'who', tag: 'Кто смотрит и как часто', label: 'Кто смотрит и как часто', ph: 'Директор раз в неделю', more: true },
-];
-const aiBrief = D => (D && D.chatBrief) || null;
-const aiBriefFilled = b => !!b && AI_BRIEF_FIELDS.some(f => String(b[f.key] || '').trim());
-/* В запрос идёт только отвеченное: пустые пункты модель принимает за задачу
-   и начинает выспрашивать их вместо того, чтобы собирать дашборд. */
-function aiBriefLines(b) {
-  if (!b) return [];
-  return AI_BRIEF_FIELDS.map(f => {
-    const v = String(b[f.key] || '').trim();
-    return v ? f.tag + ': ' + v : null;
-  }).filter(Boolean);
-}
-
-/* ---------- Что уходит наружу ----------
-   Единственное место сборки отправляемого: его целиком можно показать
-   человеку и службе безопасности. Строк здесь нет, пока не разрешили. */
-/** @param {{samples?: boolean}} [opts] строки прикладываются только по согласию */
-function aiContext(D, ds, opts = {}) {
-  const { samples } = opts;
-  const out = { бриф: null, набор: null, дашборд: null };
-  if (aiBriefFilled(aiBrief(D))) out.бриф = aiBriefLines(aiBrief(D));
-  if (ds) {
-    out.набор = {
-      название: ds.name,
-      придуманные_данные: !!isMockupDs(ds) || !!isSchemaDs(ds),
-      колонки: ds.columns.map(c => ({ поле: c.key, подпись: c.label || c.key, тип: c.type })),
-      показатели: (ds.metrics || []).map(m => ({ подпись: m.label, формула: exprText(ds, m.expr) })),
-      строк: ds.rows.length,
-    };
-    if (samples) out.набор.примеры_строк = ds.rows.slice(0, AI_SAMPLE_ROWS);
-  }
-  if (D) {
-    out.дашборд = {
-      название: D.title,
-      вкладки: D.tabs.map(t => ({
-        название: t.title,
-        блоки: t.items.filter(i => i.chartId && STATE.charts[i.chartId]).map(i => {
-          const c = STATE.charts[i.chartId];
-          return { название: c.name, вид: (VIZ[c.viz] || {}).label || c.viz };
-        }),
-      })),
-      фильтры: (D.filters || []).map(f => ({ название: f.name, поле: f.col })),
-    };
-  }
-  return out;
-}
-
-/* Текст запроса: бриф и контекст разделены явными границами. Без них модель
-   путает ответы заказчика с описанием набора и отвечает на бриф, а не на
-   задачу. Собирается из того же `aiContext`, второго источника нет. */
-function aiPrompt(q, ctx) {
-  const rest = Object.assign({}, ctx);
-  const brief = rest.бриф;
-  delete rest.бриф;
-  const parts = ['Задача: ' + (String(q || '').trim() || '(опишите задачу)')];
-  if (brief && brief.length) parts.push('=== БРИФ (ответы заказчика) ===\n' + brief.join('\n') + '\n=== КОНЕЦ БРИФА ===');
-  parts.push('=== КОНТЕКСТ (набор и шаблон) ===\n' + JSON.stringify(rest, null, 1) + '\n=== КОНЕЦ КОНТЕКСТА ===');
-  return parts.join('\n\n');
-}
-
-/* ---------- Что AI-ассистент умеет вернуть ---------- */
-const AI_SYSTEM = [
-  'Ты помогаешь собрать шаблон в конструкторе «Кобра». Отвечай по-русски и только JSON, без пояснений вокруг.',
-  'Формат ответа: {"ответ": "<текст человеку>", "блоки": [...], "набор": {...}}. Поля «блоки» и «набор» необязательны.',
-  'Блок: {"вид": "line|bar|pie|area|table|treemap|heatmap|funnel|pivot|big_number_trend", "название": "...", "зачем": "на какой вопрос отвечает"}.',
-  'Набор (только если человек просит придумать данные): {"колонки": [{"подпись": "Дата заявки", "тип": "date|string|number", "значения": ["..."], "от": 1, "до": 1000}], "строк": 2000}.',
-  'Строки данных не придумывай и не присылай: их сгенерирует Кобра по описанию колонок.',
-  'Раздел БРИФ — требования заказчика, а не задача: выполняй то, что в «Задача», опираясь на бриф.',
-  'Из брифа бери название и подписи блоков под его показатели, категории — под его разрезы. «Проваливаться до документов: да» значит, что нужен блок с таблицей исходных строк.',
-  'Если запрос не про шаблон и не про данные, верни только «ответ».',
-].join('\n');
-
-function aiParse(text) {
-  const raw = String(text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-  let j;
-  try { j = JSON.parse(raw); } catch (e) {
-    const m = raw.match(/\{[\s\S]*\}/);
-    if (!m) return { ответ: raw, blocks: [], schema: null, plain: true };
-    try { j = JSON.parse(m[0]); } catch (e2) { return { ответ: raw, blocks: [], schema: null, plain: true }; }
-  }
-  const blocks = (Array.isArray(j.блоки) ? j.блоки : []).map(b => ({
-    viz: String(b.вид || '').trim(), name: String(b.название || '').trim(), why: String(b.зачем || '').trim(),
-  })).filter(b => VIZ[b.viz] && MOCKUP_BLOCKS.some(x => x.viz === b.viz));   // неизвестный вид отбрасываем
-  const sc = j.набор && Array.isArray(j.набор.колонки) ? j.набор : null;
-  const schema = sc ? aiSchemaFrom(sc) : null;
-  return { ответ: String(j.ответ || '').trim(), blocks, schema, plain: false };
-}
-/* Описание колонок от модели → схема набора Кобры. Непонятное отбрасываем:
-   лучше собрать меньше, чем построить набор на выдуманных типах. */
-function aiSchemaFrom(sc) {
-  const used = new Set();
-  const columns = sc.колонки.map((c, i) => {
-    const label = String(c.подпись || '').trim();
-    if (!label) return null;
-    const type = ['date', 'string', 'number'].includes(c.тип) ? c.тип : guessSchemaCol(label).type;
-    const col = Object.assign({ key: slugKey(label, i, used), label, type }, guessSchemaCol(label), { type });
-    if (type === 'string' && Array.isArray(c.значения) && c.значения.length) col.values = c.значения.map(String).slice(0, 12);
-    if (type === 'number') { if (c.от != null) col.min = +c.от; if (c.до != null) col.max = +c.до; }
-    return col;
-  }).filter(Boolean);
-  if (!columns.length) return null;
-  return Object.assign({ seed: (Date.now() % 100000) + 1, rowCount: Math.min(Math.max(+sc.строк || 2000, 100), SCHEMA_ROWS_MAX), columns }, defaultSchemaPeriod());
-}
-
-/* Показ длинного текста: состав отправляемого и запрос для внешнего чата */
+/* Показ длинного текста: запрос для внешнего чата и ответ модели как есть */
 function showTextModal(title, text) {
   const area = h('textarea', { class: 'textarea', rows: 18, readonly: true, 'aria-label': title });
   area.value = text;
   openModal({ title, wide: true, body: area, foot: close => [h('button', { class: 'btn primary', onclick: close }, 'Закрыть')] });
-}
-
-/* ---------- Переписка ---------- */
-function aiLog(D) { return (D.chat = D.chat || []); }
-function aiPush(D, role, text, extra) {
-  const log = aiLog(D);
-  log.push(Object.assign({ role, text, at: Date.now() }, extra || {}));
-  if (log.length > AI_MAX_MSGS) { D.chatTrimmed = true; log.splice(0, log.length - AI_MAX_MSGS); }
-  saveSoon();
-  return log[log.length - 1];
-}
-
-/* ---------- Выгрузка придуманных строк ---------- */
-function aiRowsToCsv(ds) {
-  const cols = ds.columns;
-  const esc = v => { const s = v == null ? '' : String(v); return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  const lines = [cols.map(c => esc(c.label || c.key)).join(',')];
-  ds.rows.slice(0, AI_CSV_MAX).forEach(r => lines.push(cols.map(c => {
-    const v = r[c.key];
-    return esc(c.type === 'date' && typeof v === 'number' ? isoDate(v) : v);
-  }).join(',')));
-  return lines.join('\n');
-}
-async function aiExportCsv(ds) {
-  const n = Math.min(ds.rows.length, AI_CSV_MAX);
-  const cut = ds.rows.length > AI_CSV_MAX ? ` Это первые ${fmtNum(AI_CSV_MAX, 'int')} из ${fmtNum(ds.rows.length, 'int')}.` : '';
-  if (!(await confirmDialog('Выгрузить пример данных',
-    `Будет выгружено ${fmtNum(n, 'int')} ${plural(n, 'строка', 'строки', 'строк')} и ${ds.columns.length} ${plural(ds.columns.length, 'колонка', 'колонки', 'колонок')}.${cut} `
-    + 'Строки придуманы: файл показывает, какие колонки нужны.',
-    'Выгрузить', false))) return;
-  const name = `kobra-vymyshlennye-dannye-${slugKey(ds.name, 0, new Set())}-${isoDate(Date.now())}.csv`;
-  if (downloadFile(name, '﻿' + aiRowsToCsv(ds), 'text/csv')) toast('Файл сохранён');
 }
 
 /* ---------- Настройки доступа ---------- */
@@ -7786,196 +7501,6 @@ function openAiSettings(done) {
       h('button', { class: 'btn', onclick: close }, 'Отмена'),
       h('button', { class: 'btn primary', onclick: () => { aiSaveCfg({ url, token, model }); close(); toast('Настройки доступа сохранены'); done && done(); } }, 'Сохранить')],
   });
-}
-
-/* ---------- Панель AI-ассистента ---------- */
-const aiOpenState = () => lsGet('kobra.ai.open') || {};
-const aiIsOpen = id => !!aiOpenState()[id];
-function aiSetOpen(id, v) { const s = aiOpenState(); if (v) s[id] = 1; else delete s[id]; lsSet('kobra.ai.open', s); }
-
-/* api: { ds, applyBlocks, applySchema, rollback, canRollback } — всё, что AI-ассистент
-   умеет сделать с дашбордом, живёт в dashboard.js и приходит сюда функциями. */
-function renderAssistant(D, host, api) {
-  let pending = null;      // последнее предложение, которого ещё не применили
-  let samples = false;     // согласие приложить примеры строк — на один запрос
-  let busy = false;
-  // Бриф показываем первым, пока на него не ответили и не закрыли
-  let briefOpen = !aiBriefFilled(aiBrief(D)) && !D.chatBriefSkipped && !aiLog(D).length;
-  let draftQ = '';         // набранный вопрос: панель перерисовывается часто
-  const ds = () => api.ds();
-  /* Отправку собирает paint() — она замкнута на поле ввода, которое там же и
-     создаётся. Форме брифа нужна та же отправка, но из своей области видимости
-     её не видно, поэтому держим ссылку. */
-  let sendNow = async (/** @type {string} */ q) => { };
-
-  /* Форма брифа. Живёт в переписке и закрывается крестиком: человек, который
-     уже собрал половину макета, не должен отвечать на восемь вопросов, чтобы
-     попросить добавить один блок. */
-  const briefForm = () => {
-    const draft = Object.assign({ title: D.title || '' }, aiBrief(D) || {});
-    const box = h('div', { class: 'ai-form' });
-    box.appendChild(h('div', { class: 'ai-form-head' }, h('b', null, 'Коротко о шаблоне'), h('div', { class: 'grow' }),
-      iconBtn('x', 'Закрыть форму', () => { briefOpen = false; D.chatBriefSkipped = true; saveSoon(); paint(); }, 'sm')));
-    box.appendChild(h('div', { class: 'ai-note' },
-      'Уходит с каждым запросом. Можно заполнить частью или закрыть.'));
-    const add = (to, f) => {
-      let ctl;
-      if (f.pick) ctl = selectEl([['', 'Не указано']].concat(f.pick.map(v => [v, v[0].toUpperCase() + v.slice(1)])),
-        draft[f.key] || '', v => { draft[f.key] = v; }, { 'aria-label': f.label });
-      else {
-        ctl = h(f.area ? 'textarea' : 'input', Object.assign({ class: f.area ? 'textarea' : 'input', placeholder: f.ph || '',
-          oninput: e => { draft[f.key] = e.target.value; } }, f.area ? { rows: 2 } : { type: 'text' }));
-        ctl.value = draft[f.key] || '';
-      }
-      to.appendChild(field(f.label, ctl, f.hint));
-    };
-    AI_BRIEF_FIELDS.filter(f => !f.more).forEach(f => add(box, f));
-    const more = h('details', null, h('summary', null, 'Уточнить ещё: разрезы, период, сравнение'));
-    AI_BRIEF_FIELDS.filter(f => f.more).forEach(f => add(more, f));
-    box.appendChild(more);
-
-    const keep = async fire => {
-      const b = {};
-      AI_BRIEF_FIELDS.forEach(f => { const v = String(draft[f.key] || '').trim(); if (v) b[f.key] = v; });
-      if (!aiBriefFilled(b)) { toast('Форма пустая: ответьте хотя бы на один вопрос или закройте её', true); return; }
-      D.chatBrief = b;
-      delete D.chatBriefSkipped;
-      if (b.title && b.title !== D.title && api.renameDash) api.renameDash(b.title);
-      saveState();
-      aiPush(D, 'system', 'Бриф сохранён:\n' + aiBriefLines(b).join('\n'));
-      briefOpen = false;
-      if (fire) { paint(); await sendNow('Собери шаблон по брифу: уровни детализации по вкладкам и блоки под показатели.'); return; }
-      toast('Бриф сохранён — он уходит с каждым запросом');
-      paint();
-    };
-    box.appendChild(h('div', { class: 'ai-row' },
-      h('button', { class: 'btn sm primary', onclick: () => keep(true) }, 'Собрать по брифу'),
-      h('button', { class: 'btn sm', title: 'Запомнить ответы, запрос отправлю сам', onclick: () => keep(false) }, 'Сохранить'),
-      h('button', { class: 'btn sm', onclick: () => { briefOpen = false; D.chatBriefSkipped = true; saveSoon(); paint(); } }, 'Пропустить')));
-    return box;
-  };
-
-  const paint = () => {
-    clear(host);
-    const mock = isMockupDs(ds());
-    host.appendChild(h('div', { class: 'ai-head' }, h('b', null, 'AI-ассистент'),
-      h('div', { class: 'grow' }),
-      iconBtn('settings', 'Доступ к модели', () => openAiSettings(paint), 'sm'),
-      iconBtn('x', 'Закрыть AI-ассистента', () => { aiSetOpen(D.id, false); api.close(); }, 'sm')));
-
-    const log = h('div', { class: 'ai-log' });
-    if (D.chatTrimmed) log.appendChild(h('div', { class: 'ai-note' }, 'Часть старых сообщений отброшена: переписка хранится не целиком.'));
-    if (briefOpen) log.appendChild(briefForm());
-    else if (!aiLog(D).length) log.appendChild(h('div', { class: 'ai-note' },
-      mock ? 'Опишите процесс словами — AI-ассистент придумает данные и предложит блоки.'
-        : 'Опишите, что хотите увидеть. Применять предложенное или нет — решаете вы.'));
-    aiLog(D).forEach(m => {
-      const el = h('div', { class: 'ai-msg ' + m.role });
-      el.appendChild(h('div', { class: 'ai-text' }, m.text));
-      if (m.blocks && m.blocks.length) el.appendChild(h('ul', { class: 'ai-blocks' },
-        m.blocks.map(b => h('li', null, h('b', null, b.name || (VIZ[b.viz] || {}).label || b.viz), b.why ? ' — ' + b.why : ''))));
-      if (m.schemaCols) el.appendChild(h('ul', { class: 'ai-blocks' },
-        m.schemaCols.map(c => h('li', null, h('b', null, c.label), ' — ' + c.note))));
-      log.appendChild(el);
-    });
-    host.appendChild(log);
-    setTimeout(() => { log.scrollTop = log.scrollHeight; }, 0);
-
-    // Предложение: применяем только по подтверждению
-    if (pending) {
-      const what = [];
-      if (pending.blocks.length) what.push(`${pending.blocks.length} ${plural(pending.blocks.length, 'блок', 'блока', 'блоков')}`);
-      if (pending.schema) what.push('новые придуманные данные');
-      host.appendChild(h('div', { class: 'ai-offer' },
-        h('div', null, 'Применить предложенное: ' + what.join(' и ') + '?'),
-        h('div', { class: 'ai-row' },
-          h('button', { class: 'btn sm primary', onclick: () => {
-            if (pending.schema) api.applySchema(pending.schema);
-            if (pending.blocks.length) api.applyBlocks(pending.blocks);
-            aiPush(D, 'system', 'Применено. Если не то — откатите одним действием.');
-            pending = null; paint();
-          } }, ic('check'), 'Применить'),
-          h('button', { class: 'btn sm', onclick: () => { pending = null; paint(); } }, 'Не надо'))));
-    } else if (api.canRollback()) {
-      host.appendChild(h('div', { class: 'ai-offer' },
-        h('div', null, 'Последнее применение можно отменить.'),
-        h('div', { class: 'ai-row' }, h('button', { class: 'btn sm', onclick: () => api.rollback() }, ic('reset'), 'Откатить'))));
-    }
-
-    // Ввод
-    const ta = h('textarea', { class: 'textarea ai-input', rows: 3, placeholder: 'Что показать в шаблоне?', 'aria-label': 'Запрос AI-ассистенту',
-      oninput: e => { draftQ = e.target.value; } });
-    ta.value = draftQ;
-    const send = async (/** @type {string} */ forced) => {
-      const q = String(forced || ta.value).trim();
-      if (!q || busy) return;
-      draftQ = '';
-      if (!aiReady()) { toast('Доступ к модели не настроен — воспользуйтесь переносом вручную', true); return; }
-      busy = true; paint();
-      aiPush(D, 'user', q);
-      try {
-        const text = await aiAsk([{ role: 'system', content: AI_SYSTEM },
-          { role: 'user', content: aiPrompt(q, aiContext(D, ds(), { samples })) }]);
-        takeAnswer(text);
-      } catch (e) {
-        aiPush(D, 'system', 'Не получилось: ' + e.message + (e.kind === 'no_access' ? ' Проверьте настройки доступа.' : e.kind === 'network' ? ' Можно перенести запрос вручную.' : ''));
-        if (!forced) { ta.value = q; draftQ = q; }   // введённое не теряем и при перерисовке
-      }
-      samples = false; busy = false; paint();
-      if (ta.isConnected) ta.focus();
-    };
-    sendNow = send;
-    const takeAnswer = text => {
-      const r = aiParse(text);
-      const extra = {};
-      if (r.blocks.length) extra.blocks = r.blocks;
-      if (r.schema) extra.schemaCols = r.schema.columns.map(c => ({
-        label: c.label, note: c.type === 'date' ? 'даты' : c.type === 'number' ? `числа ${c.min ?? '?'}–${c.max ?? '?'}` : (c.values ? c.values.join(', ') : 'категории'),
-      }));
-      // Подменять настоящие данные придуманными нельзя — предложение режем на входе
-      const schema = isMockupDs(ds()) ? r.schema : null;
-      if (r.schema && !schema) delete extra.schemaCols;
-      aiPush(D, 'assistant', r.ответ || (r.blocks.length || schema ? 'Вот что предлагаю.' : 'Не понял запрос.'), extra);
-      if (r.schema && !schema) aiPush(D, 'system', 'Придуманные данные не подставляю: этот шаблон построен на настоящем наборе.');
-      pending = (r.blocks.length || schema) ? { blocks: r.blocks, schema } : null;
-    };
-
-    host.appendChild(ta);
-    const real = ds() && !isMockupDs(ds()) && !isSchemaDs(ds());
-    const row = h('div', { class: 'ai-row' },
-      h('button', { class: 'btn sm primary', disabled: busy, onclick: send }, busy ? 'Спрашиваю…' : 'Отправить'),
-      h('button', { class: 'btn sm', onclick: () => showTextModal('Что уходит наружу', aiPrompt(ta.value, aiContext(D, ds(), { samples }))) }, 'Что уйдёт'),
-      h('button', { class: 'btn sm', title: 'Скопировать готовый запрос для внешнего чата', onclick: async () => {
-        const txt = AI_SYSTEM + '\n\n' + aiPrompt(ta.value, aiContext(D, ds(), { samples }));
-        try { await navigator.clipboard.writeText(txt); toast('Запрос скопирован: вставьте во внешний чат'); }
-        catch (e) { showTextModal('Запрос для внешнего чата', txt); }
-      } }, 'Скопировать запрос'),
-      h('button', { class: 'btn sm', title: 'Вставить ответ, полученный во внешнем чате', onclick: () => {
-        const area = h('textarea', { class: 'textarea', rows: 10, placeholder: 'Вставьте сюда ответ внешнего чата' });
-        openModal({ title: 'Ответ из внешнего чата', wide: true, body: area,
-          foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена'),
-            h('button', { class: 'btn primary', onclick: () => { close(); takeAnswer(area.value); paint(); } }, 'Разобрать')] });
-      } }, 'Вставить ответ'));
-    if (!briefOpen) row.appendChild(h('button', { class: 'btn sm', title: 'Ответы о шаблоне, которые уходят с каждым запросом',
-      onclick: () => { briefOpen = true; paint(); } }, ic('edit'), aiBriefFilled(aiBrief(D)) ? 'Бриф' : 'Заполнить бриф'));
-    host.appendChild(row);
-    if (real) host.appendChild(checkbox('Приложить к запросу ' + AI_SAMPLE_ROWS + ' строк данных (на один раз)', samples, v => { samples = v; }));
-    else host.appendChild(h('div', { class: 'ai-note' }, 'Данные придуманы, поэтому наружу уходят только названия полей и состав шаблона.'));
-    /* Выгрузка придуманных строк нужна, когда блоки уже есть: это пример
-       таблицы, по которому аналитик поймёт, какие колонки нужны. На пустом
-       шаблоне выгружать нечего, а кнопка пугает: «какие данные, я же ничего
-       ещё не сделал». */
-    const hasBlocks = (D.tabs || []).some(t => (t.items || []).some(i => i.chartId));
-    if (isMockupDs(ds()) && hasBlocks) host.appendChild(h('button', {
-      class: 'btn sm', style: { marginTop: '8px' },
-      title: 'Придуманная таблица, на которой стоят блоки: пример того, какие колонки нужны аналитику',
-      onclick: () => aiExportCsv(ds()),
-    }, ic('download'), 'Выгрузить пример данных'));
-    if (!aiReady()) host.appendChild(h('div', { class: 'ai-note' },
-      'Модель не настроена: укажите её в шестерёнке или переносите запрос вручную.'));
-  };
-  paint();
-  return { repaint: paint };
 }
 
 /* =============================================================
@@ -9072,14 +8597,6 @@ function buildSpecMd(dash, opts = {}) {
   L.push('', 'Метрики записаны так, как их считает Кобра: `АГРЕГАЦИЯ(Колонка)`, отношения — `числитель / знаменатель`. '
     + 'Отношения считаются на уровне группировки графика, а не делением готовых итогов. '
     + 'Относительные периоды («последние 12 месяцев») отсчитываются от последней даты в данных.', '');
-
-  // Бриф — это и есть «зачем» дашборда, аналитику он нужнее состава блоков
-  const brief = aiBriefLines(aiBrief(D));
-  if (brief.length) {
-    L.push('## Зачем этот дашборд', '');
-    brief.forEach(line => L.push('- ' + mdEsc(line)));
-    L.push('');
-  }
 
   if ((D.filters || []).length) {
     L.push('## Фильтры дашборда', '');

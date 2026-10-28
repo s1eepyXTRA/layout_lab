@@ -130,6 +130,8 @@ function renderShell() {
     { label: 'Экспорт в файл…', icon: 'download', onClick: () => openExportDialog() },
     { label: 'Импорт из файла…', icon: 'upload', onClick: openImportDialog },
     '-',
+    { label: 'Доступ к модели…', icon: 'wand', onClick: () => openAiSettings() },
+    '-',
     { label: 'Вернуть демо-шаблон', icon: 'reset', onClick: restoreDemo },
     { label: 'Сбросить всё к начальному состоянию', icon: 'trash', danger: true, onClick: resetAll },
   ]));
@@ -309,7 +311,7 @@ function duplicateDashboard(id) {
   copy.id = nid; copy.title = src.title + ' (копия)'; copy.updated = Date.now();
   // Копия достаётся тому, кто копирует, — иначе чужой шаблон так и останется
   // недоступным для правки. Переписка с ассистентом личная и не копируется.
-  ['ownerLogin', 'team', 'shared', 'chat', 'chatBrief', 'chatBriefSkipped', 'chatTrimmed', 'preview'].forEach(k => delete copy[k]);
+  ['ownerLogin', 'team', 'shared', 'preview'].forEach(k => delete copy[k]);
 
   const srcDsId = (src.fromTemplate || {}).datasetId;
   let dsFrom = null, dsTo = null;
