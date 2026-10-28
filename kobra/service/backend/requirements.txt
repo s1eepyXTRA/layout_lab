@@ -1,0 +1,12 @@
+# Зависимости бэкенда. Границы, а не точные версии: прототип, и обновления
+# внутри мажора нам полезны. Точные версии сборки видно в образе (pip freeze).
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.34,<1.0
+SQLAlchemy>=2.0,<2.1
+alembic>=1.14,<2.0
+# psycopg 3, а не psycopg2: у второго нет колёс под свежий Python, а SQLAlchemy
+# работает с ним через диалект postgresql+psycopg
+psycopg[binary]>=3.2,<4.0
+PyJWT>=2.9,<3.0
+bcrypt>=4.2,<6.0
+cryptography>=43,<47

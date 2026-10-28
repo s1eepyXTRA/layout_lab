@@ -32,6 +32,22 @@ node test/run.js auth.test.js       # один файл
 npx -p typescript@5.6.3 tsc -p kobra/jsconfig.json   # проверка типов по JSDoc (из корня репозитория)
 ```
 
+Бэкенд (`service/backend/`, в разработке — см. `openspec/changes/server-backend/`):
+
+```bash
+docker run -d --name kobra-pg -e POSTGRES_USER=kobra -e POSTGRES_PASSWORD=kobra -e POSTGRES_DB=kobra -p 5433:5432 postgres:16-alpine
+cd kobra/service/backend
+py -m venv .venv && .venv/Scripts/python.exe -m pip install -r requirements.txt
+export KOBRA_DATABASE_URL="postgresql+psycopg://kobra:kobra@localhost:5433/kobra"
+.venv/Scripts/python.exe -m alembic upgrade head        # схема; откат — alembic downgrade base
+.venv/Scripts/python.exe -m uvicorn app.main:app --port 8000
+```
+
+Драйвер — psycopg 3 (`postgresql+psycopg://`), а не psycopg2: у второго нет колёс под свежий Python.
+Адрес базы живёт только в `KOBRA_DATABASE_URL`: в `alembic.ini` его намеренно нет, иначе однажды
+миграции прокатятся не на ту базу. У подключения есть `KOBRA_CONNECT_TIMEOUT_SEC` — без него проба
+`/readyz` не отвечает «не готов», а висит, и трафик с неисправного экземпляра не снимают.
+
 На этой машине работает `py`, а не `python3` (`python`/`python3` — заглушки Microsoft Store и печатают только «Python»); в README команды записаны как `python3`.
 
 Ядро проверяется тестами (`test/`), интерфейс — руками: пересобрать и открыть `build/index.html`.

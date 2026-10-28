@@ -12,7 +12,7 @@ from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String, Text, c
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # ---------- Настройки ----------
-DATABASE_URL = os.environ.get("KOBRA_DATABASE_URL", "postgresql+psycopg2://kobra:kobra@localhost:5432/kobra")
+DATABASE_URL = os.environ.get("KOBRA_DATABASE_URL", "postgresql+psycopg://kobra:kobra@localhost:5432/kobra")
 SECRET_KEY = os.environ.get("KOBRA_SECRET_KEY") or ""
 if not SECRET_KEY:
     SECRET_KEY = "dev-" + hashlib.sha256(DATABASE_URL.encode()).hexdigest()
@@ -23,6 +23,9 @@ COOKIE_SECURE = os.environ.get("KOBRA_COOKIE_SECURE", "0") == "1"
 MAX_RESULT_ROWS = int(os.environ.get("KOBRA_MAX_RESULT_ROWS", "50000"))
 QUERY_TIMEOUT_SEC = int(os.environ.get("KOBRA_QUERY_TIMEOUT_SEC", "120"))
 SESSION_DAYS = int(os.environ.get("KOBRA_SESSION_DAYS", "14"))
+# Без таймаута подключения проба готовности не отвечает «не готов», а висит:
+# недоступная база выглядит как зависший сервис, и трафик с него не снимают
+CONNECT_TIMEOUT_SEC = int(os.environ.get("KOBRA_CONNECT_TIMEOUT_SEC", "3"))
 LOAD_DEMO = os.environ.get("KOBRA_LOAD_DEMO", "1") == "1"
 FRONTEND_DIR = os.environ.get("KOBRA_FRONTEND_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "frontend"))
 
@@ -34,7 +37,8 @@ ROLES = ("viewer", "editor", "admin")
 # ---------- База метаданных ----------
 engine = create_engine(
     DATABASE_URL, pool_pre_ping=True, pool_size=10, max_overflow=20,
-    connect_args={"options": f"-c statement_timeout={QUERY_TIMEOUT_SEC * 1000}"} if DATABASE_URL.startswith("postgresql") else {},
+    connect_args={"options": f"-c statement_timeout={QUERY_TIMEOUT_SEC * 1000}",
+                  "connect_timeout": CONNECT_TIMEOUT_SEC} if DATABASE_URL.startswith("postgresql") else {},
 )
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 Base = declarative_base()

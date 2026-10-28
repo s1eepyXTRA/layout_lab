@@ -2,10 +2,10 @@
 
 ## 1. Скелет бэкенда и схема базы
 
-- [ ] 1.1 Завести `kobra/service/backend/` как приложение: `requirements.txt` (FastAPI, uvicorn, SQLAlchemy, Alembic, psycopg2, python-jose или pyjwt, bcrypt, cryptography), `app/main.py` с пустым приложением и `/healthz`; проверка — `uvicorn app.main:app` поднимается и `/healthz` отвечает 200
-- [ ] 1.2 Подключить Alembic и сгенерировать первую ревизию по моделям из `app/core.py`; проверка — `alembic upgrade head` на пустой базе создаёт таблицы, `alembic downgrade base` их убирает
-- [ ] 1.3 Добавить `/readyz`, который проверяет доступность базы и отвечает 503 при её отсутствии; проверка — с остановленной базой `/readyz` отдаёт 503, с поднятой 200
-- [ ] 1.4 Описать в `CLAUDE.md` и `kobra/README.md`, как поднять бэкенд локально и прокатить миграции; проверка — команды из документа выполняются как написаны на чистой машине
+- [x] 1.1 Завести `kobra/service/backend/` как приложение: `requirements.txt` (FastAPI, uvicorn, SQLAlchemy, Alembic, psycopg2, python-jose или pyjwt, bcrypt, cryptography), `app/main.py` с пустым приложением и `/healthz`; проверка — `uvicorn app.main:app` поднимается и `/healthz` отвечает 200
+- [x] 1.2 Подключить Alembic и сгенерировать первую ревизию по моделям из `app/core.py`; проверка — `alembic upgrade head` на пустой базе создаёт таблицы, `alembic downgrade base` их убирает
+- [x] 1.3 Добавить `/readyz`, который проверяет доступность базы и отвечает 503 при её отсутствии; проверка — с остановленной базой `/readyz` отдаёт 503, с поднятой 200
+- [x] 1.4 Описать в `CLAUDE.md` и `kobra/README.md`, как поднять бэкенд локально и прокатить миграции; проверка — команды из документа выполняются как написаны на чистой машине
 
 ## 2. Вход и права на сервере
 

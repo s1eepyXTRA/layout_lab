@@ -171,6 +171,50 @@ python3 -m http.server 8777 --directory build
 (ключ `kobra.state.v1`), строки загруженных файлов — в IndexedDB. Другой браузер или режим инкогнито
 начнут с чистого демо; «Настройки» → «Сбросить всё к начальному состоянию» возвращает исходный вид.
 
+## Бэкенд (в разработке)
+
+Пока Кобра работает без сервера, но он уже собирается — `service/backend/`. План и этапы лежат в
+`openspec/changes/server-backend/`.
+
+Нужны Python 3 и Postgres. Базу проще взять в Docker:
+
+```bash
+docker run -d --name kobra-pg -e POSTGRES_USER=kobra -e POSTGRES_PASSWORD=kobra -e POSTGRES_DB=kobra -p 5433:5432 postgres:16-alpine
+```
+
+Окружение и зависимости (на Windows вместо `python3` — `py`, а вместо `.venv/bin` — `.venv/Scripts`):
+
+```bash
+cd kobra/service/backend
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+```
+
+Адрес базы и ключ шифрования задаются окружением; без ключа сервис честно предупреждает, что
+работает на ключе для разработки:
+
+```bash
+export KOBRA_DATABASE_URL="postgresql+psycopg://kobra:kobra@localhost:5433/kobra"
+export KOBRA_SECRET_KEY="что-угодно-длинное-для-разработки"
+```
+
+Схема базы приводится в порядок Alembic-ом, запуск — uvicorn-ом:
+
+```bash
+.venv/bin/python -m alembic upgrade head     # накатить схему (откат: alembic downgrade base)
+.venv/bin/python -m uvicorn app.main:app --reload --port 8000
+```
+
+Проверить, что поднялось:
+
+```bash
+curl http://localhost:8000/healthz   # {"status":"ok"} — процесс жив
+curl http://localhost:8000/readyz    # {"status":"ready"} — база доступна; без базы 503
+```
+
+Пробы отвечают на разные вопросы: `/healthz` не ходит в базу намеренно, иначе короткая
+недоступность базы перезапускала бы все экземпляры сервиса.
+
 ## Ограничения прототипа
 
 - Данные и шаблоны живут только в браузере, где открыт файл. Переносятся экспортом в `.kobra.json`.
