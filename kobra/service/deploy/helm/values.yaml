@@ -1,0 +1,72 @@
+# Значения по умолчанию.
+#
+# Postgres и Redis — внешние: чарт их не ставит. База с данными не должна
+# удаляться вместе с релизом приложения, а подсовывать её подчартом — верный
+# способ однажды снести продуктив командой `helm uninstall`.
+
+image:
+  repository: kobra
+  tag: ""            # пусто — берётся appVersion из Chart.yaml
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicas: 2          # сервис без состояния: масштабируется горизонтально
+worker:
+  enabled: true
+  replicas: 1
+  concurrency: 2
+
+# Адреса внешних Postgres и Redis. Строка подключения — секрет, поэтому
+# задаётся через existingSecret или через .Values.secrets.databaseUrl.
+redis:
+  url: redis://kobra-redis:6379/0
+
+secrets:
+  # Если заполнить здесь — чарт создаст Secret сам. Для продуктива лучше
+  # existingSecret: туда положит пароль тот, кому положено.
+  existingSecret: ""
+  databaseUrl: ""    # postgresql+psycopg://user:pass@host:5432/kobra
+  secretKey: ""      # KOBRA_SECRET_KEY: им шифруются строки подключения
+
+env:
+  KOBRA_AUTH_TYPE: db
+  KOBRA_LOAD_DEMO: "0"        # в рабочем контуре демо обычно не нужно
+  KOBRA_LOG_LEVEL: info
+  KOBRA_SESSION_DAYS: "14"
+  KOBRA_MAX_UPLOAD_ROWS: "1000000"
+  KOBRA_MAX_FILE_MB: "512"
+
+# Миграции катит отдельный job перед обновлением: приложение не должно
+# стартовать на несовпадающей схеме, а катить их каждым подом нельзя — они
+# столкнутся друг с другом.
+migrations:
+  enabled: true
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  host: kobra.company.local
+  tls: []
+  annotations: {}
+
+resources:
+  api:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 1Gi}
+  worker:
+    requests: {cpu: 200m, memory: 512Mi}
+    limits: {cpu: "2", memory: 2Gi}   # разбор файла упирается в процессор
+
+probes:
+  # Проба жизни не ходит в базу намеренно: короткая недоступность базы не
+  # должна перезапускать все поды разом
+  liveness: /healthz
+  readiness: /readyz
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

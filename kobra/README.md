@@ -222,6 +222,51 @@ curl http://localhost:8000/readyz    # {"status":"ready"} — база дост�
 .venv/bin/python -m pytest -q
 ```
 
+## Развёртывание
+
+Весь сервис — один образ: внутри собранный интерфейс и API. Интерфейс собирается офлайн-вариантом,
+со всеми библиотеками внутри файла: в закрытом контуре до CDN не достучаться, и сборка с внешними
+ссылками открылась бы пустым экраном.
+
+**Окружение разработки одной командой** (сервис, воркер, Postgres, Redis, миграции):
+
+```bash
+cd kobra/service/backend
+docker compose up --build
+```
+
+Дальше `http://localhost:8000`, вход `admin` / `admin`. Демо-наборы загружаются сами
+(`KOBRA_LOAD_DEMO=1`). Каталог LDAP для проверки входа поднимается отдельно:
+`docker compose --profile ldap up`.
+
+**Образ отдельно:**
+
+```bash
+docker build -f kobra/service/backend/Dockerfile -t kobra:dev .   # из корня репозитория
+docker run -p 8000:8000 -e KOBRA_DATABASE_URL=... -e KOBRA_SECRET_KEY=... kobra:dev
+```
+
+Один образ — три роли, выбирает команда: `api` (по умолчанию), `worker` (разбор загруженных файлов),
+`migrate` (прокатить схему и выйти).
+
+**В Kubernetes** — чартом из `kobra/service/deploy/helm`, см. его README. Postgres и Redis внешние;
+миграции катит job перед обновлением, а не каждый под.
+
+**Переменные окружения:**
+
+| Переменная | Зачем |
+|---|---|
+| `KOBRA_DATABASE_URL` | Postgres: `postgresql+psycopg://user:pass@host:5432/kobra` |
+| `KOBRA_REDIS_URL` | Redis: кэш, очередь, лимиты. Без него сервис работает медленнее, но работает |
+| `KOBRA_SECRET_KEY` | Подпись сессий и шифрование строк подключения. Не задан — сервис честно предупредит |
+| `KOBRA_AUTH_TYPE` | `db` или `ldap` |
+| `KOBRA_LOAD_DEMO` | Загрузить демо-наборы при первом старте (`1`/`0`) |
+| `KOBRA_ADMIN_USER`, `KOBRA_ADMIN_PASSWORD` | Первый админ, если база пустая |
+| `KOBRA_MAX_UPLOAD_ROWS`, `KOBRA_MAX_FILE_MB` | Пределы загрузки |
+| `KOBRA_MIGRATE_ON_START` | Прокатить миграции при старте контейнера (для разработки) |
+
+Проверить, что поднялось: `/healthz` — процесс жив, `/readyz` — база доступна и сервис готов.
+
 ## Ограничения прототипа
 
 - Без сервиса данные и шаблоны живут только в браузере, где открыт файл, и переносятся экспортом

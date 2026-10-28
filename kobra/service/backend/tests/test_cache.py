@@ -23,12 +23,12 @@ def write_csv(path, rows):
 
 
 @pytest.fixture
-def ds(client, make_user, login, auth, tmp_path):
+def ds(client, make_user, login, auth, tmp_path, stage_file):
     make_user("a.smirnova", team="Продажи")
     h = auth(login("a.smirnova"))
     client.post("/api/datasets", json={"id": "ds_c", "name": "Продажи", "kind": "upload"}, headers=h)
-    ingest_file("tc", "ds_c", write_csv(tmp_path / "a.csv", [("Москва", 100), ("Казань", 50)]),
-                "a.csv", "a.smirnova")
+    ingest_file(stage_file("tc", write_csv(tmp_path / "a.csv", [("Москва", 100), ("Казань", 50)])),
+                "ds_c", "a.csv", "a.smirnova")
     return h
 
 
@@ -46,11 +46,11 @@ def test_povtornyi_zapros_iz_kesha(client, ds):
     assert second["rows"] == first["rows"]
 
 
-def test_posle_novyh_strok_otvet_peresschitan(client, ds, tmp_path):
+def test_posle_novyh_strok_otvet_peresschitan(client, ds, tmp_path, stage_file):
     before = ask(client, ds)
     assert sum(r["Сумма: Выручка, ₽"] for r in before["rows"]) == 150
     # Загрузили файл заново — версия набора выросла, старый ответ больше не найдётся
-    ingest_file("tc2", "ds_c", write_csv(tmp_path / "b.csv", [("Москва", 300)]), "b.csv", "a.smirnova")
+    ingest_file(stage_file("tc2", write_csv(tmp_path / "b.csv", [("Москва", 300)])), "ds_c", "b.csv", "a.smirnova")
     after = ask(client, ds)
     assert not after.get("cached")
     assert sum(r["Сумма: Выручка, ₽"] for r in after["rows"]) == 300

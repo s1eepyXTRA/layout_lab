@@ -59,17 +59,29 @@ def read_rows(path: str, file_name: str) -> Iterator[list]:
 def _read_csv(path: str) -> Iterator[list]:
     with open(path, "rb") as fh:
         head = fh.read(64 * 1024)
-    encoding = "utf-8-sig"
-    try:
-        head.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        # Выгрузки из 1С и Excel часто приходят в windows-1251
-        encoding = "cp1251"
+    encoding = _encoding(head)
     sample = head.decode(encoding, errors="replace")
     delimiter = _delimiter(sample)
     with io.open(path, "r", encoding=encoding, errors="replace", newline="") as fh:
         for row in csv.reader(fh, delimiter=delimiter):
             yield row
+
+
+def _encoding(head: bytes) -> str:
+    """UTF-8 или windows-1251 (так приходят выгрузки из 1С и Excel).
+
+    Тонкость, на которой это уже ломалось: голова файла обрезана по размеру, и
+    обрыв приходится на середину многобайтового символа. Сам по себе он не
+    значит, что файл не UTF-8, — иначе большой русский CSV читается как cp1251,
+    и все подписи превращаются в «Р¤РёР»РёР°Р»».
+    """
+    try:
+        head.decode("utf-8-sig")
+        return "utf-8-sig"
+    except UnicodeDecodeError as e:
+        if e.start >= len(head) - 4:      # оборвалось на последнем символе — это обрезка
+            return "utf-8-sig"
+        return "cp1251"
 
 
 def _delimiter(sample: str) -> str:
@@ -120,11 +132,15 @@ def convert(value, kind: str):
 
 # ---------- Задача ----------
 @celery_app.task(name="kobra.ingest_file")
-def ingest_file(task_id: str, ds_id: str, path: str, file_name: str, login: str) -> dict:
+def ingest_file(task_id: str, ds_id: str, file_name: str, login: str) -> dict:
     """Разобрать файл и залить строки. Состояние пишем по ходу: человек должен
     видеть, сколько уже готово, а не только «идёт работа»."""
     task_set(task_id, state="running", rows=0, dataset=ds_id, file=file_name)
+    path = None
     try:
+        # Получение файла — тоже часть задачи: если куски не доехали, человек
+        # должен увидеть ошибку, а не задачу, навсегда застрявшую в «running»
+        path = _fetch_file(task_id, file_name)
         result = _ingest(task_id, ds_id, path, file_name, login)
         task_set(task_id, state="done", **result)
         return result
@@ -133,10 +149,12 @@ def ingest_file(task_id: str, ds_id: str, path: str, file_name: str, login: str)
         task_set(task_id, state="error", error=str(e)[:500])
         raise
     finally:
-        try:
-            os.remove(path)
-        except OSError:
-            pass
+        _forget_file(task_id)
+        if path:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
 
 def _ingest(task_id: str, ds_id: str, path: str, file_name: str, login: str) -> dict:
@@ -172,7 +190,7 @@ def _ingest(task_id: str, ds_id: str, path: str, file_name: str, login: str) -> 
     total = 0
     with engine.raw_connection() as raw:
         cur = raw.cursor()
-        copy_sql = f'COPY {UPLOAD_SCHEMA}.{table} ({", ".join(keys)}) FROM STDIN'
+        copy_sql = f'COPY {UPLOAD_SCHEMA}.{table} ({", ".join(quoted(k) for k in keys)}) FROM STDIN'
         with cur.copy(copy_sql) as copy:
             for row in _chain(sample, rows):
                 values = [convert(row[i] if i < len(row) else None, kinds[i]) for i in range(len(keys))]
@@ -185,6 +203,35 @@ def _ingest(task_id: str, ds_id: str, path: str, file_name: str, login: str) -> 
     columns = [{"key": keys[i], "label": labels[i], "type": kinds[i]} for i in range(len(keys))]
     _finish_dataset(ds_id, columns, total, file_name, login)
     return {"rows": total, "columns": columns, "dataset": ds_id}
+
+
+def _fetch_file(task_id: str, file_name: str) -> str:
+    """Куски файла из базы — во временный файл воркера: разборщикам (csv,
+    openpyxl) нужен файл, а не поток, и это его собственный диск."""
+    import tempfile
+    suffix = os.path.splitext(file_name)[1] or ".csv"
+    fd, path = tempfile.mkstemp(prefix="kobra_", suffix=suffix)
+    got = False
+    with os.fdopen(fd, "wb") as out:
+        with engine.connect() as conn:
+            for (chunk,) in conn.execute(text(
+                f"select data from {UPLOAD_SCHEMA}.files where task_id = :t order by idx"
+            ), {"t": task_id}):
+                out.write(chunk)
+                got = True
+    if not got:
+        os.remove(path)
+        raise ValueError("Файл не найден: возможно, загрузка не завершилась")
+    return path
+
+
+def _forget_file(task_id: str) -> None:
+    """Куски больше не нужны: держать копию файла в базе после разбора незачем."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(f"delete from {UPLOAD_SCHEMA}.files where task_id = :t"), {"t": task_id})
+    except Exception:
+        pass
 
 
 def _chain(first, rest):
@@ -206,8 +253,15 @@ def _translit(s: str) -> str:
                    for ch in s.lower())
 
 
+def quoted(name: str) -> str:
+    """Имя колонки в кавычках. Без этого набор с колонкой `group`, `order` или
+    `user` не загрузится: это зарезервированные слова SQL, а они в выгрузках
+    встречаются постоянно."""
+    return '"' + name.replace('"', '""') + '"'
+
+
 def _create_table(table: str, keys: list, kinds: list) -> None:
-    cols = ", ".join(f"{k} {SQL_TYPE[kind]}" for k, kind in zip(keys, kinds))
+    cols = ", ".join(f"{quoted(k)} {SQL_TYPE[kind]}" for k, kind in zip(keys, kinds))
     with engine.begin() as conn:
         conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {UPLOAD_SCHEMA}"))
         conn.execute(text(f"DROP TABLE IF EXISTS {UPLOAD_SCHEMA}.{table}"))

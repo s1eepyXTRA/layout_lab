@@ -21,7 +21,7 @@ ROWS = [
 
 
 @pytest.fixture
-def ds(client, make_user, login, auth, tmp_path):
+def ds(client, make_user, login, auth, tmp_path, stage_file):
     make_user("a.smirnova", team="Продажи")
     h = auth(login("a.smirnova"))
     client.post("/api/datasets", json={"id": "ds_q", "name": "Продажи", "kind": "upload"}, headers=h)
@@ -30,7 +30,7 @@ def ds(client, make_user, login, auth, tmp_path):
         fh.write("Город;Товар;Выручка, ₽;Себестоимость, ₽;Дата заказа\n")
         for r in ROWS:
             fh.write(";".join(r) + "\n")
-    ingest_file("tq", "ds_q", str(p), "prodazhi.csv", "a.smirnova")
+    ingest_file(stage_file("tq", str(p)), "ds_q", "prodazhi.csv", "a.smirnova")
     # Метрика-отношение: такие в движке считаются двумя аккумуляторами
     body = client.get("/api/datasets/ds_q", headers=h).json()
     body["metrics"] = body["metrics"] + [{

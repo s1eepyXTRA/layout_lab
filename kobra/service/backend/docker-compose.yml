@@ -1,0 +1,97 @@
+# Окружение разработки: одна команда — и всё работает.
+#
+#   cd kobra/service/backend
+#   docker compose up --build
+#   → http://localhost:8000, вход admin / admin
+#
+# Postgres и Redis здесь свои, одноразовые. В рабочем контуре они внешние:
+# образу всё равно, он знает только KOBRA_DATABASE_URL и KOBRA_REDIS_URL.
+
+name: kobra
+
+x-env: &env
+  KOBRA_DATABASE_URL: postgresql+psycopg://kobra:kobra@db:5432/kobra
+  KOBRA_REDIS_URL: redis://redis:6379/0
+  KOBRA_SECRET_KEY: razrabotka-klyuch-ne-dlya-produktiva-32
+  KOBRA_ADMIN_USER: admin
+  KOBRA_ADMIN_PASSWORD: admin
+  KOBRA_LOAD_DEMO: "1"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: kobra
+      POSTGRES_PASSWORD: kobra
+      POSTGRES_DB: kobra
+    volumes: [kobra-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kobra"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Схему приводит в порядок отдельный шаг — до того, как кто-то начнёт работать.
+  # Так же это устроено в кластере: там это job, здесь — контейнер, который
+  # отработал и вышел.
+  migrate:
+    build:
+      context: ../../..
+      dockerfile: kobra/service/backend/Dockerfile
+    command: ["migrate"]
+    environment: *env
+    depends_on:
+      db: {condition: service_healthy}
+
+  api:
+    build:
+      context: ../../..
+      dockerfile: kobra/service/backend/Dockerfile
+    environment: *env
+    ports: ["8000:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/readyz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    build:
+      context: ../../..
+      dockerfile: kobra/service/backend/Dockerfile
+    command: ["worker"]
+    environment: *env
+    volumes: [kobra-uploads:/app/uploads]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+
+  # Каталог для проверки входа по LDAP. Поднимается только когда нужен:
+  #   docker compose --profile ldap up
+  ldap:
+    image: bitnami/openldap:2.6
+    profiles: ["ldap"]
+    environment:
+      LDAP_ROOT: dc=company,dc=local
+      LDAP_ADMIN_USERNAME: admin
+      LDAP_ADMIN_PASSWORD: adminpassword
+      LDAP_USERS: a.smirnova,d.orlov
+      LDAP_PASSWORDS: secret,secret
+    ports: ["1389:1389"]
+
+volumes:
+  kobra-db:
+  kobra-uploads:

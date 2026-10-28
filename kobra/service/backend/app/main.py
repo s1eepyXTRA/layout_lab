@@ -11,23 +11,43 @@
 всех экземпляров сервиса, а это ровно то, что не нужно.
 """
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
-from app.auth import AUTH_TYPE
+from app.auth import AUTH_TYPE, ensure_admin
+from app.demo import load_demo
 from app.auth import router as auth_router
 from app.objects import charts_router, dashboards_router, datasets_router
 from app.query_api import router as query_router
 from app.rows import router as rows_router
 from app.users import router as users_router
-from app.core import FRONTEND_DIR, engine
+from app.core import FRONTEND_DIR, SessionLocal, engine
 from app.settings import router as settings_router
 from app.upload import router as upload_router
 
-app = FastAPI(title="Кобра", docs_url="/api/docs", openapi_url="/api/openapi.json")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Старт сервиса: первый админ и демо-наполнение. Оба шага идемпотентны —
+    при перезапуске и при нескольких экземплярах ничего не задвоится."""
+    db = SessionLocal()
+    try:
+        ensure_admin(db)
+        n = load_demo(db)
+        if n:
+            print(f"Демо-наборы загружены: {n}")
+    except Exception as e:                      # noqa: BLE001
+        # Без базы сервис всё равно поднимется и честно скажет об этом в /readyz
+        print(f"ВНИМАНИЕ: подготовка при старте не удалась: {e}")
+    finally:
+        db.close()
+    yield
+
+
+app = FastAPI(title="Кобра", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
 
 
 app.include_router(auth_router)

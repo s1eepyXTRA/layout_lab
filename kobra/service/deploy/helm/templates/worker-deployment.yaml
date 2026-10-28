@@ -1,0 +1,38 @@
+{{- if .Values.worker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kobra.fullname" . }}-worker
+  labels: {{- include "kobra.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "kobra.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "kobra.labels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: {{ include "kobra.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["worker"]
+          # Файл на разбор воркер берёт из базы, а не с общего диска: тома с
+          # ReadWriteMany в контуре может не быть, а база есть всегда
+          env:
+            {{- include "kobra.env" . | nindent 12 }}
+            - name: KOBRA_WORKER_CONCURRENCY
+              value: {{ .Values.worker.concurrency | quote }}
+          resources: {{- toYaml .Values.resources.worker | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -84,6 +84,28 @@ def db():
         s.close()
 
 
+@pytest.fixture(autouse=True)
+def stage_file():
+    """Положить файл в базу, как это делает приём: разбор берёт его оттуда."""
+    def _stage(task_id, path, chunk=1024 * 1024):
+        from app.core import UploadChunk
+        s = SessionLocal()
+        try:
+            with open(path, "rb") as fh:
+                i = 0
+                while True:
+                    data = fh.read(chunk)
+                    if not data:
+                        break
+                    s.add(UploadChunk(task_id=task_id, idx=i, data=data))
+                    i += 1
+            s.commit()
+        finally:
+            s.close()
+        return task_id
+    return _stage
+
+
 @pytest.fixture
 def client():
     return TestClient(app)

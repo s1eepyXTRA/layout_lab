@@ -2,8 +2,11 @@
 
 Файл не разбирается в запросе: сотни тысяч строк — это минуты, и держать на них
 HTTP-соединение значит привязать загрузку к открытой вкладке. Поэтому запрос
-делает ровно две вещи: кладёт файл во временное хранилище потоком и ставит
-задачу в очередь.
+делает две вещи: принимает файл кусками и ставит задачу в очередь.
+
+Куски ложатся в базу, а не на диск: принимает файл веб-сервис, а разбирает
+воркер, и в кластере это разные поды. Общий диск потребовал бы хранилища с
+ReadWriteMany, которого во многих контурах нет; база есть всегда.
 """
 import os
 import uuid
@@ -13,14 +16,13 @@ from sqlalchemy.orm import Session
 
 from app.access import can_edit, why_read_only
 from app.auth import current_user
-from app.core import Dataset, User
+from app.core import Dataset, UploadChunk, User
 from app.db import get_db
 from app.ingest import ingest_file
 from app.queue import redis_ok, task_get, task_set
 
 router = APIRouter(prefix="/api", tags=["upload"])
 
-UPLOAD_DIR = os.environ.get("KOBRA_UPLOAD_DIR", os.path.join(os.path.dirname(__file__), "..", "uploads"))
 CHUNK = 1024 * 1024
 MAX_FILE_MB = int(os.environ.get("KOBRA_MAX_FILE_MB", "512"))
 
@@ -37,24 +39,26 @@ async def upload_file(ds_id: str, file: UploadFile = File(...), db: Session = De
         # Честный отказ лучше, чем принять файл и молча ничего не сделать
         raise HTTPException(status_code=503, detail="Фоновая обработка сейчас недоступна, попробуйте позже")
 
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
     task_id = uuid.uuid4().hex
-    path = os.path.join(UPLOAD_DIR, f"{task_id}_{os.path.basename(file.filename or 'file')}")
     size = 0
-    with open(path, "wb") as out:
-        while True:
-            chunk = await file.read(CHUNK)
-            if not chunk:
-                break
-            size += len(chunk)
-            if size > MAX_FILE_MB * 1024 * 1024:
-                out.close()
-                os.remove(path)
-                raise HTTPException(status_code=413, detail=f"Файл больше {MAX_FILE_MB} МБ")
-            out.write(chunk)
+    idx = 0
+    while True:
+        chunk = await file.read(CHUNK)
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > MAX_FILE_MB * 1024 * 1024:
+            db.query(UploadChunk).filter(UploadChunk.task_id == task_id).delete()
+            db.commit()
+            raise HTTPException(status_code=413, detail=f"Файл больше {MAX_FILE_MB} МБ")
+        db.add(UploadChunk(task_id=task_id, idx=idx, data=chunk))
+        db.commit()
+        idx += 1
+    if not size:
+        raise HTTPException(status_code=422, detail="Пустой файл")
 
     task_set(task_id, state="queued", rows=0, dataset=ds_id, file=file.filename, bytes=size)
-    ingest_file.delay(task_id, ds_id, path, file.filename or "file.csv", user.username)
+    ingest_file.delay(task_id, ds_id, file.filename or "file.csv", user.username)
     return {"task": task_id, "bytes": size}
 
 

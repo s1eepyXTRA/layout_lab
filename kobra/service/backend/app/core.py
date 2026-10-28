@@ -8,7 +8,7 @@ import secrets
 import bcrypt
 import jwt
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String, Text, create_engine
+from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, LargeBinary, String, Text, create_engine
 # shared ищут запросом («покажи, что мне выдали»), а JSON такого не умеет —
 # для этой колонки нужен JSONB с оператором включения
 from sqlalchemy.dialects.postgresql import JSONB
@@ -161,6 +161,22 @@ class UploadRow(Base):
     dataset_id = Column(String(64), primary_key=True)
     idx = Column(Integer, primary_key=True)   # порядок строк в файле важен
     data = Column(JSONB, nullable=False)
+
+
+class UploadChunk(Base):
+    """Кусок загруженного файла по дороге к разбору.
+
+    Файл лежит в базе, а не на диске, потому что принимает его веб-сервис, а
+    разбирает воркер — это разные процессы и в кластере разные поды. Общий диск
+    между ними потребовал бы хранилища с ReadWriteMany, которого во многих
+    контурах просто нет; база есть всегда.
+    """
+
+    __tablename__ = "files"
+    __table_args__ = {"schema": UPLOAD_SCHEMA}
+    task_id = Column(String(64), primary_key=True)
+    idx = Column(Integer, primary_key=True)
+    data = Column(LargeBinary, nullable=False)
 
 
 class Setting(Base):
