@@ -220,6 +220,31 @@ async function storageReload() {
   return fresh;
 }
 
+/* ---------- Расчёт ----------
+   Макеты считаются в браузере: их строк нет нигде, они порождаются по seed.
+   Загруженные наборы считает база — миллион строк в браузер не довезти. */
+const isServerDataset = ds => storageIsServer() && !!ds && ds.kind === 'upload' && !ds.builtin;
+
+/** Тот же `runQuery`, но умеющий спросить сервер. Ответ одной формы в обоих случаях. */
+async function runQueryAsync(ds, spec) {
+  if (!isServerDataset(ds)) return runQuery(ds, spec);
+  return api(`/api/datasets/${encodeURIComponent(ds.id)}/query`, { method: 'POST', body: spec });
+}
+
+/** Исходные строки для таблицы: тоже либо из памяти, либо из базы. */
+async function runRawAsync(ds, opts) {
+  const { columns, filters, orderCol, orderDesc, limit } = opts;
+  if (!isServerDataset(ds)) {
+    let rs = applyFilters(ds, filters);
+    if (orderCol) { const d = orderDesc ? -1 : 1; rs = rs.slice().sort((a, b) => d * cmpVals(a[orderCol], b[orderCol])); }
+    return { rows: rs.slice(0, limit), filteredCount: rs.length };
+  }
+  return api(`/api/datasets/${encodeURIComponent(ds.id)}/query`, {
+    method: 'POST',
+    body: { raw: true, columns, filters, orderby: orderCol ? [{ key: orderCol, desc: !!orderDesc }] : [], limit },
+  });
+}
+
 /* ---------- Строки наборов ----------
    Пока строки живут в браузере в обоих режимах: перенос их в базу — отдельный
    шаг плана (загруженные данные и фоновый разбор). Шов здесь, чтобы тот шаг

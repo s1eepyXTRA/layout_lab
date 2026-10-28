@@ -60,7 +60,13 @@ def schema():
 
 @pytest.fixture(autouse=True)
 def clean_tables(schema):
-    """Каждый тест начинает с пустых таблиц: общая база, но не общее состояние."""
+    """Каждый тест начинает с пустых таблиц: общая база, но не общее состояние.
+    Redis чистим по той же причине: кэш и состояния задач тоже общие."""
+    try:
+        from app.queue import redis_conn
+        redis_conn().flushdb()
+    except Exception:
+        pass
     with engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
             # Имя со схемой: строки наборов лежат не в public

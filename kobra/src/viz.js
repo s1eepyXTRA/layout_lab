@@ -96,12 +96,12 @@ const fmtFor = (p, res, i = 0) => (p.y_format && p.y_format !== 'auto') ? p.y_fo
 
 /* XY-запрос: категории по оси X, серии по метрикам и/или измерению */
 /** @param {{xCol: string, grain?: string, metrics: MetricRef[], seriesCol?: string, seriesLimit?: number, sort?: string, catLimit?: number}} spec */
-function queryXY(ds, filters, spec) {
+async function queryXY(ds, filters, spec) {
   const { xCol, grain, metrics, seriesCol, seriesLimit, sort, catLimit } = spec;
   const xDate = isDateCol(ds, xCol);
   const gb = [{ col: xCol, grain: xDate ? (grain || 'month') : null }];
   if (seriesCol) gb.push({ col: seriesCol, grain: isDateCol(ds, seriesCol) ? 'year' : null });
-  const res = runQuery(ds, { filters, groupby: gb, metrics });
+  const res = await runQueryAsync(ds, { filters, groupby: gb, metrics });
   const xd = res.dims[0], sd = res.dims[1];
   // Категории
   const catTotals = new Map();
@@ -214,11 +214,11 @@ function xyControls(kind) {
   if (adv.length) secs.splice(1, 0, { title: 'Расширенная аналитика', tab: 'data', controls: adv });
   return secs;
 }
-function renderXY(root, ctx, kind) {
+async function renderXY(root, ctx, kind) {
   const { ds, params: p } = ctx;
   if (!p.x_col) return vizMsg(root, 'Выберите колонку для оси X');
   if (!p.metrics || !p.metrics.length) return vizMsg(root, 'Добавьте хотя бы одну метрику');
-  const q = queryXY(ds, ctx.filters, { xCol: p.x_col, grain: p.x_grain, metrics: p.metrics, seriesCol: p.series_col, seriesLimit: p.series_limit || 8, sort: p.sort, catLimit: p.row_limit });
+  const q = await queryXY(ds, ctx.filters, { xCol: p.x_col, grain: p.x_grain, metrics: p.metrics, seriesCol: p.series_col, seriesLimit: p.series_limit || 8, sort: p.sort, catLimit: p.row_limit });
   ctx.setData(q.res);
   if (!q.cats.length) return vizMsg(root, 'Нет данных для выбранных фильтров');
   applyAdvanced(q.series, p);
@@ -306,13 +306,13 @@ VIZ.mixed = {
       type_a: 'bar', type_b: 'line', axis_b: 'right', y_format_b: 'auto',
     });
   },
-  render(root, ctx) {
+  async render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.x_col) return vizMsg(root, 'Выберите колонку для оси X');
     const ma = p.metrics || [], mb = p.metrics_b || [];
     if (!ma.length && !mb.length) return vizMsg(root, 'Добавьте метрики в запрос A или B');
     const all = [...ma, ...mb];
-    const q = queryXY(ds, ctx.filters, { xCol: p.x_col, grain: p.x_grain, metrics: all, sort: 'value_desc', catLimit: p.row_limit });
+    const q = await queryXY(ds, ctx.filters, { xCol: p.x_col, grain: p.x_grain, metrics: all, sort: 'value_desc', catLimit: p.row_limit });
     ctx.setData(q.res);
     if (!q.cats.length) return vizMsg(root, 'Нет данных для выбранных фильтров');
     const t = themeColors();
@@ -373,26 +373,26 @@ VIZ.table = {
     time_grain: 'month', row_limit: 100, page_size: '25', search: true, cell_bars: true, totals: true,
     time_range: { preset: 'all' }, adhoc_filters: [], y_format: 'auto', order_desc: true,
   }),
-  render(root, ctx) {
+  async render(root, ctx) {
     const { ds, params: p } = ctx;
     let cols, rows, totals = null;
     if (p.mode === 'raw') {
       const keys = (p.columns || []).filter(k => dsCol(ds, k));
       if (!keys.length) return vizMsg(root, 'Выберите колонки');
-      let rs = applyFilters(ds, ctx.filters);
-      if (p.order_col) { const k = p.order_col, d = p.order_desc !== false ? -1 : 1; rs = rs.slice().sort((a, b) => d * cmpVals(a[k], b[k])); }
-      rows = rs.slice(0, p.row_limit || 100);
+      const raw = await runRawAsync(ds, { columns: keys, filters: ctx.filters,
+        orderCol: p.order_col || null, orderDesc: p.order_desc !== false, limit: p.row_limit || 100 });
+      rows = raw.rows;
       cols = keys.map(k => { const c = dsCol(ds, k); return { key: k, label: c.label || k, isNum: c.type === 'number', dim: { type: c.type, col: k, label: c.label }, fmt: c.type === 'number' ? (p.y_format !== 'auto' && p.y_format ? p.y_format : (/₽/.test(c.label) ? 'rub' : 'smart')) : null }; });
       ctx.setData({ rows, dims: cols.filter(c => !c.isNum).map(c => ({ key: c.key, label: c.label, type: c.dim.type })), mets: cols.filter(c => c.isNum).map(c => ({ key: c.key, label: c.label, format: c.fmt })) });
     } else {
       const gb = (p.groupby || []).filter(k => dsCol(ds, k)).map(k => ({ col: k, grain: isDateCol(ds, k) ? (p.time_grain || 'month') : null }));
       const ms = p.metrics || [];
       if (!gb.length && !ms.length) return vizMsg(root, 'Добавьте измерения или метрики');
-      const res = runQuery(ds, { filters: ctx.filters, groupby: gb, metrics: ms, orderby: res0Order(ms, ds), limit: p.row_limit || 100 });
+      const res = await runQueryAsync(ds, { filters: ctx.filters, groupby: gb, metrics: ms, orderby: res0Order(ms, ds), limit: p.row_limit || 100 });
       ctx.setData(res);
       rows = res.rows;
       cols = [...res.dims.map(d => ({ key: d.key, label: d.label, isNum: false, dim: d })), ...res.mets.map(m => ({ key: m.key, label: m.label, isNum: true, fmt: p.y_format && p.y_format !== 'auto' ? p.y_format : m.format }))];
-      if (p.totals && ms.length && gb.length) totals = runQuery(ds, { filters: ctx.filters, metrics: ms }).rows[0];
+      if (p.totals && ms.length && gb.length) totals = (await runQueryAsync(ds, { filters: ctx.filters, metrics: ms })).rows[0];
     }
     renderTableUI(root, ctx, cols, rows, totals);
   },
@@ -490,14 +490,14 @@ VIZ.pivot = {
     row_limit: 200, col_limit: 30, row_totals: true, col_totals: true, heat: true, row_sort: 'value_desc', col_sort: 'name',
     time_range: { preset: 'all' }, adhoc_filters: [], y_format: 'auto',
   }),
-  render(root, ctx) {
+  async render(root, ctx) {
     const { ds, params: p } = ctx;
     const mk = k => ({ col: k, grain: isDateCol(ds, k) ? (p.time_grain || 'month') : null });
     const R = (p.rows || []).filter(k => dsCol(ds, k)).map(mk), C = (p.cols || []).filter(k => dsCol(ds, k)).map(mk);
     const M = p.metrics || [];
     if (!M.length) return vizMsg(root, 'Добавьте хотя бы одну метрику');
     if (!R.length && !C.length) return vizMsg(root, 'Выберите колонки для строк или столбцов');
-    const base = runQuery(ds, { filters: ctx.filters, groupby: [...R, ...C], metrics: M });
+    const base = await runQueryAsync(ds, { filters: ctx.filters, groupby: [...R, ...C], metrics: M });
     ctx.setData(base);
     if (!base.rows.length) return vizMsg(root, 'Нет данных для выбранных фильтров');
     const rd = base.dims.slice(0, R.length), cd = base.dims.slice(R.length);
@@ -522,10 +522,10 @@ VIZ.pivot = {
     const mets = base.mets;
     const fm = i => p.y_format && p.y_format !== 'auto' ? p.y_format : mets[i].format;
     // Итоги (честно пересчитанные, а не суммы)
-    const byKey = (dims, gb) => { const m = new Map(); if (!gb.length) return m; runQuery(ds, { filters: ctx.filters, groupby: gb, metrics: M }).rows.forEach(r => m.set(dims.map(d => r[d.key]).join('\u0001'), r)); return m; };
-    const rowT = p.row_totals !== false && C.length ? byKey(rd, R) : null;
-    const colT = p.col_totals !== false && R.length ? byKey(cd, C) : null;
-    const grand = (p.row_totals !== false || p.col_totals !== false) && R.length && C.length ? runQuery(ds, { filters: ctx.filters, metrics: M }).rows[0] : null;
+    const byKey = async (dims, gb) => { const m = new Map(); if (!gb.length) return m; (await runQueryAsync(ds, { filters: ctx.filters, groupby: gb, metrics: M })).rows.forEach(r => m.set(dims.map(d => r[d.key]).join('\u0001'), r)); return m; };
+    const rowT = p.row_totals !== false && C.length ? await byKey(rd, R) : null;
+    const colT = p.col_totals !== false && R.length ? await byKey(cd, C) : null;
+    const grand = (p.row_totals !== false || p.col_totals !== false) && R.length && C.length ? (await runQueryAsync(ds, { filters: ctx.filters, metrics: M })).rows[0] : null;
     // Диапазоны для раскраски
     const rng = mets.map(m => { let lo = Infinity, hi = -Infinity; cells.forEach(r => { const v = r[m.key]; if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }); return [lo, hi]; });
     const heat = (v, i) => {
@@ -620,10 +620,10 @@ VIZ.big_number = {
     ] },
   ],
   defaults: ds => ({ metric: firstMetric(ds), compare: 'prev_period', subheader: '', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
-  render(root, ctx) {
+  async render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.metric) return vizMsg(root, 'Выберите метрику');
-    const res = runQuery(ds, { filters: ctx.filters, metrics: [p.metric] });
+    const res = await runQueryAsync(ds, { filters: ctx.filters, metrics: [p.metric] });
     ctx.setData(res);
     const m = res.mets[0], v = res.rows[0] ? res.rows[0][m.key] : null;
     const f = p.y_format && p.y_format !== 'auto' ? p.y_format : m.format;
@@ -637,7 +637,7 @@ VIZ.big_number = {
         const pb = p.compare === 'prev_year' ? shiftTime(b, 'year', -1) : a;
         const col = ds.mainDttm;
         const pf = ctx.filters.filter(x => !(x.col === col && (x.op === 'time_range' || x.op === 'between'))).concat([{ col, op: 'between', val: [pa, pb - 1] }]);
-        const pr = runQuery(ds, { filters: pf, metrics: [p.metric] }).rows[0];
+        const pr = (await runQueryAsync(ds, { filters: pf, metrics: [p.metric] })).rows[0];
         const pv = pr ? pr[m.key] : null;
         const dl = bigNumDelta(v, pv, p.invert, p.compare === 'prev_year' ? ' к прошлому году' : ' к прошлому периоду', f);
         if (dl) box.appendChild(dl);
@@ -676,12 +676,12 @@ VIZ.big_number_trend = {
   // это не меняет: демо-наборы заканчиваются 31.08.2026, последний месяц у них полный,
   // а единственный недельный KPI («Оплаченные заказы онлайн») и так ставил галочку сам.
   defaults: ds => ({ metric: firstMetric(ds), time_col: ds.mainDttm, x_grain: 'month', value_mode: 'last', compare_lag: 1, show_trend: true, skip_partial: true, y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [], subheader: '' }),
-  render(root, ctx) {
+  async render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.metric) return vizMsg(root, 'Выберите метрику');
     const tc = p.time_col || ds.mainDttm;
     if (!isDateCol(ds, tc)) return vizMsg(root, 'Выберите колонку времени');
-    const res = runQuery(ds, { filters: ctx.filters, groupby: [{ col: tc, grain: p.x_grain || 'month' }], metrics: [p.metric], orderby: [{ key: tc + '__' + (p.x_grain || 'month'), desc: false }] });
+    const res = await runQueryAsync(ds, { filters: ctx.filters, groupby: [{ col: tc, grain: p.x_grain || 'month' }], metrics: [p.metric], orderby: [{ key: tc + '__' + (p.x_grain || 'month'), desc: false }] });
     ctx.setData(res);
     let pts = res.rows.map(r => [r[res.dims[0].key], r[res.mets[0].key]]);
     if (p.skip_partial && pts.length > 1) {
@@ -692,7 +692,7 @@ VIZ.big_number_trend = {
     const m = res.mets[0];
     const f = p.y_format && p.y_format !== 'auto' ? p.y_format : m.format;
     let v, dl = null;
-    if (p.value_mode === 'total') v = runQuery(ds, { filters: ctx.filters, metrics: [p.metric] }).rows[0][m.key];
+    if (p.value_mode === 'total') v = (await runQueryAsync(ds, { filters: ctx.filters, metrics: [p.metric] })).rows[0][m.key];
     else v = pts[pts.length - 1][1];
     const lag = +(p.compare_lag ?? 1);
     if (p.value_mode !== 'total' && lag > 0 && pts.length > lag) dl = bigNumDelta(v, pts[pts.length - 1 - lag][1], p.invert, ` к ${fmtDate(pts[pts.length - 1 - lag][0], p.x_grain)}`, f);
@@ -738,12 +738,12 @@ VIZ.funnel = {
     ] },
   ],
   defaults: ds => ({ dim: firstStringCol(ds), metric: firstMetric(ds), order_by: null, row_limit: 10, label_type: 'pct_first', label_pos: 'right', show_legend: false, legend_pos: 'top', min_size: 10, color_scheme: 'superset', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
-  render(root, ctx) {
+  async render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.dim || !p.metric) return vizMsg(root, 'Выберите измерение и метрику');
     const gb = [{ col: p.dim }];
     if (p.order_by && p.order_by !== p.dim) gb.push({ col: p.order_by });
-    const res = runQuery(ds, { filters: ctx.filters, groupby: gb, metrics: [p.metric] });
+    const res = await runQueryAsync(ds, { filters: ctx.filters, groupby: gb, metrics: [p.metric] });
     ctx.setData(res);
     const d = res.dims[0], mk = res.mets[0].key;
     let rows = res.rows.slice();
@@ -802,10 +802,10 @@ VIZ.bullet = {
     { title: 'Оформление', tab: 'view', controls: [C_FORMAT('Формат чисел'), { key: 'show_labels', type: 'check', label: 'Подпись значения', def: true }] },
   ],
   defaults: ds => ({ metric: firstMetric(ds), dim: null, row_limit: 10, target_mode: 'avg', target: '', ranges: '', range_labels: 'Низко, Норма, Высоко', markers: '', y_format: 'auto', show_labels: true, time_range: { preset: 'all' }, adhoc_filters: [] }),
-  render(root, ctx) {
+  async render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.metric) return vizMsg(root, 'Выберите метрику');
-    const res = runQuery(ds, { filters: ctx.filters, groupby: p.dim ? [{ col: p.dim, grain: isDateCol(ds, p.dim) ? 'month' : null }] : [], metrics: [p.metric], orderby: [{ key: metricLabel(ds, p.metric), desc: true }], limit: p.row_limit || 10 });
+    const res = await runQueryAsync(ds, { filters: ctx.filters, groupby: p.dim ? [{ col: p.dim, grain: isDateCol(ds, p.dim) ? 'month' : null }] : [], metrics: [p.metric], orderby: [{ key: metricLabel(ds, p.metric), desc: true }], limit: p.row_limit || 10 });
     ctx.setData(res);
     const mk = res.mets[0].key, d = res.dims[0];
     const rows = res.rows.filter(r => r[mk] != null);
@@ -868,11 +868,11 @@ VIZ.heatmap = {
     ] },
   ],
   defaults: ds => ({ x_col: ds.mainDttm || firstStringCol(ds), y_col: firstStringCol(ds), x_grain: 'month', metric: firstMetric(ds), x_limit: 40, y_limit: 25, seq_scheme: 'copper', normalize: 'all', sort_y: 'value_desc', show_values: false, show_scale: true, y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
-  render(root, ctx) {
+  async render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.x_col || !p.y_col || !p.metric) return vizMsg(root, 'Выберите оси X, Y и метрику');
     const g = k => ({ col: k, grain: isDateCol(ds, k) ? (p.x_grain || 'month') : null });
-    const res = runQuery(ds, { filters: ctx.filters, groupby: [g(p.x_col), g(p.y_col)], metrics: [p.metric] });
+    const res = await runQueryAsync(ds, { filters: ctx.filters, groupby: [g(p.x_col), g(p.y_col)], metrics: [p.metric] });
     ctx.setData(res);
     if (!res.rows.length) return vizMsg(root, 'Нет данных для выбранных фильтров');
     const [xd, yd] = res.dims, mk = res.mets[0].key;
@@ -938,10 +938,10 @@ VIZ.pie = {
     ] },
   ],
   defaults: ds => ({ dim: firstStringCol(ds), metric: firstMetric(ds), row_limit: 8, other: true, donut: true, rose: false, label_type: 'name_pct', total_center: true, show_legend: false, legend_pos: 'right', color_scheme: 'superset', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
-  render(root, ctx) {
+  async render(root, ctx) {
     const { ds, params: p } = ctx;
     if (!p.dim || !p.metric) return vizMsg(root, 'Выберите измерение и метрику');
-    const res = runQuery(ds, { filters: ctx.filters, groupby: [{ col: p.dim, grain: isDateCol(ds, p.dim) ? 'year' : null }], metrics: [p.metric], orderby: [{ key: metricLabel(ds, p.metric), desc: true }] });
+    const res = await runQueryAsync(ds, { filters: ctx.filters, groupby: [{ col: p.dim, grain: isDateCol(ds, p.dim) ? 'year' : null }], metrics: [p.metric], orderby: [{ key: metricLabel(ds, p.metric), desc: true }] });
     ctx.setData(res);
     const d = res.dims[0], mk = res.mets[0].key;
     let rows = res.rows.filter(r => r[mk] > 0);
@@ -996,11 +996,11 @@ VIZ.treemap = {
     ] },
   ],
   defaults: ds => ({ groupby: [firstStringCol(ds)], metric: firstMetric(ds), row_limit: 200, show_values: true, show_pct: false, drill: true, color_scheme: 'superset', y_format: 'auto', time_range: { preset: 'all' }, adhoc_filters: [] }),
-  render(root, ctx) {
+  async render(root, ctx) {
     const { ds, params: p } = ctx;
     const gb = (p.groupby || []).filter(k => dsCol(ds, k)).slice(0, 3);
     if (!gb.length || !p.metric) return vizMsg(root, 'Выберите уровни иерархии и метрику');
-    const res = runQuery(ds, { filters: ctx.filters, groupby: gb.map(k => ({ col: k, grain: isDateCol(ds, k) ? 'year' : null })), metrics: [p.metric], orderby: [{ key: metricLabel(ds, p.metric), desc: true }], limit: p.row_limit || 200 });
+    const res = await runQueryAsync(ds, { filters: ctx.filters, groupby: gb.map(k => ({ col: k, grain: isDateCol(ds, k) ? 'year' : null })), metrics: [p.metric], orderby: [{ key: metricLabel(ds, p.metric), desc: true }], limit: p.row_limit || 200 });
     ctx.setData(res);
     const mk = res.mets[0].key;
     const rows = res.rows.filter(r => r[mk] > 0);
@@ -1054,7 +1054,9 @@ const VIZ_ORDER = ['line', 'mixed', 'bar', 'area', 'table', 'pivot', 'big_number
 /* Возвращает текст ошибки, если блок не построился: AI-ассистент
    прикладывает эти сообщения к доработке, чтобы человеку не приходилось
    описывать поломку словами. */
-function renderChart(root, chart, opts = {}) {
+/** Рисует график. Ждёт расчёт: он может идти в базе, а не в памяти вкладки.
+    @returns {Promise<string|null>} текст ошибки или null */
+async function renderChart(root, chart, opts = {}) {
   const ds = dsGet(chart.datasetId);
   const viz = VIZ[chart.viz];
   root._lastData = null;
@@ -1068,7 +1070,7 @@ function renderChart(root, chart, opts = {}) {
     setData: r => { root._lastData = r; },
     cross: opts.onCross || null, crossActive: opts.crossActive || null,
   };
-  try { viz.render(root, ctx); }
+  try { await viz.render(root, ctx); }
   catch (e) { console.error(e); vizMsg(root, 'Ошибка построения: ' + e.message, true); return e.message; }
   return null;
 }

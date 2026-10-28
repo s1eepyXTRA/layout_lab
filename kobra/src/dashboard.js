@@ -528,8 +528,9 @@ function renderDashboard(main, id, q) {
     if (!chart) return vizMsg(c.root, 'График удалён', true);
     const ex = extraFiltersFor(c.chartId);
     const ds = dsGet(chart.datasetId);
-    const err = renderChart(c.root, chart, { scheme: D.scheme, extraFilters: ex, onCross: onCross(c.chartId), crossActive: (cross.find(x => x.source === c.chartId) || {}).filters });
-    if (err) chartErrors[c.chartId] = err; else delete chartErrors[c.chartId];
+    // Расчёт может идти в базе, поэтому ошибку узнаём по завершении
+    renderChart(c.root, chart, { scheme: D.scheme, extraFilters: ex, onCross: onCross(c.chartId), crossActive: (cross.find(x => x.source === c.chartId) || {}).filters })
+      .then(err => { if (err) chartErrors[c.chartId] = err; else delete chartErrors[c.chartId]; });
     if (c.badge) {
       const n = ds ? ex.filter(f => dsCol(ds, f.col)).length : 0;
       clear(c.badge);

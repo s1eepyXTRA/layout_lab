@@ -53,6 +53,40 @@ class QueueUnavailable(RuntimeError):
     """Фоновая работа невозможна: Redis недоступен."""
 
 
+# ---------- Кэш ----------
+CACHE_TTL_SEC = int(os.environ.get("KOBRA_CACHE_TTL_SEC", "300"))
+
+
+def cache_get(key: str):
+    """Из кэша или None. Недоступный Redis — это промах, а не отказ: сервис
+    обязан работать и без него, просто медленнее."""
+    try:
+        raw = redis_conn().get("kobra:cache:" + key)
+        return json.loads(raw) if raw else None
+    except Exception:
+        return None
+
+
+def cache_set(key: str, value) -> None:
+    try:
+        redis_conn().set("kobra:cache:" + key, json.dumps(value, ensure_ascii=False, default=str),
+                         ex=CACHE_TTL_SEC)
+    except Exception:
+        pass
+
+
+def cache_drop(prefix: str) -> None:
+    """Выбросить всё по набору. Версия набора в ключе спасает от устаревших
+    ответов при правке, но не при удалении: набор можно создать заново с тем же
+    идентификатором (так делает импорт файла), и версия снова станет первой."""
+    try:
+        r = redis_conn()
+        for key in r.scan_iter(match="kobra:cache:" + prefix + "*", count=500):
+            r.delete(key)
+    except Exception:
+        pass
+
+
 # ---------- Состояние задачи ----------
 def _key(task_id: str) -> str:
     return f"kobra:task:{task_id}"

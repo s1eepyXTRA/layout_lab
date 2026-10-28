@@ -20,6 +20,8 @@ from app.access import TEAM_ALL, can_edit, can_share, can_view, why_read_only
 from app.auth import current_user
 from app.core import Chart, Dashboard, Dataset, UploadRow, User, now
 from app.db import get_db
+from app.ingest import drop_dataset_table
+from app.queue import cache_drop
 
 # Поля, которыми распоряжается сервер: в `body` они не попадают
 SERVER_FIELDS = {"id", "ownerLogin", "team", "shared", "version", "updated", "updatedBy"}
@@ -134,6 +136,8 @@ def make_router(model, prefix: str, name_field: str, tag: str) -> APIRouter:
         if is_dataset:
             # Строки живут отдельной таблицей: без этого они останутся сиротами
             db.execute(delete(UploadRow).where(UploadRow.dataset_id == obj.id))
+            drop_dataset_table(obj.id)
+            cache_drop(f"q:{obj.id}:")
         db.delete(obj)
         db.commit()
         return Response(status_code=204)

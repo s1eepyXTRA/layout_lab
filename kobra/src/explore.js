@@ -326,7 +326,9 @@ function renderExplore(main, parts, q) {
   function drawPreview() {
     if (!previewRoot) return;
     const t0 = performance.now();
-    renderChart(previewRoot, chart, {});
+    renderChart(previewRoot, chart, {}).then(() => finishPreview(t0));
+  }
+  function finishPreview(t0) {
     const ms = Math.round(performance.now() - t0);
     if (resultsBody) {
       clear(resultsBody);

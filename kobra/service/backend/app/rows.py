@@ -13,6 +13,7 @@ from app.access import can_edit, can_view, why_read_only
 from app.auth import current_user
 from app.core import MAX_UPLOAD_ROWS, Dataset, UploadRow, User, now
 from app.db import get_db
+from app.queue import cache_drop
 
 router = APIRouter(prefix="/api/datasets", tags=["rows"])
 
@@ -49,7 +50,9 @@ def write_rows(ds_id: str, rows: list = Body(..., embed=True), db: Session = Dep
     db.bulk_save_objects([UploadRow(dataset_id=ds_id, idx=i, data=r) for i, r in enumerate(rows)])
     ds.updated_at = now()
     ds.updated_by = user.username
+    ds.version = (ds.version or 1) + 1      # ответы по старым строкам больше не годятся
     db.commit()
+    cache_drop(f"q:{ds_id}:")
     return {"count": len(rows)}
 
 

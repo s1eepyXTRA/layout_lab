@@ -214,6 +214,12 @@ def _create_table(table: str, keys: list, kinds: list) -> None:
         conn.execute(text(f"CREATE TABLE {UPLOAD_SCHEMA}.{table} ({cols})"))
 
 
+def drop_dataset_table(ds_id: str) -> None:
+    """Набор удалили — его таблица не нужна: иначе база копит мусор, который
+    никто уже не найдёт."""
+    _drop_table(ds_id)
+
+
 def _drop_table(ds_id: str) -> None:
     """Набор не остаётся в полуготовом виде: половина строк хуже, чем ничего."""
     try:
