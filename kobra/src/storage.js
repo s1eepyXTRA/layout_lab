@@ -224,6 +224,24 @@ async function storageReload() {
    Пока строки живут в браузере в обоих режимах: перенос их в базу — отдельный
    шаг плана (загруженные данные и фоновый разбор). Шов здесь, чтобы тот шаг
    менял одно место. */
-async function storageLoadRows(dsId) { return idb.get('rows:' + dsId); }
-async function storageSaveRows(dsId, rows) { return idb.set('rows:' + dsId, rows); }
-async function storageDropRows(dsId) { return idb.del('rows:' + dsId); }
+async function storageLoadRows(dsId) {
+  if (!storageIsServer()) return idb.get('rows:' + dsId);
+  try {
+    const r = await api(`/api/datasets/${encodeURIComponent(dsId)}/rows`);
+    return (r && r.rows) || [];
+  } catch (e) {
+    // Набор есть, а строк нет — это видно по пустому результату, а не по молчанию
+    if (e.kind === 'http' && e.status === 404) return null;
+    throw e;
+  }
+}
+async function storageSaveRows(dsId, rows) {
+  if (!storageIsServer()) return idb.set('rows:' + dsId, rows);
+  await api(`/api/datasets/${encodeURIComponent(dsId)}/rows`, { method: 'PUT', body: { rows } });
+  return true;
+}
+async function storageDropRows(dsId) {
+  if (!storageIsServer()) return idb.del('rows:' + dsId);
+  await api(`/api/datasets/${encodeURIComponent(dsId)}/rows`, { method: 'DELETE' });
+  return true;
+}

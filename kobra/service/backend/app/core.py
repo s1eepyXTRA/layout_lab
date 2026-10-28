@@ -24,6 +24,8 @@ ADMIN_USER = os.environ.get("KOBRA_ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.environ.get("KOBRA_ADMIN_PASSWORD", "admin")
 COOKIE_SECURE = os.environ.get("KOBRA_COOKIE_SECURE", "0") == "1"
 MAX_RESULT_ROWS = int(os.environ.get("KOBRA_MAX_RESULT_ROWS", "50000"))
+# Сколько строк принимаем в один набор: тот же предел, что у клиента
+MAX_UPLOAD_ROWS = int(os.environ.get("KOBRA_MAX_UPLOAD_ROWS", "50000"))
 QUERY_TIMEOUT_SEC = int(os.environ.get("KOBRA_QUERY_TIMEOUT_SEC", "120"))
 SESSION_DAYS = int(os.environ.get("KOBRA_SESSION_DAYS", "14"))
 # Без таймаута подключения проба готовности не отвечает «не готов», а висит:
@@ -143,6 +145,22 @@ class Dashboard(Base):
     version = Column(Integer, nullable=False, default=1, server_default="1")
     updated_at = Column(DateTime(timezone=True), default=now, onupdate=now)
     updated_by = Column(String(120))
+
+
+class UploadRow(Base):
+    """Строка загруженного файла.
+
+    Одна таблица на все наборы, а не таблица на набор: типизированные колонки
+    были бы быстрее для серверных агрегаций, но их у нас нет — строки уезжают
+    в браузер целиком. Динамический DDL на каждую загрузку — лишний риск ради
+    выгоды, которой мы пока не пользуемся.
+    """
+
+    __tablename__ = "rows"
+    __table_args__ = {"schema": UPLOAD_SCHEMA}
+    dataset_id = Column(String(64), primary_key=True)
+    idx = Column(Integer, primary_key=True)   # порядок строк в файле важен
+    data = Column(JSONB, nullable=False)
 
 
 class Setting(Base):

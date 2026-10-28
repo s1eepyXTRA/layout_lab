@@ -22,7 +22,9 @@ import psycopg  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.core import Base, SessionLocal, User, engine, hash_password  # noqa: E402
+from sqlalchemy import text  # noqa: E402
+
+from app.core import UPLOAD_SCHEMA, Base, SessionLocal, User, engine, hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 
 
@@ -40,6 +42,8 @@ def _ensure_database() -> None:
 @pytest.fixture(scope="session", autouse=True)
 def schema():
     _ensure_database()
+    with engine.begin() as conn:
+        conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {UPLOAD_SCHEMA}"))
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     yield
@@ -51,7 +55,9 @@ def clean_tables(schema):
     """Каждый тест начинает с пустых таблиц: общая база, но не общее состояние."""
     with engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
-            conn.exec_driver_sql(f'truncate table "{table.name}" restart identity cascade')
+            # Имя со схемой: строки наборов лежат не в public
+            full = f'"{table.schema}"."{table.name}"' if table.schema else f'"{table.name}"'
+            conn.exec_driver_sql(f'truncate table {full} restart identity cascade')
     yield
 
 

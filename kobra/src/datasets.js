@@ -9,7 +9,7 @@ function renderDatasetList(main) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
   page.appendChild(h('div', { class: 'page-head' },
-    h('div', { class: 'grow' }, h('h1', null, 'Данные'), h('p', null, 'Встроенные демо-наборы и ваши файлы. Загруженные данные хранятся только в этом браузере.')),
+    h('div', { class: 'grow' }, h('h1', null, 'Данные'), h('p', null, 'Встроенные демо-наборы и ваши файлы. Загруженные данные хранятся ' + (storageIsServer() ? 'на сервере.' : 'только в этом браузере.'))),
     h('button', { class: 'btn', onclick: () => openSchemaDialog() }, ic('schema'), 'Описать набор'),
     h('button', { class: 'btn primary', onclick: openUpload }, ic('upload'), 'Загрузить CSV или Excel')));
   const list = visibleDatasets().sort((a, b) => (b.builtin ? 1 : 0) - (a.builtin ? 1 : 0) || a.name.localeCompare(b.name, 'ru'));
@@ -337,11 +337,18 @@ async function saveUploaded(name, fileName, cols, data) {
   const metrics = [{ key: 'count', label: 'Количество строк', expr: { type: 'simple', agg: 'COUNT', col: '*' }, format: 'int' }];
   columns.filter(c => c.type === 'number').forEach(c => metrics.push({ key: 'sum_' + c.key, label: 'Сумма: ' + c.label, expr: { type: 'simple', agg: 'SUM', col: c.key }, format: 'smart' }));
   const mainDttm = (columns.find(c => c.type === 'date') || {}).key || null;
-  const meta = { id, name, fileName, columns, metrics, mainDttm, created: Date.now(), description: '' };
-  const ok = await storageSaveRows(id, rows);
-  if (!ok) toast('Хранилище браузера недоступно: набор будет работать до перезагрузки страницы', true);
+  // kind обязателен: по нему и клиент (строки из хранилища, а не из генератора),
+  // и сервис отличают загруженный набор от набора-схемы
+  const meta = { id, name, kind: 'upload', fileName, columns, metrics, mainDttm, created: Date.now(), description: '' };
   STATE.datasets[id] = meta;
   DS[id] = Object.assign({}, meta, { rows });
   saveState();
+  // Строки принадлежат набору, поэтому за сервисом набор должен доехать первым:
+  // иначе строки некуда класть и сервис честно отвечает «набора нет»
+  await storageFlush();
+  let ok = true;
+  try { ok = await storageSaveRows(id, rows); }
+  catch (e) { ok = false; toast('Строки не сохранились: ' + e.message, true); }
+  if (!ok && !storageIsServer()) toast('Хранилище браузера недоступно: набор будет работать до перезагрузки страницы', true);
   return id;
 }

@@ -20,6 +20,7 @@ from sqlalchemy import text
 from app.auth import AUTH_TYPE
 from app.auth import router as auth_router
 from app.objects import charts_router, dashboards_router, datasets_router
+from app.rows import router as rows_router
 from app.users import router as users_router
 from app.core import FRONTEND_DIR, engine
 from app.settings import router as settings_router
@@ -31,6 +32,7 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(dashboards_router)
 app.include_router(charts_router)
+app.include_router(rows_router)
 app.include_router(datasets_router)
 app.include_router(settings_router)
 

@@ -13,12 +13,12 @@
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response
-from sqlalchemy import or_
+from sqlalchemy import delete, or_
 from sqlalchemy.orm import Session
 
 from app.access import TEAM_ALL, can_edit, can_share, can_view, why_read_only
 from app.auth import current_user
-from app.core import Chart, Dashboard, Dataset, User, now
+from app.core import Chart, Dashboard, Dataset, UploadRow, User, now
 from app.db import get_db
 
 # Поля, которыми распоряжается сервер: в `body` они не попадают
@@ -131,6 +131,9 @@ def make_router(model, prefix: str, name_field: str, tag: str) -> APIRouter:
         obj = _get(db, model, obj_id)
         if not can_edit(user, obj):
             raise HTTPException(status_code=403, detail=why_read_only(obj))
+        if is_dataset:
+            # Строки живут отдельной таблицей: без этого они останутся сиротами
+            db.execute(delete(UploadRow).where(UploadRow.dataset_id == obj.id))
         db.delete(obj)
         db.commit()
         return Response(status_code=204)
