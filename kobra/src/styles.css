@@ -239,6 +239,9 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .signin-demo summary { cursor: pointer; }
 .signin-demo ul { margin: 6px 0 0; padding-left: 18px; }
 .signin-demo b { color: var(--ink-2); }
+.save-tag { height: 28px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--line-2); background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; cursor: pointer; }
+.save-tag.wait { cursor: default; }
+.save-tag.err { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .who { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--bar-ink-2); background: transparent; color: var(--bar-ink); cursor: pointer; font-size: 13px; }
 .who:hover { background: var(--bar-hover); }
 .who .role { font-size: 11.5px; color: var(--bar-ink-2); }

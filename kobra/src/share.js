@@ -174,7 +174,7 @@ async function importPayload(p, mode) {
       STATE.datasets[id] = meta;
       DS[id] = Object.assign({}, meta, { rows: generateSchemaRows(meta.schema) });
     } else if (Array.isArray(d.rows)) {
-      await idb.set('rows:' + id, d.rows);
+      await storageSaveRows(id, d.rows);
       STATE.datasets[id] = meta;
       DS[id] = Object.assign({}, meta, { rows: d.rows });
     } else {

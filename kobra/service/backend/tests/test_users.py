@@ -60,3 +60,21 @@ def test_admin_ne_otklyuchaet_sam_sebya(client, make_user, login, auth):
 def test_neizvestnyi_sotrudnik(client, make_user, login, auth):
     h = admin_headers(client, make_user, login, auth)
     assert client.patch("/api/users/net-takogo", json={"role": "Alpha"}, headers=h).status_code == 404
+
+
+def test_spravochnik_viden_vsem_voshedshim(client, make_user, login, auth):
+    make_user("a.smirnova", team="Продажи")
+    make_user("d.orlov", team="Поддержка")
+    r = client.get("/api/users/directory", headers=auth(login("a.smirnova")))
+    assert r.status_code == 200
+    by_login = {u["login"]: u for u in r.json()}
+    assert set(by_login) == {"a.smirnova", "d.orlov"}
+    # Это адресная книга: ролей и признака отключения в ней нет
+    assert set(by_login["d.orlov"]) == {"login", "name", "email", "team"}
+
+
+def test_otklyuchennye_v_spravochnik_ne_popadayut(client, make_user, login, auth):
+    make_user("a.smirnova")
+    make_user("uvolen", active=False)
+    r = client.get("/api/users/directory", headers=auth(login("a.smirnova")))
+    assert [u["login"] for u in r.json()] == ["a.smirnova"]

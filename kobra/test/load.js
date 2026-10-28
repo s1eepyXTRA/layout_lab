@@ -14,7 +14,7 @@ const vm = require('node:vm');
 const SRC = path.join(__dirname, '..', 'src');
 /* Порядок тот же, что в build.py: он и есть система зависимостей.
    ui.js нужен ради clone/uid/lsGet — на них опирается и движок, и права. */
-const CORE = ['data.js', 'engine.js', 'ui.js', 'auth.js', 'schema.js', 'datasets.js'];
+const CORE = ['data.js', 'engine.js', 'ui.js', 'storage.js', 'auth.js', 'schema.js', 'datasets.js'];
 
 /* `const` и `let` верхнего уровня живут в лексической области скрипта и не
    становятся свойствами глобального объекта — изнутри Кобры они видны, а

@@ -30,7 +30,11 @@ SESSION_DAYS = int(os.environ.get("KOBRA_SESSION_DAYS", "14"))
 # недоступная база выглядит как зависший сервис, и трафик с него не снимают
 CONNECT_TIMEOUT_SEC = int(os.environ.get("KOBRA_CONNECT_TIMEOUT_SEC", "3"))
 LOAD_DEMO = os.environ.get("KOBRA_LOAD_DEMO", "1") == "1"
-FRONTEND_DIR = os.environ.get("KOBRA_FRONTEND_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "frontend"))
+# Собранный интерфейс: тот же build/, который открывают двойным щелчком.
+FRONTEND_DIR = os.environ.get(
+    "KOBRA_FRONTEND_DIR",
+    os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "build")),
+)
 
 UPLOAD_SCHEMA = "kobra_uploads"
 DEMO_SCHEMA = "kobra_demo"

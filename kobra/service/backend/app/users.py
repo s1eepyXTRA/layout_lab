@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.auth import require_admin, user_out
+from app.auth import current_user, require_admin, user_out
 from app.core import ROLES, User
 from app.db import get_db
 
@@ -27,6 +27,16 @@ class UserPatch(BaseModel):
 def list_users(db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
     users = db.query(User).order_by(User.username).all()
     return [dict(user_out(u), role_manual=bool(u.role_manual)) for u in users]
+
+
+@router.get("/directory")
+def directory(db: Session = Depends(get_db), _user: User = Depends(current_user)):
+    """Справочник для выдачи доступа: видят все вошедшие. Без него нельзя
+    поделиться шаблоном — человек не найдёт коллегу по логину или почте.
+    Ролей и признаков отключения здесь нет: это адресная книга."""
+    users = db.query(User).filter(User.active.is_(True)).order_by(User.username).all()
+    return [{"login": u.username, "name": u.full_name or u.username,
+             "email": u.email or "", "team": u.team or ""} for u in users]
 
 
 @router.patch("/{login}")

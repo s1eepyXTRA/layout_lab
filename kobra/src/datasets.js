@@ -163,7 +163,7 @@ async function deleteDataset(d) {
   });
   Object.values(STATE.dashboards).forEach(db => { db.filters = db.filters.filter(f => f.datasetId !== d.id); });
   delete STATE.datasets[d.id]; delete DS[d.id];
-  await idb.del('rows:' + d.id);
+  await storageDropRows(d.id);
   saveState();
   toast('Набор данных удалён');
   go('#/data');
@@ -338,7 +338,7 @@ async function saveUploaded(name, fileName, cols, data) {
   columns.filter(c => c.type === 'number').forEach(c => metrics.push({ key: 'sum_' + c.key, label: 'Сумма: ' + c.label, expr: { type: 'simple', agg: 'SUM', col: c.key }, format: 'smart' }));
   const mainDttm = (columns.find(c => c.type === 'date') || {}).key || null;
   const meta = { id, name, fileName, columns, metrics, mainDttm, created: Date.now(), description: '' };
-  const ok = await idb.set('rows:' + id, rows);
+  const ok = await storageSaveRows(id, rows);
   if (!ok) toast('Хранилище браузера недоступно: набор будет работать до перезагрузки страницы', true);
   STATE.datasets[id] = meta;
   DS[id] = Object.assign({}, meta, { rows });

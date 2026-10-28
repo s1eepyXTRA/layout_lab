@@ -66,7 +66,17 @@ function authIs(role) { const u = authUser(); return !!u && u.role === role; }
 function authIsAdmin() { return authIs('Admin'); }
 
 function authSaveCfg(cfg) { AUTH.cfg = cfg; lsSet(LS_AUTH_CFG, cfg); }
-function authSaveUsers() { lsSet(LS_AUTH_USERS, AUTH.users); }
+/** @param {any} [changed] сотрудник, которого правили: за сервисом шлём только его */
+function authSaveUsers(changed) {
+  if (storageIsServer()) {
+    if (!changed) return;
+    api('/api/users/' + encodeURIComponent(changed.login), { method: 'PATCH', body: { role: changed.role } })
+      .then(res => Object.assign(changed, res))
+      .catch(e => toast('Не удалось сохранить роль: ' + e.message, true));
+    return;
+  }
+  lsSet(LS_AUTH_USERS, AUTH.users);
+}
 
 /* Роль сотрудника: выданная руками важнее, иначе — по группам LDAP, иначе
    роль по умолчанию. Так же, как AUTH_ROLES_SYNC_AT_LOGIN в Superset. */
@@ -91,15 +101,39 @@ function authName(login) {
 function authLabel(u) { return `${u.name} (${u.login}${u.team ? ', ' + u.team : ''})`; }
 
 /* ---------- Сессия ---------- */
-function authInit() {
+async function authInit() {
   AUTH = {
     cfg: lsGet(LS_AUTH_CFG) || clone(AUTH_CFG_DEF),
-    users: lsGet(LS_AUTH_USERS) || clone(AUTH_USERS_SEED),
+    users: storageIsServer() ? [] : (lsGet(LS_AUTH_USERS) || clone(AUTH_USERS_SEED)),
     user: null,
   };
+  /* За сервисом справочник и сессия настоящие: придуманный каталог здесь не
+     нужен, а токен может оказаться просроченным — тогда просто просим войти. */
+  if (storageIsServer()) {
+    if (storageToken()) {
+      try {
+        AUTH.user = await api('/api/auth/me');
+        await authLoadDirectory();
+      } catch (e) { storageSetToken(''); AUTH.user = null; }
+    }
+    return !!AUTH.user;
+  }
   const login = lsGet(LS_AUTH_SESSION);
   if (login) authSignIn(login, { silent: true });
   return !!AUTH.user;
+}
+/* Адресная книга: по ней ищут коллегу, когда выдают доступ. */
+async function authLoadDirectory() {
+  try { AUTH.users = await api('/api/users/directory'); }
+  catch (e) { AUTH.users = []; }
+}
+/** Вход через сервис. Бросает ошибку с текстом, который можно показать. */
+async function authSignInServer(login, password) {
+  const r = await api('/api/auth/login', { method: 'POST', body: { username: login, password } });
+  storageSetToken(r.token);
+  AUTH.user = r.user;
+  await authLoadDirectory();
+  return true;
 }
 /** @param {{silent?: boolean}} [opts] */
 function authSignIn(login, opts = {}) {
@@ -113,6 +147,7 @@ function authSignIn(login, opts = {}) {
 }
 function authSignOut() {
   AUTH.user = null;
+  storageSetToken('');
   try { localStorage.removeItem(LS_AUTH_SESSION); } catch (e) { }
   location.hash = '';
   location.reload();
@@ -266,9 +301,10 @@ function openUsersDialog() {
         h('td', null, u.name, h('div', { class: 'muted', style: { fontSize: '12px' } }, u.email)),
         h('td', null, u.login),
         h('td', null, u.team),
-        h('td', null, selectEl([['', 'По группам: ' + cur], ...AUTH_ROLE_ORDER.map(r => [r, r])], u.role || '', v => {
+        h('td', null, selectEl(storageIsServer() ? AUTH_ROLE_ORDER.map(r => [r, r])
+          : [['', 'По группам: ' + cur], ...AUTH_ROLE_ORDER.map(r => [r, r])], u.role || '', v => {
           u.role = v || null;
-          authSaveUsers();
+          authSaveUsers(u);
           if (authUser() && authUser().login === u.login) { AUTH.user.role = authRoleOf(u); toast('Ваша роль теперь ' + AUTH.user.role); route(); }
           paint();
         }, { 'aria-label': 'Роль ' + u.login }))));
@@ -345,14 +381,27 @@ function renderSignIn(onDone) {
   const cfg = authCfg();
   const app = document.getElementById('app') || document.body;
   clear(app);
-  const ldap = cfg.type === 'ldap';
+  // За сервисом способ входа знает сервис: обещать LDAP, которого там нет, нельзя
+  const ldap = storageIsServer() ? storageInfo.auth === 'ldap' : cfg.type === 'ldap';
   const loginInp = h('input', { class: 'input', placeholder: ldap ? 'Логин в домене' : 'Логин', autocomplete: 'username' });
   const passInp = h('input', { class: 'input', type: 'password', placeholder: 'Пароль', autocomplete: 'current-password' });
   const err = h('div', { class: 'signin-err', hidden: true });
-  const submit = () => {
+  const submit = async () => {
     const login = loginInp.value.trim();
     if (!login) { err.hidden = false; err.textContent = 'Введите логин'; loginInp.focus(); return; }
     if (!passInp.value) { err.hidden = false; err.textContent = 'Введите пароль'; passInp.focus(); return; }
+    if (storageIsServer()) {
+      err.hidden = true;
+      try {
+        await authSignInServer(login, passInp.value);
+      } catch (e) {
+        err.hidden = false;
+        err.textContent = e.kind === 'network' ? 'Сервис недоступен — попробуйте ещё раз' : e.message;
+        return;
+      }
+      onDone();
+      return;
+    }
     const u = authFind(login) || authUsers().find(x => x.login === login.toLowerCase());
     if (!u) {
       err.hidden = false;
@@ -365,15 +414,16 @@ function renderSignIn(onDone) {
   const form = h('form', { class: 'signin-card', onsubmit: e => { e.preventDefault(); submit(); } },
     h('div', { class: 'signin-brand' }, brandMark(28), h('b', null, 'Кобра')),
     h('p', { class: 'signin-lead' }, 'Конструктор шаблонов дашбордов. Войдите, чтобы увидеть свои шаблоны и шаблоны своей команды.'),
-    h('div', { class: 'signin-way' }, ldap ? 'Вход по LDAP · ' + cfg.ldap.server : 'Вход по логину и паролю'),
+    h('div', { class: 'signin-way' }, ldap ? 'Вход по LDAP · ' + cfg.ldap.server
+      : storageIsServer() ? 'Вход проверяет сервис' : 'Вход по логину и паролю'),
     field('Логин', loginInp),
     field('Пароль', passInp),
     err,
     h('button', { class: 'btn primary', type: 'submit', style: { width: '100%' } }, 'Войти'),
-    h('div', { class: 'signin-note' },
+    storageIsServer() ? null : h('div', { class: 'signin-note' },
       h('b', null, 'Это прототип: пароль не проверяется.'),
       ' Всё состояние лежит в этом браузере: права показывают порядок доступа, а не защищают данные.'),
-    h('details', { class: 'signin-demo' }, h('summary', null, 'Кого можно попробовать'),
+    storageIsServer() ? null : h('details', { class: 'signin-demo' }, h('summary', null, 'Кого можно попробовать'),
       h('ul', null, authUsers().map(u => h('li', null,
         h('b', null, u.login), ` — ${u.name}, ${u.team}, роль ${authRoleOf(u)}`)))));
   app.appendChild(h('div', { class: 'signin' }, form));

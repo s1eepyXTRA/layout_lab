@@ -248,6 +248,9 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .signin-demo summary { cursor: pointer; }
 .signin-demo ul { margin: 6px 0 0; padding-left: 18px; }
 .signin-demo b { color: var(--ink-2); }
+.save-tag { height: 28px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--line-2); background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; cursor: pointer; }
+.save-tag.wait { cursor: default; }
+.save-tag.err { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .who { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--bar-ink-2); background: transparent; color: var(--bar-ink); cursor: pointer; font-size: 13px; }
 .who:hover { background: var(--bar-hover); }
 .who .role { font-size: 11.5px; color: var(--bar-ink-2); }
@@ -1728,6 +1731,236 @@ function loadScript(src) {
   return scriptCache[src];
 }
 
+/* ============================================================
+   Кобра · хранилище
+   Одно место, через которое состояние уходит из приложения и приходит
+   обратно. Режима два: локальный — localStorage и IndexedDB, как было
+   с первого дня; серверный — API сервиса.
+
+   Зачем адаптер, а не fetch по местам, где пишут состояние: таких мест
+   со временем станет больше, и каждое придётся помнить. Здесь же их два
+   на весь продукт — `storageLoad` и `storageSave`.
+
+   Офлайн-сборку открывают двойным щелчком, без всякого сервера, поэтому
+   локальный режим не «запасной»: он остаётся штатным.
+   ============================================================ */
+
+const STORAGE_LOCAL = 'local';
+const STORAGE_SERVER = 'server';
+const STORAGE_PING = '/api/ping';
+const LS_TOKEN = 'kobra.auth.token';
+const SAVE_DELAY = 800;        // копим правки: перетаскивание блока — это десятки вызовов
+const RETRY_DELAY = 5000;      // сеть пропала — пробуем снова, не теряя правок
+
+let storageMode = STORAGE_LOCAL;
+/** Что сервис рассказал о себе: способ входа и прочее. */
+let storageInfo = {};
+/** @type {'saved'|'pending'|'error'|'conflict'} */
+let storageState = 'saved';
+let storageNote = '';
+const storageWatchers = [];
+
+const storageIsServer = () => storageMode === STORAGE_SERVER;
+
+/* Состояние отправки видно человеку: «не сохранено» — это то, ради чего
+   адаптер вообще существует. Молчаливая потеря правок недопустима. */
+function onStorageState(cb) {
+  storageWatchers.push(cb);
+  return () => { const i = storageWatchers.indexOf(cb); if (i >= 0) storageWatchers.splice(i, 1); };
+}
+function setStorageState(state, note = '') {
+  if (state === storageState && note === storageNote) return;
+  storageState = state; storageNote = note;
+  storageWatchers.forEach(cb => { try { cb(state, note); } catch (e) { console.error(e); } });
+}
+const storageStateNow = () => ({ state: storageState, note: storageNote });
+
+/* Режим определяется один раз при запуске: есть ли за страницей сервис.
+   С file:// в сеть не ходим вовсе — это офлайн-сборка. */
+async function storageDetect() {
+  if (location.protocol === 'file:') { storageMode = STORAGE_LOCAL; return storageMode; }
+  try {
+    const r = await fetch(STORAGE_PING, { cache: 'no-store' });
+    if (r.ok) {
+      const j = await r.json();
+      if (j && j.kobra) { storageMode = STORAGE_SERVER; storageInfo = j; return storageMode; }
+    }
+  } catch (e) { /* сервиса за страницей нет — обычный случай для сборки из файла */ }
+  storageMode = STORAGE_LOCAL;
+  return storageMode;
+}
+
+/* ---------- Обращение к API ---------- */
+const storageToken = () => lsGet(LS_TOKEN) || '';
+function storageSetToken(t) { if (t) lsSet(LS_TOKEN, t); else localStorage.removeItem(LS_TOKEN); }
+
+/** Запрос к сервису. Ошибки разделены по видам: сеть чинят повтором, отказ — нет. */
+async function api(path, opts = {}) {
+  const token = storageToken();
+  let res;
+  try {
+    res = await fetch(path, {
+      method: opts.method || 'GET',
+      headers: Object.assign(
+        opts.body ? { 'Content-Type': 'application/json' } : {},
+        token ? { Authorization: 'Bearer ' + token } : {},
+      ),
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      cache: 'no-store',
+    });
+  } catch (e) {
+    throw Object.assign(new Error('сеть недоступна'), { kind: 'network' });
+  }
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => null);
+  if (res.ok) return data;
+  const detail = data && data.detail;
+  const err = Object.assign(new Error(typeof detail === 'string' ? detail : 'сервис ответил ' + res.status), {
+    kind: res.status === 401 ? 'auth' : res.status === 403 ? 'denied' : res.status === 409 ? 'conflict' : 'http',
+    status: res.status,
+    detail,
+  });
+  throw err;
+}
+
+/* ---------- Состояние ---------- */
+/* Виды объектов, из которых состоит состояние. Скрытые наборы макетов тянем
+   тоже: без них у шаблона нет данных. */
+const SERVER_KINDS = [
+  { key: 'dashboards', path: '/api/dashboards' },
+  { key: 'charts', path: '/api/charts' },
+  { key: 'datasets', path: '/api/datasets?owned_by_dashboard=true' },
+];
+/** Что сервер подтвердил: ключ «вид:id» → версия и снимок тела. */
+const serverSeen = new Map();
+/* Поля, которые ставит сервер: при сравнении их не учитываем, иначе каждый
+   ответ выглядел бы как новая правка. */
+const SERVER_FIELDS = ['version', 'updated', 'updatedBy', 'ownerLogin', 'team', 'shared'];
+function canonical(obj) {
+  const copy = {};
+  Object.keys(obj).sort().forEach(k => { if (!SERVER_FIELDS.includes(k)) copy[k] = obj[k]; });
+  return JSON.stringify(copy);
+}
+
+/** Прочитать состояние целиком. null — хранилище пустое, дальше seedState(). */
+async function storageLoad() {
+  if (!storageIsServer()) return lsGet(LS_KEY);
+  const state = { v: 2, charts: {}, dashboards: {}, datasets: {}, dsMetrics: {} };
+  serverSeen.clear();
+  for (const kind of SERVER_KINDS) {
+    const list = await api(kind.path);
+    (list || []).forEach(o => {
+      state[kind.key][o.id] = o;
+      serverSeen.set(kind.key + ':' + o.id, { version: o.version, body: canonical(o) });
+    });
+  }
+  state.dsMetrics = (await api('/api/settings/dsMetrics')) || {};
+  return state;
+}
+
+/** Сохранить состояние. В локальном режиме — синхронно, как было. */
+function storageSave(state) {
+  if (!storageIsServer()) return lsSet(LS_KEY, state);
+  serverQueueSave(state);
+  return true;
+}
+
+/* ---------- Отправка на сервер ----------
+   `saveState()` зовут отовсюду, в том числе из перетаскивания блока, поэтому
+   отправка идёт очередью с задержкой: копим правки и шлём разницу. */
+let pendingState = null;
+let saveTimer = null;
+let saving = false;
+
+function serverQueueSave(state) {
+  pendingState = state;
+  setStorageState('pending');
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(serverPush, SAVE_DELAY);
+}
+
+async function serverPush() {
+  if (saving || !pendingState) return;
+  saving = true;
+  const state = pendingState;
+  pendingState = null;
+  try {
+    await serverSend(state);
+    setStorageState(pendingState ? 'pending' : 'saved');
+  } catch (e) {
+    if (e.kind === 'conflict') {
+      // Чужую правку не затираем: решение за человеком
+      setStorageState('conflict', (e.detail && e.detail.message) || 'Объект изменился в другом месте');
+    } else if (e.kind === 'auth') {
+      setStorageState('error', 'Сессия закончилась: войдите заново');
+    } else {
+      // Сеть или сервис — пробуем снова, правки остаются в очереди
+      pendingState = state;
+      setStorageState('error', e.message);
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(serverPush, RETRY_DELAY);
+    }
+  } finally {
+    saving = false;
+  }
+  if (pendingState && storageState === 'pending') serverQueueSave(pendingState);
+}
+
+/** Разница между состоянием и тем, что подтвердил сервер. */
+async function serverSend(state) {
+  for (const kind of SERVER_KINDS) {
+    const path = kind.path.split('?')[0];
+    const now = state[kind.key] || {};
+    for (const id of Object.keys(now)) {
+      const obj = now[id];
+      if (obj.preview) continue;              // черновик нигде не сохраняется
+      const seen = serverSeen.get(kind.key + ':' + id);
+      const body = canonical(obj);
+      if (seen && seen.body === body) continue;
+      const sent = seen
+        ? await api(`${path}/${id}`, { method: 'PUT', body: Object.assign({}, obj, { version: seen.version }) })
+        : await api(path, { method: 'POST', body: obj });
+      // Сервер вернул объект со своими полями — кладём их обратно в состояние
+      Object.assign(obj, { version: sent.version, updated: sent.updated, updatedBy: sent.updatedBy,
+        ownerLogin: sent.ownerLogin, team: sent.team, shared: sent.shared });
+      serverSeen.set(kind.key + ':' + id, { version: sent.version, body: canonical(sent) });
+    }
+    // Удалённое: было подтверждено сервером, а в состоянии больше нет
+    for (const key of [...serverSeen.keys()]) {
+      if (!key.startsWith(kind.key + ':')) continue;
+      const id = key.slice(kind.key.length + 1);
+      if (now[id]) continue;
+      await api(`${path}/${id}`, { method: 'DELETE' });
+      serverSeen.delete(key);
+    }
+  }
+  await api('/api/settings/dsMetrics', { method: 'PUT', body: { value: state.dsMetrics || {} } });
+}
+
+/** Отправить всё, что скопилось, прямо сейчас: уход со страницы, выход. */
+async function storageFlush() {
+  if (!storageIsServer() || !pendingState) return;
+  if (saveTimer) clearTimeout(saveTimer);
+  await serverPush();
+}
+
+/** Перечитать состояние с сервера — после отказа по версии. */
+async function storageReload() {
+  pendingState = null;
+  if (saveTimer) clearTimeout(saveTimer);
+  const fresh = await storageLoad();
+  setStorageState('saved');
+  return fresh;
+}
+
+/* ---------- Строки наборов ----------
+   Пока строки живут в браузере в обоих режимах: перенос их в базу — отдельный
+   шаг плана (загруженные данные и фоновый разбор). Шов здесь, чтобы тот шаг
+   менял одно место. */
+async function storageLoadRows(dsId) { return idb.get('rows:' + dsId); }
+async function storageSaveRows(dsId, rows) { return idb.set('rows:' + dsId, rows); }
+async function storageDropRows(dsId) { return idb.del('rows:' + dsId); }
+
 /* =============================================================
    Кобра · вход и права
    Модель взята у Superset, чтобы макет обещал тот порядок доступа,
@@ -1796,7 +2029,17 @@ function authIs(role) { const u = authUser(); return !!u && u.role === role; }
 function authIsAdmin() { return authIs('Admin'); }
 
 function authSaveCfg(cfg) { AUTH.cfg = cfg; lsSet(LS_AUTH_CFG, cfg); }
-function authSaveUsers() { lsSet(LS_AUTH_USERS, AUTH.users); }
+/** @param {any} [changed] сотрудник, которого правили: за сервисом шлём только его */
+function authSaveUsers(changed) {
+  if (storageIsServer()) {
+    if (!changed) return;
+    api('/api/users/' + encodeURIComponent(changed.login), { method: 'PATCH', body: { role: changed.role } })
+      .then(res => Object.assign(changed, res))
+      .catch(e => toast('Не удалось сохранить роль: ' + e.message, true));
+    return;
+  }
+  lsSet(LS_AUTH_USERS, AUTH.users);
+}
 
 /* Роль сотрудника: выданная руками важнее, иначе — по группам LDAP, иначе
    роль по умолчанию. Так же, как AUTH_ROLES_SYNC_AT_LOGIN в Superset. */
@@ -1821,15 +2064,39 @@ function authName(login) {
 function authLabel(u) { return `${u.name} (${u.login}${u.team ? ', ' + u.team : ''})`; }
 
 /* ---------- Сессия ---------- */
-function authInit() {
+async function authInit() {
   AUTH = {
     cfg: lsGet(LS_AUTH_CFG) || clone(AUTH_CFG_DEF),
-    users: lsGet(LS_AUTH_USERS) || clone(AUTH_USERS_SEED),
+    users: storageIsServer() ? [] : (lsGet(LS_AUTH_USERS) || clone(AUTH_USERS_SEED)),
     user: null,
   };
+  /* За сервисом справочник и сессия настоящие: придуманный каталог здесь не
+     нужен, а токен может оказаться просроченным — тогда просто просим войти. */
+  if (storageIsServer()) {
+    if (storageToken()) {
+      try {
+        AUTH.user = await api('/api/auth/me');
+        await authLoadDirectory();
+      } catch (e) { storageSetToken(''); AUTH.user = null; }
+    }
+    return !!AUTH.user;
+  }
   const login = lsGet(LS_AUTH_SESSION);
   if (login) authSignIn(login, { silent: true });
   return !!AUTH.user;
+}
+/* Адресная книга: по ней ищут коллегу, когда выдают доступ. */
+async function authLoadDirectory() {
+  try { AUTH.users = await api('/api/users/directory'); }
+  catch (e) { AUTH.users = []; }
+}
+/** Вход через сервис. Бросает ошибку с текстом, который можно показать. */
+async function authSignInServer(login, password) {
+  const r = await api('/api/auth/login', { method: 'POST', body: { username: login, password } });
+  storageSetToken(r.token);
+  AUTH.user = r.user;
+  await authLoadDirectory();
+  return true;
 }
 /** @param {{silent?: boolean}} [opts] */
 function authSignIn(login, opts = {}) {
@@ -1843,6 +2110,7 @@ function authSignIn(login, opts = {}) {
 }
 function authSignOut() {
   AUTH.user = null;
+  storageSetToken('');
   try { localStorage.removeItem(LS_AUTH_SESSION); } catch (e) { }
   location.hash = '';
   location.reload();
@@ -1996,9 +2264,10 @@ function openUsersDialog() {
         h('td', null, u.name, h('div', { class: 'muted', style: { fontSize: '12px' } }, u.email)),
         h('td', null, u.login),
         h('td', null, u.team),
-        h('td', null, selectEl([['', 'По группам: ' + cur], ...AUTH_ROLE_ORDER.map(r => [r, r])], u.role || '', v => {
+        h('td', null, selectEl(storageIsServer() ? AUTH_ROLE_ORDER.map(r => [r, r])
+          : [['', 'По группам: ' + cur], ...AUTH_ROLE_ORDER.map(r => [r, r])], u.role || '', v => {
           u.role = v || null;
-          authSaveUsers();
+          authSaveUsers(u);
           if (authUser() && authUser().login === u.login) { AUTH.user.role = authRoleOf(u); toast('Ваша роль теперь ' + AUTH.user.role); route(); }
           paint();
         }, { 'aria-label': 'Роль ' + u.login }))));
@@ -2075,14 +2344,27 @@ function renderSignIn(onDone) {
   const cfg = authCfg();
   const app = document.getElementById('app') || document.body;
   clear(app);
-  const ldap = cfg.type === 'ldap';
+  // За сервисом способ входа знает сервис: обещать LDAP, которого там нет, нельзя
+  const ldap = storageIsServer() ? storageInfo.auth === 'ldap' : cfg.type === 'ldap';
   const loginInp = h('input', { class: 'input', placeholder: ldap ? 'Логин в домене' : 'Логин', autocomplete: 'username' });
   const passInp = h('input', { class: 'input', type: 'password', placeholder: 'Пароль', autocomplete: 'current-password' });
   const err = h('div', { class: 'signin-err', hidden: true });
-  const submit = () => {
+  const submit = async () => {
     const login = loginInp.value.trim();
     if (!login) { err.hidden = false; err.textContent = 'Введите логин'; loginInp.focus(); return; }
     if (!passInp.value) { err.hidden = false; err.textContent = 'Введите пароль'; passInp.focus(); return; }
+    if (storageIsServer()) {
+      err.hidden = true;
+      try {
+        await authSignInServer(login, passInp.value);
+      } catch (e) {
+        err.hidden = false;
+        err.textContent = e.kind === 'network' ? 'Сервис недоступен — попробуйте ещё раз' : e.message;
+        return;
+      }
+      onDone();
+      return;
+    }
     const u = authFind(login) || authUsers().find(x => x.login === login.toLowerCase());
     if (!u) {
       err.hidden = false;
@@ -2095,15 +2377,16 @@ function renderSignIn(onDone) {
   const form = h('form', { class: 'signin-card', onsubmit: e => { e.preventDefault(); submit(); } },
     h('div', { class: 'signin-brand' }, brandMark(28), h('b', null, 'Кобра')),
     h('p', { class: 'signin-lead' }, 'Конструктор шаблонов дашбордов. Войдите, чтобы увидеть свои шаблоны и шаблоны своей команды.'),
-    h('div', { class: 'signin-way' }, ldap ? 'Вход по LDAP · ' + cfg.ldap.server : 'Вход по логину и паролю'),
+    h('div', { class: 'signin-way' }, ldap ? 'Вход по LDAP · ' + cfg.ldap.server
+      : storageIsServer() ? 'Вход проверяет сервис' : 'Вход по логину и паролю'),
     field('Логин', loginInp),
     field('Пароль', passInp),
     err,
     h('button', { class: 'btn primary', type: 'submit', style: { width: '100%' } }, 'Войти'),
-    h('div', { class: 'signin-note' },
+    storageIsServer() ? null : h('div', { class: 'signin-note' },
       h('b', null, 'Это прототип: пароль не проверяется.'),
       ' Всё состояние лежит в этом браузере: права показывают порядок доступа, а не защищают данные.'),
-    h('details', { class: 'signin-demo' }, h('summary', null, 'Кого можно попробовать'),
+    storageIsServer() ? null : h('details', { class: 'signin-demo' }, h('summary', null, 'Кого можно попробовать'),
       h('ul', null, authUsers().map(u => h('li', null,
         h('b', null, u.login), ` — ${u.name}, ${u.team}, роль ${authRoleOf(u)}`)))));
   app.appendChild(h('div', { class: 'signin' }, form));
@@ -3388,7 +3671,7 @@ function saveState() {
   // путь создания, а помнить про каждый из них — верный способ что-то забыть
   authStampAll();
   STATE.savedAt = Date.now();
-  return lsSet(LS_KEY, STATE);
+  return storageSave(STATE);
 }
 const saveSoon = debounce(saveState, 300);
 
@@ -3497,7 +3780,7 @@ async function loadUploaded() {
   for (const id of ids) {
     const meta = STATE.datasets[id];
     if (meta.kind === 'schema') { DS[id] = Object.assign({}, meta, { rows: generateSchemaRows(meta.schema) }); continue; }
-    const rows = await idb.get('rows:' + id);
+    const rows = await storageLoadRows(id);
     DS[id] = Object.assign({}, meta, { rows: rows || [], missingRows: !rows });
   }
 }
@@ -3516,6 +3799,26 @@ function renderShell() {
     { label: 'Вернуть демо-шаблон', icon: 'reset', onClick: restoreDemo },
     { label: 'Сбросить всё к начальному состоянию', icon: 'trash', danger: true, onClick: resetAll },
   ]));
+  /* Состояние отправки видно всегда, пока оно не «сохранено»: молчаливая
+     потеря правок — худшее, что может сделать сетевое хранилище. */
+  const saveTag = h('button', { class: 'save-tag', hidden: true, type: 'button' });
+  const paintSave = (state, note) => {
+    saveTag.className = 'save-tag' + (state === 'saved' ? '' : state === 'pending' ? ' wait' : ' err');
+    saveTag.hidden = state === 'saved';
+    saveTag.title = note || '';
+    clear(saveTag).appendChild(document.createTextNode(
+      state === 'pending' ? 'Сохраняю…'
+        : state === 'conflict' ? 'Изменилось в другом месте — перечитать'
+          : 'Не сохранено — повторить'));
+  };
+  const cur = storageStateNow();
+  paintSave(cur.state, cur.note);
+  onStorageState(paintSave);
+  saveTag.addEventListener('click', () => {
+    if (storageStateNow().state === 'conflict') reloadFromServer();
+    else storageFlush();
+  });
+
   const me = authUser();
   const whoBtn = h('button', { class: 'who', title: 'Сотрудник и доступ' },
     h('span', null, me.name), h('span', { class: 'role' }, me.role));
@@ -3533,7 +3836,7 @@ function renderShell() {
       h('a', { href: '#/dashboards', 'data-sec': 'dashboards' }, 'Шаблоны'),
       h('a', { href: '#/charts', 'data-sec': 'charts' }, 'Графики'),
       h('a', { href: '#/data', 'data-sec': 'data' }, 'Данные')),
-    h('div', { class: 'spacer' }), whoBtn, settingsBtn));
+    h('div', { class: 'spacer' }), saveTag, whoBtn, settingsBtn));
   app.appendChild(h('main', { class: 'main' }));
 }
 async function restoreDemo() {
@@ -3549,7 +3852,7 @@ async function restoreDemo() {
 }
 async function resetAll() {
   if (!(await confirmDialog('Сбросить всё', 'Удалятся все ваши шаблоны, графики и загруженные наборы данных. Останется только демо. Действие нельзя отменить.', 'Сбросить всё'))) return;
-  for (const id of Object.keys(STATE.datasets || {})) { await idb.del('rows:' + id); delete DS[id]; }
+  for (const id of Object.keys(STATE.datasets || {})) { await storageDropRows(id); delete DS[id]; }
   STATE = seedState();
   applyDsOverrides();
   saveState();
@@ -3831,6 +4134,25 @@ function newChartDialog(opts = {}) {
   });
 }
 
+/* Сервер отказал в записи, потому что объект изменился в другом месте.
+   Навязывать свою версию нельзя — это и есть та самая потерянная чужая правка,
+   поэтому перечитываем состояние и показываем то, что на сервере. */
+async function reloadFromServer() {
+  try {
+    const fresh = await storageReload();
+    if (!fresh) return;
+    STATE = fresh;
+    STATE.datasets = STATE.datasets || {}; STATE.dsMetrics = STATE.dsMetrics || {};
+    applyDsOverrides();
+    await loadUploaded();
+    syncDatasetsFromState();
+    route();
+    toast('Состояние перечитано с сервера');
+  } catch (e) {
+    toast('Не удалось перечитать: ' + e.message, true);
+  }
+}
+
 /* ---------- Запуск ---------- */
 async function boot() {
   await new Promise(r => setTimeout(r, 30));
@@ -3839,16 +4161,34 @@ async function boot() {
     return;
   }
   registerBuiltins();
-  STATE = lsGet(LS_KEY);
-  if (!STATE || STATE.v !== 2 || !STATE.charts) { STATE = seedState(); }
+  await storageDetect();
+  // Пока человек не вошёл, приложения нет: ни шаблонов, ни графиков, ни данных.
+  // За сервисом это ещё и обязательный порядок: без сессии состояние не отдадут.
+  await authInit();
+  document.querySelectorAll('.loading').forEach(el => el.remove());
+  if (!authUser()) { renderSignIn(loadAndStart); return; }
+  await loadAndStart();
+}
+/* Состояние целиком: читаем, чиним форму, поднимаем строки наборов. */
+async function loadAndStart() {
+  try {
+    STATE = await storageLoad();
+  } catch (e) {
+    // Сервис есть, но не отвечает: пускать дальше нельзя — человек начнёт
+    // работать в пустоте и потеряет написанное
+    const app = document.getElementById('app') || document.body;
+    clear(app).appendChild(h('div', { class: 'empty', style: { margin: '80px auto' } },
+      h('b', null, 'Сервис недоступен'), e.message,
+      h('button', { class: 'btn primary', onclick: () => location.reload() }, 'Обновить страницу')));
+    return;
+  }
+  if (!STATE || STATE.v !== 2 || !STATE.charts) {
+    STATE = storageIsServer() ? { v: 2, charts: {}, dashboards: {}, datasets: {}, dsMetrics: {} } : seedState();
+  }
   STATE.datasets = STATE.datasets || {}; STATE.dsMetrics = STATE.dsMetrics || {};
   applyDsOverrides();
   await loadUploaded();
   dropOwnedDatasets();
-  // Пока человек не вошёл, приложения нет: ни шаблонов, ни графиков, ни данных
-  authInit();
-  document.querySelectorAll('.loading').forEach(el => el.remove());
-  if (!authUser()) { renderSignIn(startApp); return; }
   startApp();
 }
 /* Всё, что дальше, уже знает, кто вошёл */
@@ -5425,7 +5765,7 @@ async function deleteDataset(d) {
   });
   Object.values(STATE.dashboards).forEach(db => { db.filters = db.filters.filter(f => f.datasetId !== d.id); });
   delete STATE.datasets[d.id]; delete DS[d.id];
-  await idb.del('rows:' + d.id);
+  await storageDropRows(d.id);
   saveState();
   toast('Набор данных удалён');
   go('#/data');
@@ -5600,7 +5940,7 @@ async function saveUploaded(name, fileName, cols, data) {
   columns.filter(c => c.type === 'number').forEach(c => metrics.push({ key: 'sum_' + c.key, label: 'Сумма: ' + c.label, expr: { type: 'simple', agg: 'SUM', col: c.key }, format: 'smart' }));
   const mainDttm = (columns.find(c => c.type === 'date') || {}).key || null;
   const meta = { id, name, fileName, columns, metrics, mainDttm, created: Date.now(), description: '' };
-  const ok = await idb.set('rows:' + id, rows);
+  const ok = await storageSaveRows(id, rows);
   if (!ok) toast('Хранилище браузера недоступно: набор будет работать до перезагрузки страницы', true);
   STATE.datasets[id] = meta;
   DS[id] = Object.assign({}, meta, { rows });
@@ -8217,7 +8557,7 @@ async function importPayload(p, mode) {
       STATE.datasets[id] = meta;
       DS[id] = Object.assign({}, meta, { rows: generateSchemaRows(meta.schema) });
     } else if (Array.isArray(d.rows)) {
-      await idb.set('rows:' + id, d.rows);
+      await storageSaveRows(id, d.rows);
       STATE.datasets[id] = meta;
       DS[id] = Object.assign({}, meta, { rows: d.rows });
     } else {

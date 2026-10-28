@@ -7,7 +7,7 @@ function saveState() {
   // путь создания, а помнить про каждый из них — верный способ что-то забыть
   authStampAll();
   STATE.savedAt = Date.now();
-  return lsSet(LS_KEY, STATE);
+  return storageSave(STATE);
 }
 const saveSoon = debounce(saveState, 300);
 
@@ -116,7 +116,7 @@ async function loadUploaded() {
   for (const id of ids) {
     const meta = STATE.datasets[id];
     if (meta.kind === 'schema') { DS[id] = Object.assign({}, meta, { rows: generateSchemaRows(meta.schema) }); continue; }
-    const rows = await idb.get('rows:' + id);
+    const rows = await storageLoadRows(id);
     DS[id] = Object.assign({}, meta, { rows: rows || [], missingRows: !rows });
   }
 }
@@ -135,6 +135,26 @@ function renderShell() {
     { label: 'Вернуть демо-шаблон', icon: 'reset', onClick: restoreDemo },
     { label: 'Сбросить всё к начальному состоянию', icon: 'trash', danger: true, onClick: resetAll },
   ]));
+  /* Состояние отправки видно всегда, пока оно не «сохранено»: молчаливая
+     потеря правок — худшее, что может сделать сетевое хранилище. */
+  const saveTag = h('button', { class: 'save-tag', hidden: true, type: 'button' });
+  const paintSave = (state, note) => {
+    saveTag.className = 'save-tag' + (state === 'saved' ? '' : state === 'pending' ? ' wait' : ' err');
+    saveTag.hidden = state === 'saved';
+    saveTag.title = note || '';
+    clear(saveTag).appendChild(document.createTextNode(
+      state === 'pending' ? 'Сохраняю…'
+        : state === 'conflict' ? 'Изменилось в другом месте — перечитать'
+          : 'Не сохранено — повторить'));
+  };
+  const cur = storageStateNow();
+  paintSave(cur.state, cur.note);
+  onStorageState(paintSave);
+  saveTag.addEventListener('click', () => {
+    if (storageStateNow().state === 'conflict') reloadFromServer();
+    else storageFlush();
+  });
+
   const me = authUser();
   const whoBtn = h('button', { class: 'who', title: 'Сотрудник и доступ' },
     h('span', null, me.name), h('span', { class: 'role' }, me.role));
@@ -152,7 +172,7 @@ function renderShell() {
       h('a', { href: '#/dashboards', 'data-sec': 'dashboards' }, 'Шаблоны'),
       h('a', { href: '#/charts', 'data-sec': 'charts' }, 'Графики'),
       h('a', { href: '#/data', 'data-sec': 'data' }, 'Данные')),
-    h('div', { class: 'spacer' }), whoBtn, settingsBtn));
+    h('div', { class: 'spacer' }), saveTag, whoBtn, settingsBtn));
   app.appendChild(h('main', { class: 'main' }));
 }
 async function restoreDemo() {
@@ -168,7 +188,7 @@ async function restoreDemo() {
 }
 async function resetAll() {
   if (!(await confirmDialog('Сбросить всё', 'Удалятся все ваши шаблоны, графики и загруженные наборы данных. Останется только демо. Действие нельзя отменить.', 'Сбросить всё'))) return;
-  for (const id of Object.keys(STATE.datasets || {})) { await idb.del('rows:' + id); delete DS[id]; }
+  for (const id of Object.keys(STATE.datasets || {})) { await storageDropRows(id); delete DS[id]; }
   STATE = seedState();
   applyDsOverrides();
   saveState();
@@ -450,6 +470,25 @@ function newChartDialog(opts = {}) {
   });
 }
 
+/* Сервер отказал в записи, потому что объект изменился в другом месте.
+   Навязывать свою версию нельзя — это и есть та самая потерянная чужая правка,
+   поэтому перечитываем состояние и показываем то, что на сервере. */
+async function reloadFromServer() {
+  try {
+    const fresh = await storageReload();
+    if (!fresh) return;
+    STATE = fresh;
+    STATE.datasets = STATE.datasets || {}; STATE.dsMetrics = STATE.dsMetrics || {};
+    applyDsOverrides();
+    await loadUploaded();
+    syncDatasetsFromState();
+    route();
+    toast('Состояние перечитано с сервера');
+  } catch (e) {
+    toast('Не удалось перечитать: ' + e.message, true);
+  }
+}
+
 /* ---------- Запуск ---------- */
 async function boot() {
   await new Promise(r => setTimeout(r, 30));
@@ -458,16 +497,34 @@ async function boot() {
     return;
   }
   registerBuiltins();
-  STATE = lsGet(LS_KEY);
-  if (!STATE || STATE.v !== 2 || !STATE.charts) { STATE = seedState(); }
+  await storageDetect();
+  // Пока человек не вошёл, приложения нет: ни шаблонов, ни графиков, ни данных.
+  // За сервисом это ещё и обязательный порядок: без сессии состояние не отдадут.
+  await authInit();
+  document.querySelectorAll('.loading').forEach(el => el.remove());
+  if (!authUser()) { renderSignIn(loadAndStart); return; }
+  await loadAndStart();
+}
+/* Состояние целиком: читаем, чиним форму, поднимаем строки наборов. */
+async function loadAndStart() {
+  try {
+    STATE = await storageLoad();
+  } catch (e) {
+    // Сервис есть, но не отвечает: пускать дальше нельзя — человек начнёт
+    // работать в пустоте и потеряет написанное
+    const app = document.getElementById('app') || document.body;
+    clear(app).appendChild(h('div', { class: 'empty', style: { margin: '80px auto' } },
+      h('b', null, 'Сервис недоступен'), e.message,
+      h('button', { class: 'btn primary', onclick: () => location.reload() }, 'Обновить страницу')));
+    return;
+  }
+  if (!STATE || STATE.v !== 2 || !STATE.charts) {
+    STATE = storageIsServer() ? { v: 2, charts: {}, dashboards: {}, datasets: {}, dsMetrics: {} } : seedState();
+  }
   STATE.datasets = STATE.datasets || {}; STATE.dsMetrics = STATE.dsMetrics || {};
   applyDsOverrides();
   await loadUploaded();
   dropOwnedDatasets();
-  // Пока человек не вошёл, приложения нет: ни шаблонов, ни графиков, ни данных
-  authInit();
-  document.querySelectorAll('.loading').forEach(el => el.remove());
-  if (!authUser()) { renderSignIn(startApp); return; }
   startApp();
 }
 /* Всё, что дальше, уже знает, кто вошёл */
