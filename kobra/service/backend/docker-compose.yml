@@ -16,6 +16,16 @@ x-env: &env
   KOBRA_ADMIN_USER: admin
   KOBRA_ADMIN_PASSWORD: admin
   KOBRA_LOAD_DEMO: "1"
+  # Вход по умолчанию — по базе. Каталог включается вместе с профилем ldap:
+  #   docker compose --profile ldap up -d ldap
+  #   docker compose up -d --force-recreate api   (с KOBRA_AUTH_TYPE=ldap в окружении)
+  KOBRA_AUTH_TYPE: ${KOBRA_AUTH_TYPE:-db}
+  KOBRA_AUTH_LDAP_SERVER: ldap://ldap:389
+  KOBRA_AUTH_LDAP_SEARCH: ou=users,dc=company,dc=local
+  KOBRA_AUTH_LDAP_BIND_USER: cn=admin,dc=company,dc=local
+  KOBRA_AUTH_LDAP_BIND_PASSWORD: adminpassword
+  KOBRA_AUTH_ROLES_MAPPING: '{"cn=kobra-admins,ou=groups,dc=company,dc=local": "Admin", "cn=kobra-analysts,ou=groups,dc=company,dc=local": "Alpha"}'
+
 
 services:
   db:
@@ -80,17 +90,20 @@ services:
       migrate: {condition: service_completed_successfully}
 
   # Каталог для проверки входа по LDAP. Поднимается только когда нужен:
-  #   docker compose --profile ldap up
+  #   docker compose --profile ldap up -d ldap
+  # Наполнение — свой LDIF: нужны не просто люди, а группы, по которым
+  # раздаются роли, иначе сопоставление AUTH_ROLES_MAPPING нечем проверить.
   ldap:
-    image: bitnami/openldap:2.6
+    image: osixia/openldap:1.5.0
     profiles: ["ldap"]
+    command: ["--copy-service", "--loglevel", "warning"]
     environment:
-      LDAP_ROOT: dc=company,dc=local
-      LDAP_ADMIN_USERNAME: admin
+      LDAP_ORGANISATION: Кобра
+      LDAP_DOMAIN: company.local
       LDAP_ADMIN_PASSWORD: adminpassword
-      LDAP_USERS: a.smirnova,d.orlov
-      LDAP_PASSWORDS: secret,secret
-    ports: ["1389:1389"]
+    volumes:
+      - ./dev/ldap-seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-kobra.ldif:ro
+    ports: ["1389:389"]
 
 volumes:
   kobra-db:

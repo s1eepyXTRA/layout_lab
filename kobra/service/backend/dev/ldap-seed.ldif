@@ -1,0 +1,46 @@
+# Придуманный каталог для разработки и тестов входа по LDAP.
+# Те же люди, что в демо-справочнике клиента, и две группы под сопоставление ролей.
+dn: ou=users,dc=company,dc=local
+objectClass: organizationalUnit
+ou: users
+
+dn: ou=groups,dc=company,dc=local
+objectClass: organizationalUnit
+ou: groups
+
+dn: uid=a.smirnova,ou=users,dc=company,dc=local
+objectClass: inetOrgPerson
+uid: a.smirnova
+cn: Анна Смирнова
+sn: Смирнова
+mail: a.smirnova@company.ru
+departmentNumber: Продажи
+userPassword: secret
+
+dn: uid=d.orlov,ou=users,dc=company,dc=local
+objectClass: inetOrgPerson
+uid: d.orlov
+cn: Дмитрий Орлов
+sn: Орлов
+mail: d.orlov@company.ru
+departmentNumber: Поддержка
+userPassword: secret
+
+dn: uid=i.petrov,ou=users,dc=company,dc=local
+objectClass: inetOrgPerson
+uid: i.petrov
+cn: Игорь Петров
+sn: Петров
+mail: i.petrov@company.ru
+departmentNumber: Отдел данных
+userPassword: secret
+
+dn: cn=kobra-admins,ou=groups,dc=company,dc=local
+objectClass: groupOfNames
+cn: kobra-admins
+member: uid=i.petrov,ou=users,dc=company,dc=local
+
+dn: cn=kobra-analysts,ou=groups,dc=company,dc=local
+objectClass: groupOfNames
+cn: kobra-analysts
+member: uid=a.smirnova,ou=users,dc=company,dc=local

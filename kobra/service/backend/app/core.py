@@ -198,7 +198,12 @@ def check_password(p: str, h: str) -> bool:
 
 
 def make_token(user: User) -> str:
-    payload = {"sub": str(user.id), "exp": now() + dt.timedelta(days=SESSION_DAYS), "n": secrets.token_hex(4)}
+    # jti и iat нужны для отзыва: по первому выбрасывают одну сессию, по второму —
+    # все сессии сотрудника, выданные до отметки
+    payload = {
+        "sub": str(user.id), "exp": now() + dt.timedelta(days=SESSION_DAYS),
+        "iat": now(), "jti": secrets.token_hex(8),
+    }
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
 

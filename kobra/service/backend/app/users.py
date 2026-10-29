@@ -12,7 +12,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth import current_user, require_admin, user_out
-from app.core import ROLES, User
+from app.core import ROLES, SESSION_DAYS, User
+from app.sessions import revoke_user
 from app.db import get_db
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -55,6 +56,10 @@ def patch_user(login: str, body: UserPatch, db: Session = Depends(get_db),
         if not body.active and u.id == admin.id:
             raise HTTPException(status_code=422, detail="Нельзя отключить самого себя")
         u.active = body.active
+        if not body.active:
+            # Признак смотрят на каждом запросе, но отозвать надо и те токены,
+            # что уже в пути: пусть перестанут приниматься сразу
+            revoke_user(u.id, SESSION_DAYS * 86400)
     db.commit()
     db.refresh(u)
     return dict(user_out(u), role_manual=bool(u.role_manual))

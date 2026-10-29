@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 
 from app.core import ADMIN_PASSWORD, ADMIN_USER, SECRET_KEY, User, check_password, hash_password, make_token
 from app.db import get_db
+from app.ldap_auth import LdapDenied, LdapUnavailable, ldap_login
+from app.sessions import is_revoked, rate_hit, revoke, user_revoked_at
 
 AUTH_TYPE = os.environ.get("KOBRA_AUTH_TYPE", "db")
 
@@ -57,37 +59,81 @@ def ensure_admin(db: Session) -> None:
 def authenticate(db: Session, username: str, password: str) -> User:
     """Проверка пароля. Отказ намеренно одинаков для «нет такого логина» и
     «пароль не подошёл»: по разным ответам подбирают логины."""
-    if AUTH_TYPE != "db":
-        # LDAP появится на этапе 3; молча пускать нельзя
-        raise HTTPException(status_code=501, detail="Способ входа не поддержан этой версией сервиса")
-    u = db.query(User).filter(User.username == username.strip()).one_or_none()
-    if u is None or not u.password_hash or not check_password(password, u.password_hash):
-        raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+    login = username.strip()
+    if AUTH_TYPE == "ldap":
+        u = _authenticate_ldap(db, login, password)
+    else:
+        u = db.query(User).filter(User.username == login).one_or_none()
+        if u is None or not u.password_hash or not check_password(password, u.password_hash):
+            raise HTTPException(status_code=401, detail="Неверный логин или пароль")
     if not u.active:
         raise HTTPException(status_code=403, detail="Доступ прекращён")
     return u
 
 
+def _authenticate_ldap(db: Session, login: str, password: str) -> User:
+    """Вход через каталог. Сотрудник заводится при первом входе — как
+    AUTH_USER_REGISTRATION в Superset: держать второй справочник руками никто
+    не станет."""
+    try:
+        info = ldap_login(login, password)
+    except LdapDenied:
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+    except LdapUnavailable as e:
+        # Это неисправность, а не неверный пароль: иначе человек будет в десятый
+        # раз перенабирать верный пароль
+        raise HTTPException(status_code=503, detail=f"Каталог недоступен: {e}")
+
+    u = db.query(User).filter(User.username == login).one_or_none()
+    if u is None:
+        u = User(username=login, password_hash="", role=info.get("role") or "Gamma")
+        db.add(u)
+    u.full_name = info.get("name") or login
+    u.email = info.get("email") or ""
+    u.team = info.get("team") or u.team or ""
+    u.groups = info.get("groups") or []
+    # Роль, назначенная админом руками, важнее групп каталога — иначе назначение
+    # затрётся следующим же входом сотрудника
+    if not u.role_manual and info.get("role"):
+        u.role = info["role"]
+    db.commit()
+    db.refresh(u)
+    return u
+
+
 @router.post("/login")
-def login(body: LoginIn, db: Session = Depends(get_db)):
+def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
+    # Подбор пароля ограничиваем по адресу: счёт общий для всех экземпляров
+    wait = rate_hit("login", request.client.host if request.client else "-")
+    if wait is not None:
+        raise HTTPException(status_code=429, detail=f"Слишком много попыток входа, повторите через {wait} с")
     ensure_admin(db)
     u = authenticate(db, body.username, body.password)
     return {"token": make_token(u), "user": user_out(u)}
 
 
-def current_user(request: Request, db: Session = Depends(get_db)) -> User:
-    """Сотрудник по токену. Отключённый сотрудник перестаёт работать сразу:
-    признак проверяется при каждом запросе, а не только при входе."""
+
+def _payload(request: Request) -> dict:
     header = request.headers.get("Authorization") or ""
     if not header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Нужен вход")
-    token = header[7:].strip()
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        return jwt.decode(header[7:].strip(), SECRET_KEY, algorithms=["HS256"])
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Сессия истекла")
     except Exception:
         raise HTTPException(status_code=401, detail="Сессия недействительна")
+
+
+def current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    """Сотрудник по токену. Отключённый сотрудник перестаёт работать сразу:
+    признак проверяется при каждом запросе, а не только при входе."""
+    payload = _payload(request)
+    if is_revoked(payload.get("jti")):
+        raise HTTPException(status_code=401, detail="Сессия завершена")
+    cutoff = user_revoked_at(int(payload.get("sub", 0) or 0))
+    if cutoff is not None and int(payload.get("iat", 0) or 0) <= cutoff:
+        raise HTTPException(status_code=401, detail="Сессия завершена")
     u = db.get(User, int(payload.get("sub", 0) or 0))
     if u is None:
         raise HTTPException(status_code=401, detail="Сессия недействительна")
@@ -100,6 +146,17 @@ def require_admin(user: User = Depends(current_user)) -> User:
     if user.role != "Admin":
         raise HTTPException(status_code=403, detail="Только для администратора")
     return user
+
+
+@router.post("/logout")
+def logout(request: Request, _user: User = Depends(current_user)):
+    """Выход отзывает именно эту сессию: токен перестаёт приниматься сразу, а не
+    по истечении срока."""
+    payload = _payload(request)
+    ttl = int(payload.get("exp", 0)) - int(dt.datetime.now(dt.timezone.utc).timestamp())
+    ok = revoke(payload.get("jti"), ttl)
+    return {"ok": True, "revoked": ok,
+            "note": None if ok else "Сессия истечёт сама: хранилище отозванных недоступно"}
 
 
 @router.get("/me")

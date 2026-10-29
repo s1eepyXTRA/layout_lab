@@ -414,8 +414,9 @@ function renderSignIn(onDone) {
   const form = h('form', { class: 'signin-card', onsubmit: e => { e.preventDefault(); submit(); } },
     h('div', { class: 'signin-brand' }, brandMark(28), h('b', null, 'Кобра')),
     h('p', { class: 'signin-lead' }, 'Конструктор шаблонов дашбордов. Войдите, чтобы увидеть свои шаблоны и шаблоны своей команды.'),
-    h('div', { class: 'signin-way' }, ldap ? 'Вход по LDAP · ' + cfg.ldap.server
-      : storageIsServer() ? 'Вход проверяет сервис' : 'Вход по логину и паролю'),
+    h('div', { class: 'signin-way' }, storageIsServer()
+      ? (ldap ? 'Вход по LDAP' : 'Вход проверяет сервис')
+      : ldap ? 'Вход по LDAP · ' + cfg.ldap.server : 'Вход по логину и паролю'),
     field('Логин', loginInp),
     field('Пароль', passInp),
     err,

@@ -45,8 +45,9 @@ def test_otklyuchenie_sotrudnika(client, make_user, login, auth):
     make_user("e.kuznecova")
     token = login("e.kuznecova")
     assert client.patch("/api/users/e.kuznecova", json={"active": False}, headers=h).status_code == 200
-    # Выданный раньше токен перестаёт работать на следующем же запросе
-    assert client.get("/api/auth/me", headers=auth(token)).status_code == 403
+    # Выданный раньше токен перестаёт работать на следующем же запросе: сперва
+    # срабатывает отзыв сессий (401), и только потом проверка признака (403)
+    assert client.get("/api/auth/me", headers=auth(token)).status_code in (401, 403)
     # И войти заново нельзя
     assert client.post("/api/auth/login", json={"username": "e.kuznecova", "password": "secret"}).status_code == 403
 

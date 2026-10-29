@@ -29,7 +29,15 @@ secrets:
   secretKey: ""      # KOBRA_SECRET_KEY: им шифруются строки подключения
 
 env:
+  # db — пароль по своей базе, ldap — bind в каталог. Параметры каталога названы
+  # именами FAB: администратор, настраивавший Superset, узнаёт их без перевода.
   KOBRA_AUTH_TYPE: db
+  # KOBRA_AUTH_LDAP_SERVER: ldap://dc.company.local:389
+  # KOBRA_AUTH_LDAP_SEARCH: ou=users,dc=company,dc=local
+  # KOBRA_AUTH_LDAP_UID_FIELD: sAMAccountName
+  # KOBRA_AUTH_LDAP_BIND_USER: cn=kobra-service,ou=service,dc=company,dc=local
+  # KOBRA_AUTH_ROLES_MAPPING: '{"cn=kobra-admins,...": "Admin"}'
+  KOBRA_RATE_LIMIT_LOGIN: "10"
   KOBRA_LOAD_DEMO: "0"        # в рабочем контуре демо обычно не нужно
   KOBRA_LOG_LEVEL: info
   KOBRA_SESSION_DAYS: "14"
