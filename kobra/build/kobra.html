@@ -310,9 +310,8 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .tune-f { display: flex; align-items: center; gap: 6px; flex: 1 1 200px; min-width: 0; }
 .tune-f > span { font-size: 12px; font-weight: 600; color: var(--ink-3); flex: none; }
 .tune-f .input, .tune-f .select { height: 30px; font-size: 13px; }
-/* AI-ассистент */
+/* Доступ к модели и сборка по описанию */
 .ai-note { color: var(--ink-3); font-size: 12.5px; line-height: 1.45; }
-@media (max-width: 1100px) { .ai-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 40; box-shadow: var(--shadow-pop); } }
 .edit-banner svg { flex: none; }
 
 /* ---------- Исследование (Explore) ---------- */
@@ -8716,8 +8715,6 @@ function collectRefs(dashIds, includeLoose) {
     const d = STATE.dashboards[id];
     if (!d) return;
     dashboards[id] = clone(d);
-    delete dashboards[id].chat;          // переписка с AI-ассистентом — личное, в файл не уходит
-    delete dashboards[id].chatTrimmed;
     d.tabs.forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) charts[i.chartId] = clone(STATE.charts[i.chartId]); }));
     (d.filters || []).forEach(f => { if (f.datasetId) dsIds.add(f.datasetId); });
   });

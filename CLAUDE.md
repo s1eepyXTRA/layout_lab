@@ -32,7 +32,7 @@ node test/run.js auth.test.js       # один файл
 npx -p typescript@5.6.3 tsc -p kobra/jsconfig.json   # проверка типов по JSDoc (из корня репозитория)
 ```
 
-Бэкенд (`service/backend/`, в разработке — см. `openspec/changes/server-backend/`):
+Бэкенд (`service/backend/`, спеки — `openspec/specs/server-storage`, `server-auth`, `deployment`):
 
 ```bash
 docker run -d --name kobra-pg -e POSTGRES_USER=kobra -e POSTGRES_PASSWORD=kobra -e POSTGRES_DB=kobra -p 5433:5432 postgres:16-alpine
@@ -97,10 +97,12 @@ openspec status --change <имя>        # какие артефакты гот�
 изменение и пишет артефакты, `apply` реализует, `archive` переносит спецификации в `openspec/specs/`.
 Главное правило: `propose` — только планирование, код в этом шаге не трогают.
 
-Незакрытых изменений нет; реализованное описано в `openspec/specs/`: `dashboard-templates`,
-`guided-editing`, `mockup-mode`, `dashboard-assistant`. Перед правкой этих частей читай спеку
-способности, а историю решений — в `openspec/changes/archive/<дата>-<имя>/design.md`: там
-зафиксировано, почему выбран именно такой путь, и чего делать не надо.
+Реализованное описано в `openspec/specs/`: `dashboard-templates`, `guided-editing`, `mockup-mode`,
+`dashboard-assistant` (сборка шаблона по описанию — панели ассистента в спеке больше нет),
+`server-storage`, `server-auth`, `deployment`. Перед правкой этих частей читай спеку способности, а
+историю решений — в `openspec/changes/archive/<дата>-<имя>/design.md`: там зафиксировано, почему
+выбран именно такой путь, и чего делать не надо. В работе осталось одно изменение — `access-control`
+(задачи выполнены, спецификации не переносили).
 
 ## Сборка и порядок файлов
 
@@ -639,7 +641,8 @@ login, remove)` и только по ответу правит объект. П�
 
 ## `service/` — бэкенд
 
-Сервис, в который переезжает прототип. План и история решений — `openspec/changes/server-backend/`.
+Сервис, в который переезжает прототип. Что он должен делать — `openspec/specs/server-storage`,
+`server-auth` и `deployment`; история решений — `openspec/changes/archive/2026-10-29-server-backend/design.md`.
 
 `app/core.py` — настройки из `KOBRA_*`, модели метаданных SQLAlchemy, bcrypt-пароли, JWT-сессии и
 шифрование строк подключения (Fernet от `KOBRA_SECRET_KEY`). Остальное выросло вокруг:
