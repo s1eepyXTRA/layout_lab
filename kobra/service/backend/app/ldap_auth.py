@@ -55,6 +55,33 @@ class LdapDenied(RuntimeError):
     """Каталог ответил: такого человека нет или пароль не подошёл."""
 
 
+def ldap_lookup(login: str) -> Optional[dict]:
+    """Найти человека в каталоге без проверки пароля.
+
+    Нужно, чтобы выдать доступ коллеге, который ещё ни разу не входил: иначе
+    поделиться можно только с теми, кто уже побывал в сервисе, — а это ровно те,
+    кому и так всё видно.
+    """
+    from ldap3 import Server
+    from ldap3.core.exceptions import LDAPException
+
+    if not LDAP_SERVER or not LDAP_SEARCH or not LDAP_BIND_USER:
+        return None
+    try:
+        entry = _find_user(Server(LDAP_SERVER, connect_timeout=LDAP_TIMEOUT, get_info=None), login)
+    except (LdapDenied, LdapUnavailable, LDAPException):
+        return None
+    attrs = entry["attrs"]
+    return {
+        "login": login,
+        "name": _one(attrs.get(LDAP_NAME_FIELD)) or login,
+        "email": _one(attrs.get(LDAP_EMAIL_FIELD)) or "",
+        "team": _one(attrs.get(LDAP_TEAM_FIELD)) or "",
+        "groups": entry.get("groups") or [],
+        "role": role_for_groups(entry.get("groups") or []),
+    }
+
+
 def role_for_groups(groups: list) -> Optional[str]:
     """Первая подошедшая группа даёт роль. Порядок — как в сопоставлении."""
     mapping = roles_mapping()

@@ -140,3 +140,20 @@ def test_bolshoy_russkiy_fayl_ne_stanovitsya_mojibake(client, ds, tmp_path, stag
     res = ingest_file(stage_file("t7", str(p)), "ds_file", "bolshoy.csv", "a.smirnova")
     assert [c["label"] for c in res["columns"]] == ["Филиал", "Выручка, ₽"]
     assert [c["key"] for c in res["columns"]] == ["filial", "vyruchka"]
+
+
+def test_vybor_kolonok_iz_predprosmotra_uvazhaetsya(client, ds, tmp_path, stage_file):
+    """Человек в предпросмотре снял колонку и поправил тип — его выбор важнее
+    угадывания: он видел данные."""
+    p = tmp_path / "vybor.csv"
+    with io.open(p, "w", encoding="utf-8", newline="") as fh:
+        fh.write("Город;Код;Выручка\n")
+        for i in range(10):
+            fh.write(f"Москва;007{i};{100 + i}\n")
+    chosen = [{"idx": 0, "label": "Филиал", "type": "string"},
+              {"idx": 2, "label": "Выручка, ₽", "type": "number"}]
+    res = ingest_file(stage_file("t8", str(p)), "ds_file", "vybor.csv", "a.smirnova", chosen)
+    assert res["rows"] == 10
+    # Колонка «Код» не загружалась вовсе, а подпись первой — та, что ввёл человек
+    assert [c["label"] for c in res["columns"]] == ["Филиал", "Выручка, ₽"]
+    assert [c["type"] for c in res["columns"]] == ["string", "number"]

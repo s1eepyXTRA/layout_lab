@@ -13,14 +13,15 @@
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response
-from sqlalchemy import delete, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.access import TEAM_ALL, can_edit, can_share, can_view, why_read_only
-from app.auth import current_user
-from app.core import Chart, Dashboard, Dataset, UploadRow, User, now
+from app.auth import AUTH_TYPE, current_user
+from app.core import Chart, Dashboard, Dataset, User, now
 from app.db import get_db
 from app.ingest import drop_dataset_table
+from app.ldap_auth import ldap_lookup
 from app.queue import cache_drop
 
 # Поля, которыми распоряжается сервер: в `body` они не попадают
@@ -134,8 +135,8 @@ def make_router(model, prefix: str, name_field: str, tag: str) -> APIRouter:
         if not can_edit(user, obj):
             raise HTTPException(status_code=403, detail=why_read_only(obj))
         if is_dataset:
-            # Строки живут отдельной таблицей: без этого они останутся сиротами
-            db.execute(delete(UploadRow).where(UploadRow.dataset_id == obj.id))
+            # Таблица набора создаётся в рантайме и миграциями не управляется —
+            # убрать её можно только здесь
             drop_dataset_table(obj.id)
             cache_drop(f"q:{obj.id}:")
         db.delete(obj)
@@ -152,10 +153,15 @@ def make_router(model, prefix: str, name_field: str, tag: str) -> APIRouter:
         if not can_share(user, obj):
             raise HTTPException(status_code=403, detail=why_read_only(obj))
         target = db.query(User).filter(User.username == login).one_or_none()
-        if target is None:
-            raise HTTPException(status_code=404, detail="Такого сотрудника нет")
+        if target is None and not remove:
+            # Коллега может ещё ни разу не входить: тогда его ищут в каталоге
+            target = _from_directory(db, login)
+            if target is None:
+                raise HTTPException(status_code=404, detail="Такого сотрудника нет")
         shared = list(obj.shared or [])
         if remove:
+            # Отзыв не требует живой учётки: иначе доступ, выданный уволенному,
+            # уже не снять
             shared = [x for x in shared if x != login]
         elif login == obj.owner_login:
             raise HTTPException(status_code=422, detail="Это владелец: доступ у него и так есть")
@@ -168,6 +174,22 @@ def make_router(model, prefix: str, name_field: str, tag: str) -> APIRouter:
         return _out(obj, name_field)
 
     return router
+
+
+def _from_directory(db: Session, login: str):
+    """Коллега, которого ещё нет в базе, но есть в каталоге. Без этого
+    поделиться можно только с теми, кто уже входил, — а им и так видно."""
+    if AUTH_TYPE != "ldap":
+        return None
+    info = ldap_lookup(login)
+    if not info:
+        return None
+    u = User(username=login, password_hash="", full_name=info["name"], email=info["email"],
+             team=info["team"], groups=info["groups"], role=info.get("role") or "Gamma")
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return u
 
 
 def _get(db: Session, model, obj_id: str):

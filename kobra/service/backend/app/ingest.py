@@ -19,7 +19,7 @@ import datetime as dt
 import io
 import os
 import re
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Optional
 
 from sqlalchemy import text
 
@@ -132,7 +132,8 @@ def convert(value, kind: str):
 
 # ---------- Задача ----------
 @celery_app.task(name="kobra.ingest_file")
-def ingest_file(task_id: str, ds_id: str, file_name: str, login: str) -> dict:
+def ingest_file(task_id: str, ds_id: str, file_name: str, login: str,
+                chosen: Optional[list] = None) -> dict:
     """Разобрать файл и залить строки. Состояние пишем по ходу: человек должен
     видеть, сколько уже готово, а не только «идёт работа»."""
     task_set(task_id, state="running", rows=0, dataset=ds_id, file=file_name)
@@ -141,7 +142,7 @@ def ingest_file(task_id: str, ds_id: str, file_name: str, login: str) -> dict:
         # Получение файла — тоже часть задачи: если куски не доехали, человек
         # должен увидеть ошибку, а не задачу, навсегда застрявшую в «running»
         path = _fetch_file(task_id, file_name)
-        result = _ingest(task_id, ds_id, path, file_name, login)
+        result = _ingest(task_id, ds_id, path, file_name, login, chosen)
         task_set(task_id, state="done", **result)
         return result
     except Exception as e:                      # noqa: BLE001 — причину показываем человеку
@@ -157,7 +158,10 @@ def ingest_file(task_id: str, ds_id: str, file_name: str, login: str) -> dict:
                 pass
 
 
-def _ingest(task_id: str, ds_id: str, path: str, file_name: str, login: str) -> dict:
+def _ingest(task_id: str, ds_id: str, path: str, file_name: str, login: str,
+            chosen: Optional[list] = None) -> dict:
+    """chosen — колонки, которые человек оставил в предпросмотре: [{idx, label, type}].
+    Его выбор важнее угадывания: он видел данные и мог поправить тип."""
     rows = read_rows(path, file_name)
     try:
         header = next(rows)
@@ -174,7 +178,18 @@ def _ingest(task_id: str, ds_id: str, path: str, file_name: str, login: str) -> 
             break
     if not sample:
         raise ValueError("В файле нет ни одной строки данных")
-    kinds = [guess_type([r[i] if i < len(r) else None for r in sample]) for i in range(len(labels))]
+    if chosen:
+        picked = [c for c in chosen if 0 <= int(c.get("idx", -1)) < len(labels)]
+        if not picked:
+            raise ValueError("Не выбрано ни одной колонки из файла")
+        order = [int(c["idx"]) for c in picked]
+        labels = [str(c.get("label") or labels[int(c["idx"])]) for c in picked]
+        kinds = [c.get("type") if c.get("type") in SQL_TYPE else
+                 guess_type([r[int(c["idx"])] if int(c["idx"]) < len(r) else None for r in sample])
+                 for c in picked]
+    else:
+        order = list(range(len(labels)))
+        kinds = [guess_type([r[i] if i < len(r) else None for r in sample]) for i in order]
     keys = []
     used = set()
     for i, label in enumerate(labels):
@@ -193,7 +208,8 @@ def _ingest(task_id: str, ds_id: str, path: str, file_name: str, login: str) -> 
         copy_sql = f'COPY {UPLOAD_SCHEMA}.{table} ({", ".join(quoted(k) for k in keys)}) FROM STDIN'
         with cur.copy(copy_sql) as copy:
             for row in _chain(sample, rows):
-                values = [convert(row[i] if i < len(row) else None, kinds[i]) for i in range(len(keys))]
+                values = [convert(row[src] if src < len(row) else None, kinds[i])
+                          for i, src in enumerate(order)]
                 copy.write_row(values)
                 total += 1
                 if total % PROGRESS_EVERY == 0:

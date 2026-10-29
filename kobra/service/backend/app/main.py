@@ -23,7 +23,6 @@ from app.demo import load_demo
 from app.auth import router as auth_router
 from app.objects import charts_router, dashboards_router, datasets_router
 from app.query_api import router as query_router
-from app.rows import router as rows_router
 from app.users import router as users_router
 from app.core import FRONTEND_DIR, SessionLocal, engine
 from app.settings import router as settings_router
@@ -55,7 +54,6 @@ app.include_router(users_router)
 app.include_router(dashboards_router)
 app.include_router(charts_router)
 app.include_router(query_router)
-app.include_router(rows_router)
 app.include_router(datasets_router)
 app.include_router(settings_router)
 app.include_router(upload_router)

@@ -1982,26 +1982,69 @@ async function runRawAsync(ds, opts) {
    Пока строки живут в браузере в обоих режимах: перенос их в базу — отдельный
    шаг плана (загруженные данные и фоновый разбор). Шов здесь, чтобы тот шаг
    менял одно место. */
+const SAMPLE_ROWS = 2000;      // столько строк держим в браузере от серверного набора
+
 async function storageLoadRows(dsId) {
   if (!storageIsServer()) return idb.get('rows:' + dsId);
+  /* За сервисом строки живут в базе, и целиком их сюда не возят — в наборе их
+     может быть миллион. Берём образец: его хватает подбору ролей, предпросмотру
+     и подсказкам, а графики всё равно считает база. */
+  const ds = DS[dsId] || (STATE && STATE.datasets && STATE.datasets[dsId]) || {};
+  const columns = (ds.columns || []).map(c => c.key);
+  if (!columns.length) return [];
   try {
-    const r = await api(`/api/datasets/${encodeURIComponent(dsId)}/rows`);
+    const r = await api(`/api/datasets/${encodeURIComponent(dsId)}/query`, {
+      method: 'POST', body: { raw: true, columns, limit: SAMPLE_ROWS },
+    });
     return (r && r.rows) || [];
   } catch (e) {
-    // Набор есть, а строк нет — это видно по пустому результату, а не по молчанию
-    if (e.kind === 'http' && e.status === 404) return null;
+    if (e.kind === 'http' && (e.status === 404 || e.status === 409)) return [];
     throw e;
   }
 }
 async function storageSaveRows(dsId, rows) {
+  // За сервисом строки приезжают файлом и разбираются там же: класть их
+  // по одной незачем
   if (!storageIsServer()) return idb.set('rows:' + dsId, rows);
-  await api(`/api/datasets/${encodeURIComponent(dsId)}/rows`, { method: 'PUT', body: { rows } });
   return true;
 }
 async function storageDropRows(dsId) {
   if (!storageIsServer()) return idb.del('rows:' + dsId);
-  await api(`/api/datasets/${encodeURIComponent(dsId)}/rows`, { method: 'DELETE' });
-  return true;
+  return true;      // строки уходят вместе с набором
+}
+
+/** Отправить файл на разбор. Возвращает номер задачи. */
+async function storageUploadFile(dsId, file, columns) {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  if (columns) form.append('columns', JSON.stringify(columns));
+  const res = await fetch(`/api/datasets/${encodeURIComponent(dsId)}/file`, {
+    method: 'POST',
+    headers: storageToken() ? { Authorization: 'Bearer ' + storageToken() } : {},
+    body: form,
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error((data && data.detail) || 'сервис ответил ' + res.status);
+  return data.task;
+}
+
+/** Перечитать набор с сервера: после разбора у него новые колонки и метрики. */
+async function storageReloadDataset(dsId) {
+  const meta = await api(`/api/datasets/${encodeURIComponent(dsId)}`);
+  STATE.datasets[dsId] = meta;
+  DS[dsId] = Object.assign({}, meta, { rows: await storageLoadRows(dsId) });
+  serverSeen.set('datasets:' + dsId, { version: meta.version, body: canonical(meta) });
+  return meta;
+}
+
+/** Следить за разбором: onState зовут при каждой смене, пока не done или error. */
+async function storageWatchTask(taskId, onState) {
+  for (;;) {
+    const st = await api(`/api/tasks/${encodeURIComponent(taskId)}`);
+    onState && onState(st);
+    if (st.state === 'done' || st.state === 'error') return st;
+    await new Promise(r => setTimeout(r, 1000));
+  }
 }
 
 /* =============================================================
@@ -2249,7 +2292,10 @@ function openShareDialog(obj, what, onChange) {
   const add = async () => {
     const txt = inp.value.trim();
     if (!txt) { toast('Введите логин или почту', true); return; }
-    const u = authFind(txt);
+    /* За сервисом справочник в браузере — только те, кто уже входил. Логин,
+       которого там нет, отдаём сервису: он посмотрит в каталоге компании. */
+    const u = authFind(txt) || (storageIsServer() && /^[a-zA-Z0-9._-]+$/.test(txt)
+      ? { login: txt.toLowerCase(), name: txt.toLowerCase(), email: '—', team: 'из каталога' } : null);
     if (!u) { toast(`Сотрудник «${txt}» не найден в каталоге`, true); return; }
     if (u.login === authOwner(obj)) { toast('Это владелец: доступ у него и так есть', true); return; }
     if (authShared(obj).includes(u.login)) { toast('Доступ уже выдан', true); return; }
@@ -5656,6 +5702,12 @@ const CDN_XLSX = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js
 const CDN_PAPA = 'https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js';
 const MAX_UPLOAD_ROWS = 300000;
 
+/* Сколько строк в наборе. За сервисом в браузере лежит только образец, а
+   настоящее число приходит с описанием набора: показывать длину образца —
+   значит врать человеку про его же данные. */
+function dsRowCount(d) {
+  return d && d.rowCount != null ? d.rowCount : ((d && d.rows) || []).length;
+}
 function renderDatasetList(main) {
   const page = h('div', { class: 'page' });
   main.appendChild(page);
@@ -5672,7 +5724,7 @@ function renderDatasetList(main) {
       h('td', null, d.builtin ? h('span', { class: 'pill pri' }, 'Демо')
         : isSchemaDs(d) ? h('span', { class: 'pill acc' }, 'Схема, данные вымышленные')
           : h('span', { class: 'pill' }, d.fileName || 'Файл')),
-      h('td', null, fmtNum(d.rows.length, 'int')),
+      h('td', null, fmtNum(dsRowCount(d), 'int')),
       h('td', null, d.columns.length),
       h('td', null, usage(d.id) || h('span', { class: 'muted' }, '—')),
       h('td', { class: 'act' }, h('button', { class: 'btn sm', onclick: e => { e.stopPropagation(); newChartDialog({ datasetId: d.id }); } }, ic('plus'), 'График'))))))));
@@ -5687,7 +5739,7 @@ function renderDatasetPage(main, id) {
   const nameEl = editable ? h('input', { class: 'input', value: d.name, style: { font: '600 22px/1.2 var(--font-display)', height: '44px', maxWidth: '520px' }, 'aria-label': 'Название набора', onchange: e => { d.name = e.target.value.trim() || d.name; persistDs(d); toast('Название сохранено'); } }) : h('h1', null, d.name);
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('a', { href: '#/data', style: { fontSize: '13px', textDecoration: 'none' } }, '← Все наборы'), h('div', { style: { marginTop: '8px' } }, nameEl),
-      h('p', null, d.description || `Загружен из файла ${d.fileName || ''}. ${fmtNum(d.rows.length, 'int')} ${plural(d.rows.length, 'строка', 'строки', 'строк')}.`)),
+      h('p', null, d.description || `Загружен из файла ${d.fileName || ''}. ${fmtNum(dsRowCount(d), 'int')} ${plural(dsRowCount(d), 'строка', 'строки', 'строк')}.`)),
     isSchemaDs(d) ? h('button', { class: 'btn', onclick: () => openSchemaDialog(d.id) }, ic('schema'), 'Изменить схему') : null,
     h('button', { class: 'btn', onclick: () => newChartDialog({ datasetId: d.id }) }, ic('plus'), 'Создать график'),
     h('button', { class: 'btn primary', onclick: () => openAutoDashDialog(d.id) }, ic('wand'), 'Собрать черновик шаблона'),
@@ -5845,6 +5897,7 @@ function openUpload() {
     }
   }
 }
+const PREVIEW_BYTES = 1024 * 1024;   // столько файла читаем ради предпросмотра
 async function parseFile(file, status) {
   const ext = file.name.split('.').pop().toLowerCase();
   if (['xlsx', 'xls', 'xlsm', 'ods'].includes(ext)) {
@@ -5859,14 +5912,18 @@ async function parseFile(file, status) {
   }
   status.textContent = 'Загружаю модуль чтения CSV…';
   await loadScript(CDN_PAPA);
-  let text = await file.text();
+  // За сервисом из файла читаем только начало: предпросмотру хватает, а
+  // разбирать целиком будет сервер
+  const part = storageIsServer() && file.size > PREVIEW_BYTES ? file.slice(0, PREVIEW_BYTES) : file;
+  let text = await part.text();
+  if (part !== file) text = text.slice(0, text.lastIndexOf('\n') + 1);   // хвостовая строка оборвана
   if (/\uFFFD/.test(text.slice(0, 5000))) {
     // Похоже на Windows-1251
-    try { text = new TextDecoder('windows-1251').decode(await file.arrayBuffer()); } catch (e) { }
+    try { text = new TextDecoder('windows-1251').decode(await part.arrayBuffer()); } catch (e) { }
   }
   const res = Papa.parse(text.replace(/^\uFEFF/, ''), { skipEmptyLines: 'greedy', delimitersToGuess: [',', ';', '\t', '|'] });
   if (!res.data.length) throw new Error('файл пуст');
-  return { kind: 'csv', sheets: { CSV: res.data }, sheetNames: ['CSV'], delimiter: res.meta.delimiter };
+  return { kind: 'csv', sheets: { CSV: res.data }, sheetNames: ['CSV'], delimiter: res.meta.delimiter, partial: part !== file };
 }
 
 /* Типизация */
@@ -5943,8 +6000,12 @@ function openUploadPreview(file, parsed) {
         : field('Строка заголовков', selectEl([0, 1, 2, 3, 4].map(i => [i, i === 0 ? 'Первая строка' : `Строка ${i + 1}`]), headerRow, v => { headerRow = +v; data = build(); paint(); }))));
     if (parsed.sheetNames.length > 1) body.appendChild(field('Строка заголовков', selectEl([0, 1, 2, 3, 4].map(i => [i, i === 0 ? 'Первая строка' : `Строка ${i + 1}`]), headerRow, v => { headerRow = +v; data = build(); paint(); })));
     body.appendChild(h('p', { class: 'muted', style: { margin: '0 0 10px', fontSize: '13px' } },
-      `${fmtNum(data.length, 'int')} ${plural(data.length, 'строка', 'строки', 'строк')}` + (parsed.delimiter ? `, разделитель «${parsed.delimiter === '\t' ? 'табуляция' : parsed.delimiter}»` : '') +
-      '. Проверьте типы колонок: от них зависит, что можно суммировать и где строить ось времени.' + (data.length > MAX_UPLOAD_ROWS ? ` Будут загружены первые ${fmtNum(MAX_UPLOAD_ROWS, 'int')} строк.` : '')));
+      (storageIsServer() && parsed.partial
+        ? `Показано начало файла: ${fmtNum(data.length, 'int')} ${plural(data.length, 'строка', 'строки', 'строк')}. Весь файл разберёт сервер`
+        : `${fmtNum(data.length, 'int')} ${plural(data.length, 'строка', 'строки', 'строк')}`)
+      + (parsed.delimiter ? `, разделитель «${parsed.delimiter === '	' ? 'табуляция' : parsed.delimiter}»` : '')
+      + '. Проверьте типы колонок: от них зависит, что можно суммировать и где строить ось времени.'
+      + (!storageIsServer() && data.length > MAX_UPLOAD_ROWS ? ` Будут загружены первые ${fmtNum(MAX_UPLOAD_ROWS, 'int')} строк.` : '')));
     const tbl = h('table', null,
       h('thead', null, h('tr', null, cols.map(c => h('th', { style: c.include ? null : { opacity: .45 } },
         h('label', { class: 'check', style: { margin: 0 } }, h('input', { type: 'checkbox', checked: c.include, onchange: e => { c.include = e.target.checked; paint(); } }), 'Загружать'),
@@ -5967,11 +6028,69 @@ function openUploadPreview(file, parsed) {
       h('button', { class: 'btn', onclick: close }, 'Отмена'),
       h('button', { class: 'btn primary', onclick: async e => {
         e.target.disabled = true;
-        try { const id = await saveUploaded(name.trim() || file.name, file.name, cols.filter(c => c.include), data.slice(0, MAX_UPLOAD_ROWS)); close(); toast('Набор данных загружен'); go('#/data/' + id); }
-        catch (err) { console.error(err); toast('Не удалось сохранить набор: ' + err.message, true); e.target.disabled = false; }
+        const picked = cols.filter(c => c.include);
+        try {
+          if (storageIsServer()) {
+            await uploadToServer(file, name.trim() || file.name, picked, close);
+          } else {
+            const id = await saveUploaded(name.trim() || file.name, file.name, picked, data.slice(0, MAX_UPLOAD_ROWS));
+            close(); toast('Набор данных загружен'); go('#/data/' + id);
+          }
+        } catch (err) { console.error(err); toast('Не удалось сохранить набор: ' + err.message, true); e.target.disabled = false; }
       } }, 'Загрузить набор')],
   });
 }
+
+/* ---------- Загрузка за сервисом ----------
+   Файл уходит на сервер целиком, разбирает его воркер. Человек видит, сколько
+   строк уже готово, и может закрыть окно или уйти со страницы — разбор от
+   этого не прервётся, он идёт не в браузере. */
+async function uploadToServer(file, name, cols, closePreview) {
+  const id = uid('ds_');
+  const meta = { id, name, kind: 'upload', fileName: file.name, columns: [], metrics: [],
+    state: 'parsing', created: Date.now(), description: '' };
+  STATE.datasets[id] = meta;
+  DS[id] = Object.assign({}, meta, { rows: [] });
+  saveState();
+  // Набор должен доехать раньше файла: иначе файл некуда класть
+  await storageFlush();
+  const chosen = cols.map(c => ({ idx: c.idx, label: c.label || c.key, type: c.type }));
+  const task = await storageUploadFile(id, file, chosen);
+  closePreview();
+  openTaskDialog(task, id, name);
+}
+
+/** Окно разбора: состояние, счётчик строк и причина отказа. */
+function openTaskDialog(taskId, dsId, name) {
+  const body = h('div');
+  const line = h('div', { style: { fontSize: '14px' } }, 'Файл принят, готовлю набор…');
+  const note = h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '8px' } },
+    'Можно закрыть это окно: разбор идёт на сервере и не прервётся.');
+  body.append(line, note);
+  const md = openModal({ title: `Набор «${name}»`, body,
+    foot: close => [h('button', { class: 'btn', onclick: close }, 'Закрыть')] });
+
+  storageWatchTask(taskId, st => {
+    if (st.state === 'queued') line.textContent = 'Файл принят, ждёт очереди…';
+    else if (st.state === 'running') line.textContent = st.rows
+      ? `Загружено строк: ${fmtNum(st.rows, 'int')}…` : 'Разбираю файл…';
+  }).then(async st => {
+    if (st.state === 'error') {
+      clear(line).appendChild(document.createTextNode('Не получилось: ' + (st.error || 'неизвестная ошибка')));
+      line.style.color = 'var(--danger)';
+      clear(note).appendChild(document.createTextNode('Набор не создан: половина строк хуже, чем ничего.'));
+      delete STATE.datasets[dsId]; delete DS[dsId]; saveState();
+      return;
+    }
+    await storageReloadDataset(dsId);
+    md.close();
+    toast(`Набор готов: ${fmtNum(st.rows || 0, 'int')} ${plural(st.rows || 0, 'строка', 'строки', 'строк')}`);
+    go('#/data/' + dsId);
+  }).catch(e => {
+    clear(line).appendChild(document.createTextNode('Не удалось узнать состояние: ' + e.message));
+  });
+}
+
 async function saveUploaded(name, fileName, cols, data) {
   if (!cols.length) throw new Error('не выбрано ни одной колонки');
   const rows = data.map(r => {
@@ -5994,13 +6113,10 @@ async function saveUploaded(name, fileName, cols, data) {
   STATE.datasets[id] = meta;
   DS[id] = Object.assign({}, meta, { rows });
   saveState();
-  // Строки принадлежат набору, поэтому за сервисом набор должен доехать первым:
-  // иначе строки некуда класть и сервис честно отвечает «набора нет»
-  await storageFlush();
-  let ok = true;
-  try { ok = await storageSaveRows(id, rows); }
-  catch (e) { ok = false; toast('Строки не сохранились: ' + e.message, true); }
-  if (!ok && !storageIsServer()) toast('Хранилище браузера недоступно: набор будет работать до перезагрузки страницы', true);
+  if (!storageIsServer()) {
+    const ok = await storageSaveRows(id, rows);
+    if (!ok) toast('Хранилище браузера недоступно: набор будет работать до перезагрузки страницы', true);
+  }
   return id;
 }
 

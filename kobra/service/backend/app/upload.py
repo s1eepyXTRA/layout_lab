@@ -11,7 +11,9 @@ ReadWriteMany, которого во многих контурах нет; ба�
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import json
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.access import can_edit, why_read_only
@@ -28,8 +30,8 @@ MAX_FILE_MB = int(os.environ.get("KOBRA_MAX_FILE_MB", "512"))
 
 
 @router.post("/datasets/{ds_id}/file")
-async def upload_file(ds_id: str, file: UploadFile = File(...), db: Session = Depends(get_db),
-                      user: User = Depends(current_user)):
+async def upload_file(ds_id: str, file: UploadFile = File(...), columns: str = Form(""),
+                      db: Session = Depends(get_db), user: User = Depends(current_user)):
     ds = db.get(Dataset, ds_id)
     if ds is None:
         raise HTTPException(status_code=404, detail="Набор не найден")
@@ -57,8 +59,12 @@ async def upload_file(ds_id: str, file: UploadFile = File(...), db: Session = De
     if not size:
         raise HTTPException(status_code=422, detail="Пустой файл")
 
+    try:
+        chosen = json.loads(columns) if columns else None
+    except ValueError:
+        chosen = None
     task_set(task_id, state="queued", rows=0, dataset=ds_id, file=file.filename, bytes=size)
-    ingest_file.delay(task_id, ds_id, file.filename or "file.csv", user.username)
+    ingest_file.delay(task_id, ds_id, file.filename or "file.csv", user.username, chosen)
     return {"task": task_id, "bytes": size}
 
 

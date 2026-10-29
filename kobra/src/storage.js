@@ -249,24 +249,67 @@ async function runRawAsync(ds, opts) {
    Пока строки живут в браузере в обоих режимах: перенос их в базу — отдельный
    шаг плана (загруженные данные и фоновый разбор). Шов здесь, чтобы тот шаг
    менял одно место. */
+const SAMPLE_ROWS = 2000;      // столько строк держим в браузере от серверного набора
+
 async function storageLoadRows(dsId) {
   if (!storageIsServer()) return idb.get('rows:' + dsId);
+  /* За сервисом строки живут в базе, и целиком их сюда не возят — в наборе их
+     может быть миллион. Берём образец: его хватает подбору ролей, предпросмотру
+     и подсказкам, а графики всё равно считает база. */
+  const ds = DS[dsId] || (STATE && STATE.datasets && STATE.datasets[dsId]) || {};
+  const columns = (ds.columns || []).map(c => c.key);
+  if (!columns.length) return [];
   try {
-    const r = await api(`/api/datasets/${encodeURIComponent(dsId)}/rows`);
+    const r = await api(`/api/datasets/${encodeURIComponent(dsId)}/query`, {
+      method: 'POST', body: { raw: true, columns, limit: SAMPLE_ROWS },
+    });
     return (r && r.rows) || [];
   } catch (e) {
-    // Набор есть, а строк нет — это видно по пустому результату, а не по молчанию
-    if (e.kind === 'http' && e.status === 404) return null;
+    if (e.kind === 'http' && (e.status === 404 || e.status === 409)) return [];
     throw e;
   }
 }
 async function storageSaveRows(dsId, rows) {
+  // За сервисом строки приезжают файлом и разбираются там же: класть их
+  // по одной незачем
   if (!storageIsServer()) return idb.set('rows:' + dsId, rows);
-  await api(`/api/datasets/${encodeURIComponent(dsId)}/rows`, { method: 'PUT', body: { rows } });
   return true;
 }
 async function storageDropRows(dsId) {
   if (!storageIsServer()) return idb.del('rows:' + dsId);
-  await api(`/api/datasets/${encodeURIComponent(dsId)}/rows`, { method: 'DELETE' });
-  return true;
+  return true;      // строки уходят вместе с набором
+}
+
+/** Отправить файл на разбор. Возвращает номер задачи. */
+async function storageUploadFile(dsId, file, columns) {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  if (columns) form.append('columns', JSON.stringify(columns));
+  const res = await fetch(`/api/datasets/${encodeURIComponent(dsId)}/file`, {
+    method: 'POST',
+    headers: storageToken() ? { Authorization: 'Bearer ' + storageToken() } : {},
+    body: form,
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error((data && data.detail) || 'сервис ответил ' + res.status);
+  return data.task;
+}
+
+/** Перечитать набор с сервера: после разбора у него новые колонки и метрики. */
+async function storageReloadDataset(dsId) {
+  const meta = await api(`/api/datasets/${encodeURIComponent(dsId)}`);
+  STATE.datasets[dsId] = meta;
+  DS[dsId] = Object.assign({}, meta, { rows: await storageLoadRows(dsId) });
+  serverSeen.set('datasets:' + dsId, { version: meta.version, body: canonical(meta) });
+  return meta;
+}
+
+/** Следить за разбором: onState зовут при каждой смене, пока не done или error. */
+async function storageWatchTask(taskId, onState) {
+  for (;;) {
+    const st = await api(`/api/tasks/${encodeURIComponent(taskId)}`);
+    onState && onState(st);
+    if (st.state === 'done' || st.state === 'error') return st;
+    await new Promise(r => setTimeout(r, 1000));
+  }
 }

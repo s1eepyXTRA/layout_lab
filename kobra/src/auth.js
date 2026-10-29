@@ -243,7 +243,10 @@ function openShareDialog(obj, what, onChange) {
   const add = async () => {
     const txt = inp.value.trim();
     if (!txt) { toast('Введите логин или почту', true); return; }
-    const u = authFind(txt);
+    /* За сервисом справочник в браузере — только те, кто уже входил. Логин,
+       которого там нет, отдаём сервису: он посмотрит в каталоге компании. */
+    const u = authFind(txt) || (storageIsServer() && /^[a-zA-Z0-9._-]+$/.test(txt)
+      ? { login: txt.toLowerCase(), name: txt.toLowerCase(), email: '—', team: 'из каталога' } : null);
     if (!u) { toast(`Сотрудник «${txt}» не найден в каталоге`, true); return; }
     if (u.login === authOwner(obj)) { toast('Это владелец: доступ у него и так есть', true); return; }
     if (authShared(obj).includes(u.login)) { toast('Доступ уже выдан', true); return; }

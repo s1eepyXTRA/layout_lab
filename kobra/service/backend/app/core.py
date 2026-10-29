@@ -147,22 +147,6 @@ class Dashboard(Base):
     updated_by = Column(String(120))
 
 
-class UploadRow(Base):
-    """Строка загруженного файла.
-
-    Одна таблица на все наборы, а не таблица на набор: типизированные колонки
-    были бы быстрее для серверных агрегаций, но их у нас нет — строки уезжают
-    в браузер целиком. Динамический DDL на каждую загрузку — лишний риск ради
-    выгоды, которой мы пока не пользуемся.
-    """
-
-    __tablename__ = "rows"
-    __table_args__ = {"schema": UPLOAD_SCHEMA}
-    dataset_id = Column(String(64), primary_key=True)
-    idx = Column(Integer, primary_key=True)   # порядок строк в файле важен
-    data = Column(JSONB, nullable=False)
-
-
 class UploadChunk(Base):
     """Кусок загруженного файла по дороге к разбору.
 
