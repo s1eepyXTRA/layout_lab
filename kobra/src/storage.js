@@ -204,6 +204,25 @@ async function serverSend(state) {
   await api('/api/settings/dsMetrics', { method: 'PUT', body: { value: state.dsMetrics || {} } });
 }
 
+/** Выдать или отозвать доступ.
+
+   Это отдельный маршрут, а не часть обычной записи: поле `shared` ставит
+   сервер, и в `PUT` оно не уезжает (см. SERVER_FIELDS). Пока этого вызова не
+   было, доступ менялся только в браузере — человек видел коллегу в списке, а
+   сервер о нём не знал. */
+async function storageShare(obj, login, remove = false) {
+  if (!storageIsServer() || !obj) return true;
+  const kind = SERVER_KINDS.find(k => STATE && STATE[k.key] && STATE[k.key][obj.id]);
+  if (!kind) return true;                 // черновика и предпросмотра на сервере нет
+  // Сам объект должен доехать раньше: нельзя делиться тем, чего там ещё нет
+  await storageFlush();
+  const path = kind.path.split('?')[0];
+  const res = await api(`${path}/${obj.id}/share`, { method: 'POST', body: { login, remove } });
+  obj.shared = res.shared || [];
+  serverSeen.set(kind.key + ':' + obj.id, { version: res.version, body: canonical(res) });
+  return true;
+}
+
 /** Отправить всё, что скопилось, прямо сейчас: уход со страницы, выход. */
 async function storageFlush() {
   if (!storageIsServer() || !pendingState) return;
@@ -265,7 +284,10 @@ async function storageLoadRows(dsId) {
     });
     return (r && r.rows) || [];
   } catch (e) {
-    if (e.kind === 'http' && (e.status === 404 || e.status === 409)) return [];
+    // Строк нет вовсе (404) — это видно по пустому ответу: страница набора
+    // попросит файл заново. «Ещё готовится» (409) — не потеря, просто рано
+    if (e.kind === 'http' && e.status === 404) return null;
+    if (e.kind === 'http' && e.status === 409) return [];
     throw e;
   }
 }

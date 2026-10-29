@@ -115,3 +115,56 @@ def test_logiin_so_zvezdochkoy_ne_menyaet_zapros(client, ldap_mode):
     """Фильтр LDAP — тоже место для инъекции, просто не в SQL."""
     r = client.post("/api/auth/login", json={"username": "*", "password": "secret"})
     assert r.status_code == 401
+
+
+def test_dostup_kollege_kotoryi_eshche_ne_vhodil(client, ldap_mode, db, login, auth):
+    """Поделиться можно с тем, кого в базе ещё нет: его ищут в каталоге.
+
+    Иначе доступ достаётся только тем, кто уже побывал в сервисе, — а это ровно
+    те, кому и так всё видно.
+    """
+    from app.core import User
+
+    vladelec = auth(login("i.petrov"))
+    dash = {"id": "d_ldap", "title": "Отчёт отдела данных", "tabs": []}
+    assert client.post("/api/dashboards", json=dash, headers=vladelec).status_code == 201
+    assert db.query(User).filter(User.username == "d.orlov").count() == 0
+
+    r = client.post("/api/dashboards/d_ldap/share", json={"login": "d.orlov"}, headers=vladelec)
+    assert r.status_code == 200, r.text
+    assert r.json()["shared"] == ["d.orlov"]
+
+    # Запись завелась по данным каталога, а не по одному логину
+    db.expire_all()
+    u = db.query(User).filter(User.username == "d.orlov").one()
+    assert u.full_name == "Дмитрий Орлов"
+    assert u.team == "Поддержка"
+    assert u.password_hash == ""      # пароль проверяет каталог
+
+    # И шаблон ему правда открылся: своей командой он бы его не увидел
+    assert client.get("/api/dashboards/d_ldap", headers=auth(login("d.orlov"))).status_code == 200
+
+
+def test_logina_net_v_kataloge_dostup_ne_vydaetsya(client, ldap_mode, db, login, auth):
+    from app.core import User
+
+    vladelec = auth(login("i.petrov"))
+    client.post("/api/dashboards", json={"id": "d_ldap2", "title": "Шаблон", "tabs": []}, headers=vladelec)
+    r = client.post("/api/dashboards/d_ldap2/share", json={"login": "net-takogo"}, headers=vladelec)
+    assert r.status_code == 404
+    assert db.query(User).filter(User.username == "net-takogo").count() == 0
+
+
+def test_poisk_nahodit_v_kataloge_no_zapis_ne_zavodit(client, ldap_mode, db, login, auth):
+    """Диалог выдачи доступа должен показать настоящее имя коллеги ещё до того,
+    как доступ выдан. Записи при этом не появляется: она появится вместе с
+    доступом, иначе каждый набор букв в поле заводил бы сотрудника."""
+    from app.core import User
+
+    h = auth(login("i.petrov"))
+    r = client.get("/api/users/lookup/d.orlov", headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json() == {"login": "d.orlov", "name": "Дмитрий Орлов",
+                        "email": "d.orlov@company.ru", "team": "Поддержка"}
+    db.expire_all()
+    assert db.query(User).filter(User.username == "d.orlov").count() == 0

@@ -15,7 +15,7 @@ from app.access import can_view
 from app.auth import current_user
 from app.core import Dataset, User, engine
 from app.db import get_db
-from app.ingest import UPLOAD_SCHEMA, table_name
+from app.ingest import UPLOAD_SCHEMA, table_exists, table_name
 from app.query import QueryError, build_query, build_raw_query
 from app.queue import cache_get, cache_set
 
@@ -48,6 +48,10 @@ def run_query(ds_id: str, spec: dict = Body(...), db: Session = Depends(get_db),
         raise HTTPException(status_code=400, detail="Этот набор считается в браузере")
     if body.get("state") != "ready":
         raise HTTPException(status_code=409, detail="Набор ещё готовится")
+    if not table_exists(ds_id):
+        # Описание набора есть, строк нет. Это не «ещё готовится» (409):
+        # возвращать нечего и ждать нечего — файл нужно загрузить заново
+        raise HTTPException(status_code=404, detail="Строки набора не найдены")
 
     # Ключ кэша включает версию набора: загрузили новые строки — версия выросла,
     # и старый ответ сам перестаёт находиться. Отдельная чистка не нужна.

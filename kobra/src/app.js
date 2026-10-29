@@ -116,7 +116,12 @@ async function loadUploaded() {
   for (const id of ids) {
     const meta = STATE.datasets[id];
     if (meta.kind === 'schema') { DS[id] = Object.assign({}, meta, { rows: generateSchemaRows(meta.schema) }); continue; }
-    const rows = await storageLoadRows(id);
+    /* Один набор не должен мешать запуску: его строки могли не отдаться
+       (сеть, разбор не доделан, строк в базе уже нет), а приложение всё равно
+       должно открыться — со страницей набора, которая это объяснит. */
+    let rows = null;
+    try { rows = await storageLoadRows(id); }
+    catch (e) { console.error('Строки набора ' + id + ' не прочитались', e); }
     DS[id] = Object.assign({}, meta, { rows: rows || [], missingRows: !rows });
   }
 }
@@ -264,7 +269,8 @@ function renderDashboardList(main) {
     return;
   }
   page.appendChild(h('div', { class: 'page-head' },
-    h('div', { class: 'grow' }, h('h1', null, 'Шаблоны'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
+    h('div', { class: 'grow' }, h('h1', null, 'Шаблоны'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. '
+      + (storageIsServer() ? 'Всё сохраняется в сервисе.' : 'Всё сохраняется в этом браузере.'))),
     h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
     h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый шаблон')));
   page.appendChild(dashGrid(list));

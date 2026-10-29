@@ -169,3 +169,16 @@ def test_ishodnye_stroki_s_filtrom(client, ds):
     res = q(client, ds, {"raw": True, "columns": ["gorod"],
                          "filters": [{"col": "gorod", "op": "eq", "val": "Казань"}], "limit": 100})
     assert len(res["rows"]) == 2
+
+
+def test_nabor_bez_tablitsy_otvechaet_ponyatno(client, ds):
+    """Описание набора и его таблица живут по отдельности и могут разойтись:
+    таблица создаётся в рантайме и миграциями не управляется. Расчёт должен
+    сказать, что строк нет, а не упасть пятисоткой."""
+    from app.ingest import drop_dataset_table
+
+    drop_dataset_table("ds_q")
+    r = client.post("/api/datasets/ds_q/query",
+                    json={"raw": True, "columns": ["gorod"], "limit": 10}, headers=ds)
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Строки набора не найдены"

@@ -9,12 +9,15 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app import auth as auth_mod
 from app.auth import current_user, require_admin, user_out
 from app.core import ROLES, SESSION_DAYS, User
-from app.sessions import revoke_user
 from app.db import get_db
+from app.ldap_auth import ldap_lookup
+from app.sessions import revoke_user
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -38,6 +41,29 @@ def directory(db: Session = Depends(get_db), _user: User = Depends(current_user)
     users = db.query(User).filter(User.active.is_(True)).order_by(User.username).all()
     return [{"login": u.username, "name": u.full_name or u.username,
              "email": u.email or "", "team": u.team or ""} for u in users]
+
+
+@router.get("/lookup/{login}")
+def lookup_user(login: str, db: Session = Depends(get_db), _user: User = Depends(current_user)):
+    """Один человек по логину или почте — в базе, а если его там нет, в каталоге.
+
+    Нужно диалогу выдачи доступа: он показывает имя, почту и команду, прежде чем
+    открыть объект. Логины похожи (`a.ivanov` и `an.ivanov`), ошибка тихая, и
+    подтверждение без настоящих данных ничего не проверяет. Запись при этом не
+    заводится: она появится, когда доступ правда выдадут.
+    """
+    key = login.strip().lower()
+    u = db.query(User).filter(User.active.is_(True)).filter(
+        or_(User.username == key, User.email == key)).first()
+    if u is not None:
+        return {"login": u.username, "name": u.full_name or u.username,
+                "email": u.email or "", "team": u.team or ""}
+    if auth_mod.AUTH_TYPE == "ldap":
+        info = ldap_lookup(key)
+        if info:
+            return {"login": info["login"], "name": info["name"],
+                    "email": info["email"], "team": info["team"]}
+    raise HTTPException(status_code=404, detail="Такого сотрудника нет")
 
 
 @router.patch("/{login}")

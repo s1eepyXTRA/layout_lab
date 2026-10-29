@@ -160,3 +160,12 @@ def test_udalenie_tolko_tem_kto_pravit(client, smirnova, make_user, login, auth)
     assert client.delete("/api/dashboards/d_sales", headers=auth(login("d.orlov"))).status_code == 403
     assert client.delete("/api/dashboards/d_sales", headers=smirnova).status_code == 204
     assert client.get("/api/dashboards/d_sales", headers=smirnova).status_code == 404
+
+
+def test_bez_kataloga_neizvestnyi_login_ne_zavoditsya(client, smirnova, db):
+    """Без каталога логин взять негде: придумывать сотрудника нельзя."""
+    client.post("/api/dashboards", json=DASH, headers=smirnova)
+    r = client.post("/api/dashboards/d_sales/share", json={"login": "n.novikov"}, headers=smirnova)
+    assert r.status_code == 404
+    from app.core import User
+    assert db.query(User).filter(User.username == "n.novikov").count() == 0

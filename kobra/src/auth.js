@@ -234,6 +234,20 @@ function authStampAll() {
 /* Логин вводится руками, и ошибка здесь тихая: a.ivanov и an.ivanov похожи,
    а человек будет думать, что поделился. Поэтому сначала показываем, кого
    нашли, и только по подтверждению выдаём доступ. */
+/** Найти сотрудника силами сервиса: в его базе или в каталоге компании. */
+async function authLookup(txt) {
+  try {
+    const u = await api(`/api/users/lookup/${encodeURIComponent(txt.trim().toLowerCase())}`);
+    // Кладём в адресную книгу: иначе в списке доступа вместо имени логин
+    if (u && !authUsers().some(x => x.login === u.login)) authUsers().push(u);
+    return u;
+  } catch (e) {
+    if (e.kind === 'http' && e.status === 404) return null;
+    toast('Не удалось найти сотрудника: ' + e.message, true);
+    return null;
+  }
+}
+
 function openShareDialog(obj, what, onChange) {
   if (!canShare(obj)) { toast('Делиться может владелец или тот, кому он дал доступ', true); return; }
   const body = h('div');
@@ -243,10 +257,12 @@ function openShareDialog(obj, what, onChange) {
   const add = async () => {
     const txt = inp.value.trim();
     if (!txt) { toast('Введите логин или почту', true); return; }
-    /* За сервисом справочник в браузере — только те, кто уже входил. Логин,
-       которого там нет, отдаём сервису: он посмотрит в каталоге компании. */
-    const u = authFind(txt) || (storageIsServer() && /^[a-zA-Z0-9._-]+$/.test(txt)
-      ? { login: txt.toLowerCase(), name: txt.toLowerCase(), email: '—', team: 'из каталога' } : null);
+    /* За сервисом в браузере лежат только те, кто уже входил, поэтому логин,
+       которого здесь нет, ищет сервис — в каталоге компании. Спрашиваем именно
+       его, а не отправляем доступ наугад: подтверждение без настоящего имени,
+       почты и команды ничего не проверяет, а логины похожи. */
+    let u = authFind(txt);
+    if (!u && storageIsServer()) u = await authLookup(txt);
     if (!u) { toast(`Сотрудник «${txt}» не найден в каталоге`, true); return; }
     if (u.login === authOwner(obj)) { toast('Это владелец: доступ у него и так есть', true); return; }
     if (authShared(obj).includes(u.login)) { toast('Доступ уже выдан', true); return; }
@@ -254,11 +270,24 @@ function openShareDialog(obj, what, onChange) {
       `${u.name} (${u.login}, ${u.email}, ${u.team}) получит полный доступ к ${what} «${obj.title || obj.name}»: сможет править, удалять и делиться дальше. Выдать доступ?`,
       'Выдать доступ', false);
     if (!ok) return;
+    try { await storageShare(obj, u.login); }
+    catch (e) { toast('Не удалось выдать доступ: ' + e.message, true); return; }
     authShareWith(obj, u.login);
     inp.value = '';
     toast(`Доступ выдан: ${u.name}`);
     save();
   };
+
+  /* Кого уже спрашивали у сервиса: иначе логин, которого в каталоге нет,
+     запрашивался бы бесконечно — список перерисовывается после каждого ответа. */
+  const asked = new Set();
+  function fillNames(logins) {
+    if (!storageIsServer()) return;
+    const unknown = logins.filter(l => !asked.has(l) && !authUsers().some(x => x.login === l));
+    if (!unknown.length) return;
+    unknown.forEach(l => asked.add(l));
+    Promise.all(unknown.map(authLookup)).then(found => { if (found.some(Boolean)) paint(); });
+  }
 
   function paint() {
     clear(body);
@@ -268,6 +297,9 @@ function openShareDialog(obj, what, onChange) {
     const list = h('div', { class: 'share-list' });
     const shared = authShared(obj);
     if (!shared.length) list.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Пока никому не выдан доступ.'));
+    /* Имена тех, кто ещё не входил, знает только сервис: без этого в списке
+       доступа стоит логин, и не видно, тот ли это человек. */
+    fillNames(shared.concat(own ? [own] : []));
     shared.forEach(login => {
       const u = authUsers().find(x => x.login === login) || { login, name: login, team: '', email: '' };
       list.appendChild(h('div', { class: 'share-row' },
@@ -275,6 +307,8 @@ function openShareDialog(obj, what, onChange) {
         h('span', { class: 'pill' }, 'может править'),
         iconBtn('x', 'Отозвать доступ', async () => {
           if (!(await confirmDialog('Отозвать доступ', `${u.name} потеряет доступ к ${what} «${obj.title || obj.name}».`, 'Отозвать'))) return;
+          try { await storageShare(obj, login, true); }
+          catch (e) { toast('Не удалось отозвать доступ: ' + e.message, true); return; }
           authUnshare(obj, login); toast('Доступ отозван'); save();
         }, 'sm')));
     });

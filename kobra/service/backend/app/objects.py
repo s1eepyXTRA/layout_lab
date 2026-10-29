@@ -16,8 +16,9 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app import auth as auth_mod
 from app.access import TEAM_ALL, can_edit, can_share, can_view, why_read_only
-from app.auth import AUTH_TYPE, current_user
+from app.auth import current_user
 from app.core import Chart, Dashboard, Dataset, User, now
 from app.db import get_db
 from app.ingest import drop_dataset_table
@@ -179,7 +180,8 @@ def make_router(model, prefix: str, name_field: str, tag: str) -> APIRouter:
 def _from_directory(db: Session, login: str):
     """Коллега, которого ещё нет в базе, но есть в каталоге. Без этого
     поделиться можно только с теми, кто уже входил, — а им и так видно."""
-    if AUTH_TYPE != "ldap":
+    # Способ входа читаем через модуль: его подменяют и настройкой, и в тестах
+    if auth_mod.AUTH_TYPE != "ldap":
         return None
     info = ldap_lookup(login)
     if not info:

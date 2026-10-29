@@ -79,3 +79,29 @@ def test_otklyuchennye_v_spravochnik_ne_popadayut(client, make_user, login, auth
     make_user("uvolen", active=False)
     r = client.get("/api/users/directory", headers=auth(login("a.smirnova")))
     assert [u["login"] for u in r.json()] == ["a.smirnova"]
+
+
+def test_poisk_sotrudnika_po_loginu_i_pochte(client, make_user, login, auth):
+    """Диалог выдачи доступа показывает, кого нашли: подтверждение без имени,
+    почты и команды ничего не проверяет."""
+    make_user("a.smirnova", team="Продажи")
+    make_user("d.orlov", team="Поддержка")
+    h = auth(login("d.orlov"))
+    r = client.get("/api/users/lookup/a.smirnova", headers=h)
+    assert r.status_code == 200
+    assert r.json() == {"login": "a.smirnova", "name": "a.smirnova",
+                        "email": "a.smirnova@company.ru", "team": "Продажи"}
+    # По почте тоже: человек помнит её чаще, чем логин
+    assert client.get("/api/users/lookup/a.smirnova@company.ru", headers=h).json()["login"] == "a.smirnova"
+
+
+def test_poisk_neizvestnogo_sotrudnika(client, make_user, login, auth):
+    make_user("d.orlov", team="Поддержка")
+    r = client.get("/api/users/lookup/net-takogo", headers=auth(login("d.orlov")))
+    assert r.status_code == 404
+
+
+def test_otklyuchennyi_v_poiske_ne_nahoditsya(client, make_user, login, auth):
+    make_user("d.orlov", team="Поддержка")
+    make_user("uvolen", active=False)
+    assert client.get("/api/users/lookup/uvolen", headers=auth(login("d.orlov"))).status_code == 404

@@ -19,7 +19,7 @@ import datetime as dt
 import io
 import os
 import re
-from typing import Iterator, Optional, Optional
+from typing import Iterator, Optional
 
 from sqlalchemy import text
 
@@ -282,6 +282,20 @@ def _create_table(table: str, keys: list, kinds: list) -> None:
         conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {UPLOAD_SCHEMA}"))
         conn.execute(text(f"DROP TABLE IF EXISTS {UPLOAD_SCHEMA}.{table}"))
         conn.execute(text(f"CREATE TABLE {UPLOAD_SCHEMA}.{table} ({cols})"))
+
+
+def table_exists(ds_id: str) -> bool:
+    """Есть ли таблица со строками набора.
+
+    Метаданные набора и его таблица живут по отдельности: таблица создаётся в
+    рантайме и миграциями не управляется. Значит, они могут разойтись — скажем,
+    базу восстановили из выгрузки без схемы загрузок. Расчёт должен сказать об
+    этом понятно, а не упасть пятисоткой.
+    """
+    with engine.connect() as conn:
+        found = conn.execute(text("select to_regclass(:name)"),
+                             {"name": f"{UPLOAD_SCHEMA}.{table_name(ds_id)}"}).scalar()
+    return found is not None
 
 
 def drop_dataset_table(ds_id: str) -> None:

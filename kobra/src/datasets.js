@@ -52,7 +52,7 @@ function renderDatasetPage(main, id) {
     ic('eye'), `Набор принадлежит ${authName(authOwner(d))}: вы можете строить по нему графики, но не менять его.`));
   if (d.missingRows) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
     d.fromTemplate ? 'Набор приехал из шаблона без данных. Загрузите файл с такими же колонками — графики оживут сами.'
-      : 'Строки этого набора не найдены в хранилище браузера. Загрузите файл заново.'));
+      : 'Строки этого набора не найдены. Загрузите файл заново.'));
   if (isSchemaDs(d)) page.appendChild(h('div', { class: 'edit-banner fake-banner', style: { borderRadius: '8px', marginBottom: '16px' } }, ic('schema'),
     `${fmtNum(d.rows.length, 'int')} ${plural(d.rows.length, 'строка', 'строки', 'строк')} придумано по схеме: цифры правдоподобные, но ненастоящие. Период — ${fmtDate(parseIsoDate(d.schema.dateFrom))} — ${fmtDate(parseIsoDate(d.schema.dateTo))}.`));
 

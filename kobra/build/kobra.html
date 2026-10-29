@@ -2022,6 +2022,25 @@ async function serverSend(state) {
   await api('/api/settings/dsMetrics', { method: 'PUT', body: { value: state.dsMetrics || {} } });
 }
 
+/** Выдать или отозвать доступ.
+
+   Это отдельный маршрут, а не часть обычной записи: поле `shared` ставит
+   сервер, и в `PUT` оно не уезжает (см. SERVER_FIELDS). Пока этого вызова не
+   было, доступ менялся только в браузере — человек видел коллегу в списке, а
+   сервер о нём не знал. */
+async function storageShare(obj, login, remove = false) {
+  if (!storageIsServer() || !obj) return true;
+  const kind = SERVER_KINDS.find(k => STATE && STATE[k.key] && STATE[k.key][obj.id]);
+  if (!kind) return true;                 // черновика и предпросмотра на сервере нет
+  // Сам объект должен доехать раньше: нельзя делиться тем, чего там ещё нет
+  await storageFlush();
+  const path = kind.path.split('?')[0];
+  const res = await api(`${path}/${obj.id}/share`, { method: 'POST', body: { login, remove } });
+  obj.shared = res.shared || [];
+  serverSeen.set(kind.key + ':' + obj.id, { version: res.version, body: canonical(res) });
+  return true;
+}
+
 /** Отправить всё, что скопилось, прямо сейчас: уход со страницы, выход. */
 async function storageFlush() {
   if (!storageIsServer() || !pendingState) return;
@@ -2083,7 +2102,10 @@ async function storageLoadRows(dsId) {
     });
     return (r && r.rows) || [];
   } catch (e) {
-    if (e.kind === 'http' && (e.status === 404 || e.status === 409)) return [];
+    // Строк нет вовсе (404) — это видно по пустому ответу: страница набора
+    // попросит файл заново. «Ещё готовится» (409) — не потеря, просто рано
+    if (e.kind === 'http' && e.status === 404) return null;
+    if (e.kind === 'http' && e.status === 409) return [];
     throw e;
   }
 }
@@ -2368,6 +2390,20 @@ function authStampAll() {
 /* Логин вводится руками, и ошибка здесь тихая: a.ivanov и an.ivanov похожи,
    а человек будет думать, что поделился. Поэтому сначала показываем, кого
    нашли, и только по подтверждению выдаём доступ. */
+/** Найти сотрудника силами сервиса: в его базе или в каталоге компании. */
+async function authLookup(txt) {
+  try {
+    const u = await api(`/api/users/lookup/${encodeURIComponent(txt.trim().toLowerCase())}`);
+    // Кладём в адресную книгу: иначе в списке доступа вместо имени логин
+    if (u && !authUsers().some(x => x.login === u.login)) authUsers().push(u);
+    return u;
+  } catch (e) {
+    if (e.kind === 'http' && e.status === 404) return null;
+    toast('Не удалось найти сотрудника: ' + e.message, true);
+    return null;
+  }
+}
+
 function openShareDialog(obj, what, onChange) {
   if (!canShare(obj)) { toast('Делиться может владелец или тот, кому он дал доступ', true); return; }
   const body = h('div');
@@ -2377,10 +2413,12 @@ function openShareDialog(obj, what, onChange) {
   const add = async () => {
     const txt = inp.value.trim();
     if (!txt) { toast('Введите логин или почту', true); return; }
-    /* За сервисом справочник в браузере — только те, кто уже входил. Логин,
-       которого там нет, отдаём сервису: он посмотрит в каталоге компании. */
-    const u = authFind(txt) || (storageIsServer() && /^[a-zA-Z0-9._-]+$/.test(txt)
-      ? { login: txt.toLowerCase(), name: txt.toLowerCase(), email: '—', team: 'из каталога' } : null);
+    /* За сервисом в браузере лежат только те, кто уже входил, поэтому логин,
+       которого здесь нет, ищет сервис — в каталоге компании. Спрашиваем именно
+       его, а не отправляем доступ наугад: подтверждение без настоящего имени,
+       почты и команды ничего не проверяет, а логины похожи. */
+    let u = authFind(txt);
+    if (!u && storageIsServer()) u = await authLookup(txt);
     if (!u) { toast(`Сотрудник «${txt}» не найден в каталоге`, true); return; }
     if (u.login === authOwner(obj)) { toast('Это владелец: доступ у него и так есть', true); return; }
     if (authShared(obj).includes(u.login)) { toast('Доступ уже выдан', true); return; }
@@ -2388,11 +2426,24 @@ function openShareDialog(obj, what, onChange) {
       `${u.name} (${u.login}, ${u.email}, ${u.team}) получит полный доступ к ${what} «${obj.title || obj.name}»: сможет править, удалять и делиться дальше. Выдать доступ?`,
       'Выдать доступ', false);
     if (!ok) return;
+    try { await storageShare(obj, u.login); }
+    catch (e) { toast('Не удалось выдать доступ: ' + e.message, true); return; }
     authShareWith(obj, u.login);
     inp.value = '';
     toast(`Доступ выдан: ${u.name}`);
     save();
   };
+
+  /* Кого уже спрашивали у сервиса: иначе логин, которого в каталоге нет,
+     запрашивался бы бесконечно — список перерисовывается после каждого ответа. */
+  const asked = new Set();
+  function fillNames(logins) {
+    if (!storageIsServer()) return;
+    const unknown = logins.filter(l => !asked.has(l) && !authUsers().some(x => x.login === l));
+    if (!unknown.length) return;
+    unknown.forEach(l => asked.add(l));
+    Promise.all(unknown.map(authLookup)).then(found => { if (found.some(Boolean)) paint(); });
+  }
 
   function paint() {
     clear(body);
@@ -2402,6 +2453,9 @@ function openShareDialog(obj, what, onChange) {
     const list = h('div', { class: 'share-list' });
     const shared = authShared(obj);
     if (!shared.length) list.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Пока никому не выдан доступ.'));
+    /* Имена тех, кто ещё не входил, знает только сервис: без этого в списке
+       доступа стоит логин, и не видно, тот ли это человек. */
+    fillNames(shared.concat(own ? [own] : []));
     shared.forEach(login => {
       const u = authUsers().find(x => x.login === login) || { login, name: login, team: '', email: '' };
       list.appendChild(h('div', { class: 'share-row' },
@@ -2409,6 +2463,8 @@ function openShareDialog(obj, what, onChange) {
         h('span', { class: 'pill' }, 'может править'),
         iconBtn('x', 'Отозвать доступ', async () => {
           if (!(await confirmDialog('Отозвать доступ', `${u.name} потеряет доступ к ${what} «${obj.title || obj.name}».`, 'Отозвать'))) return;
+          try { await storageShare(obj, login, true); }
+          catch (e) { toast('Не удалось отозвать доступ: ' + e.message, true); return; }
           authUnshare(obj, login); toast('Доступ отозван'); save();
         }, 'sm')));
     });
@@ -3957,7 +4013,12 @@ async function loadUploaded() {
   for (const id of ids) {
     const meta = STATE.datasets[id];
     if (meta.kind === 'schema') { DS[id] = Object.assign({}, meta, { rows: generateSchemaRows(meta.schema) }); continue; }
-    const rows = await storageLoadRows(id);
+    /* Один набор не должен мешать запуску: его строки могли не отдаться
+       (сеть, разбор не доделан, строк в базе уже нет), а приложение всё равно
+       должно открыться — со страницей набора, которая это объяснит. */
+    let rows = null;
+    try { rows = await storageLoadRows(id); }
+    catch (e) { console.error('Строки набора ' + id + ' не прочитались', e); }
     DS[id] = Object.assign({}, meta, { rows: rows || [], missingRows: !rows });
   }
 }
@@ -4105,7 +4166,8 @@ function renderDashboardList(main) {
     return;
   }
   page.appendChild(h('div', { class: 'page-head' },
-    h('div', { class: 'grow' }, h('h1', null, 'Шаблоны'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. Всё сохраняется в этом браузере.')),
+    h('div', { class: 'grow' }, h('h1', null, 'Шаблоны'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. '
+      + (storageIsServer() ? 'Всё сохраняется в сервисе.' : 'Всё сохраняется в этом браузере.'))),
     h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
     h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый шаблон')));
   page.appendChild(dashGrid(list));
@@ -5834,7 +5896,7 @@ function renderDatasetPage(main, id) {
     ic('eye'), `Набор принадлежит ${authName(authOwner(d))}: вы можете строить по нему графики, но не менять его.`));
   if (d.missingRows) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
     d.fromTemplate ? 'Набор приехал из шаблона без данных. Загрузите файл с такими же колонками — графики оживут сами.'
-      : 'Строки этого набора не найдены в хранилище браузера. Загрузите файл заново.'));
+      : 'Строки этого набора не найдены. Загрузите файл заново.'));
   if (isSchemaDs(d)) page.appendChild(h('div', { class: 'edit-banner fake-banner', style: { borderRadius: '8px', marginBottom: '16px' } }, ic('schema'),
     `${fmtNum(d.rows.length, 'int')} ${plural(d.rows.length, 'строка', 'строки', 'строк')} придумано по схеме: цифры правдоподобные, но ненастоящие. Период — ${fmtDate(parseIsoDate(d.schema.dateFrom))} — ${fmtDate(parseIsoDate(d.schema.dateTo))}.`));
 
