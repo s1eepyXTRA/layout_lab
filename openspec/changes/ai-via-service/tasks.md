@@ -17,11 +17,15 @@
 - [ ] 1.4 Сгенерировать миграцию и убедиться, что автогенерация не предлагает ничего лишнего
       (`include_object` прячет таблицы наборов); проверка — повторный `alembic revision
       --autogenerate` даёт пустую миграцию
-- [ ] 1.5 Дописать переменные доступа к модели в `service/backend/README.md` и в
-      `deploy/helm/values.yaml` с секретом токена, назвав токен виртуальным ключом LiteLLM, модель —
-      его алиасом, и добавив строку про `HTTPS_PROXY` для шлюза за прокси; проверка —
-      `docker run --rm -v "<путь>:/chart" alpine/helm:3.16.2 template kobra /chart --set
-      secrets.databaseUrl=... --set secrets.secretKey=...` отдаёт манифесты с новыми переменными
+- [ ] 1.5 Перенести инструкцию по развёртыванию из `design.md` (раздел Migration Plan) в
+      `service/backend/README.md`: что просить у администраторов LiteLLM, таблица переменных с
+      значениями, цепочка таймаутов, `HTTPS_PROXY` и `NO_PROXY` для шлюза внутри контура, порядок
+      проверки и разбор отказов; проверка — по README разворачивает человек, не читавший план
+- [ ] 1.6 Положить переменные в `docker-compose.yml` (служба `api`, воркеру они не нужны) и в
+      `deploy/helm/values.yaml` — токен секретом, ingress с аннотацией `proxy-read-timeout`;
+      проверка — `docker run --rm -v "<путь>:/chart" alpine/helm:3.16.2 template kobra /chart --set
+      secrets.databaseUrl=... --set secrets.secretKey=...` отдаёт манифесты с новыми переменными и
+      аннотацией
 
 ## 2. Маршрут сборки черновика
 
