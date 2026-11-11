@@ -202,10 +202,31 @@ async function resetAll() {
 }
 
 /* ---------- Список дашбордов ---------- */
+/* ---------- Экран ждёт тела объектов ----------
+   За сервисом список приезжает краткой формой, а тело — когда объект открывают.
+   Страница, которой нужно тело, рисует «загружаю» и перерисовывается, когда
+   оно приедет: так весь код страниц остаётся синхронным. */
+function waitForBodies(main, promise) {
+  const page = h('div', { class: 'page' });
+  const box = h('div', { class: 'empty' }, h('b', null, 'Загружаю…'));
+  page.appendChild(box);
+  main.appendChild(page);
+  let gone = false;
+  promise.then(() => { if (!gone) route(); }, e => {
+    if (gone) return;
+    clear(box);
+    box.appendChild(h('b', null, 'Не удалось загрузить'));
+    box.appendChild(document.createTextNode(e && e.message ? e.message : String(e)));
+    box.appendChild(h('br'));
+    box.appendChild(h('a', { class: 'btn', href: '#/dashboards' }, 'К шаблонам'));
+  });
+  return () => { gone = true; };
+}
 function dashThumb(d) {
   const th = h('div', { class: 'dash-thumb', 'aria-hidden': 'true' });
-  const tab = d.tabs[0];
-  if (!tab) return th;
+  // Миниатюра рисуется по сводке, если тела нет: карточке хватает раскладки
+  const tab = (d.tabs && d.tabs[0]) || (d.summary && d.summary.thumb ? { items: d.summary.thumb } : null);
+  if (!tab || !tab.items) return th;
   const maxY = Math.max(12, ...tab.items.map(i => i.y + i.h));
   tab.items.slice(0, 14).forEach(it => {
     const chart = it.type === 'chart' ? STATE.charts[it.chartId] : null;
@@ -278,7 +299,8 @@ function renderDashboardList(main) {
 function dashGrid(list) {
   const grid = h('div', { class: 'dash-grid' });
   list.forEach(d => {
-    const nCharts = d.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
+    const nCharts = dashChartCount(d);
+    const nTabs = dashTabCount(d);
     const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с шаблоном' }, ic('dots'));
     more.addEventListener('click', e => {
       e.stopPropagation();
@@ -294,7 +316,7 @@ function dashGrid(list) {
     grid.appendChild(h('div', { class: 'dash-card', tabindex: 0, role: 'link', onclick: () => go('#/d/' + d.id), onkeydown: e => { if (e.key === 'Enter') go('#/d/' + d.id); } },
       dashThumb(d),
       h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
-        h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`),
+        h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${nTabs} ${plural(nTabs, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`),
         ownerTag(d)), more)));
   });
   grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый шаблон'));
@@ -329,15 +351,17 @@ function createBlankDashboard() {
 /* Копия должна быть самостоятельной. Раньше копировался только дашборд, а
    графики и придуманный набор оставались общими с исходником: правка в копии
    меняла оригинал, а удаление одного из двух уносило набор у второго. */
-function duplicateDashboard(id) {
+async function duplicateDashboard(id) {
   const src = STATE.dashboards[id];
   if (!src || !canView(src)) { toast('Шаблон недоступен', true); return; }
+  // Копия самостоятельная, значит нужны тела шаблона и всех его блоков
+  await ensureDashboardBody(id);
   const nid = uid('d_');
   const copy = clone(src);
   copy.id = nid; copy.title = src.title + ' (копия)'; copy.updated = Date.now();
   // Копия достаётся тому, кто копирует, — иначе чужой шаблон так и останется
   // недоступным для правки. Переписка с ассистентом личная и не копируется.
-  ['ownerLogin', 'team', 'shared', 'preview'].forEach(k => delete copy[k]);
+  ['ownerLogin', 'team', 'shared', 'preview', 'brief'].forEach(k => delete copy[k]);
 
   const srcDsId = (src.fromTemplate || {}).datasetId;
   let dsFrom = null, dsTo = null;
@@ -355,7 +379,7 @@ function duplicateDashboard(id) {
     if (!c) return;
     const n = clone(c);
     n.id = uid('c_');
-    ['ownerLogin', 'team', 'shared', 'preview'].forEach(k => delete n[k]);
+    ['ownerLogin', 'team', 'shared', 'preview', 'brief'].forEach(k => delete n[k]);
     if (dsTo && n.datasetId === dsFrom) n.datasetId = dsTo;
     STATE.charts[n.id] = n;
     i.chartId = n.id;
@@ -389,8 +413,10 @@ async function deleteDashboard(id) {
 }
 
 /* ---------- Список графиков ---------- */
+/* В каких шаблонах стоит этот график. Считается по сводке, если тело шаблона не
+   приезжало: иначе список графиков тянул бы тела всех шаблонов сервиса. */
 function chartUsage(chartId) {
-  return Object.values(STATE.dashboards).filter(d => d.tabs.some(t => t.items.some(i => i.chartId === chartId)));
+  return Object.values(STATE.dashboards).filter(d => !d.preview && dashChartIds(d).includes(chartId));
 }
 function renderChartList(main) {
   const page = h('div', { class: 'page' });
@@ -416,13 +442,14 @@ function renderChartList(main) {
         const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с графиком' }, ic('dots'));
         more.addEventListener('click', e => { e.stopPropagation(); openMenu(more, [
           { label: canEdit(c) ? 'Редактировать' : 'Открыть', icon: canEdit(c) ? 'edit' : 'eye', onClick: () => go('#/explore/' + c.id) },
-          { label: 'Дублировать', icon: 'copy', onClick: () => { const n = clone(c); n.id = uid('c_'); n.name += ' (копия)'; n.updated = Date.now(); delete n.ownerLogin; delete n.shared; STATE.charts[n.id] = n; saveState(); paint(); } },
+          { label: 'Дублировать', icon: 'copy', onClick: async () => { await ensureBodies('charts', [c.id]); const n = clone(c); n.id = uid('c_'); n.name += ' (копия)'; n.updated = Date.now(); delete n.ownerLogin; delete n.shared; delete n.brief; STATE.charts[n.id] = n; saveState(); paint(); } },
           canShare(c) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(c, 'графику', () => { saveState(); paint(); }) } : null,
           canEdit(c) ? '-' : null,
           canEdit(c) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteChart(c.id).then(ok => ok && paint()) } : null,
         ]); });
-        const nSpec = specFilledCount(c);
-        const question = specValue(c, 'question');
+        // Тела графика здесь нет: заполненность ТЗ и бизнес-вопрос — из сводки
+        const nSpec = c.brief ? ((c.summary || {}).spec || 0) : specFilledCount(c);
+        const question = c.brief ? (c.summary || {}).question : specValue(c, 'question');
         return h('tr', { class: 'click', onclick: () => go('#/explore/' + c.id) },
           h('td', null, h('b', { style: { fontWeight: 500 } }, c.name),
             question ? h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '2px' } }, question) : null,
@@ -430,7 +457,7 @@ function renderChartList(main) {
           h('td', null, h('span', { class: 'vt' }, ic(VIZ[c.viz].icon), VIZ[c.viz].label)),
           h('td', null, (DS[c.datasetId] || {}).name || h('span', { class: 'pill acc' }, 'нет данных')),
           h('td', null, nSpec
-            ? h('span', { class: 'pill pri', title: SPEC_FIELDS.filter(f => specValue(c, f.key)).map(f => f.label + ': ' + (f.key === 'priority' ? specPriorityLabel(specValue(c, f.key)) : specValue(c, f.key))).join('\n') }, nSpec + '/' + SPEC_FIELDS.length)
+            ? h('span', { class: 'pill pri', title: c.brief ? 'Откройте график, чтобы увидеть поля ТЗ' : SPEC_FIELDS.filter(f => specValue(c, f.key)).map(f => f.label + ': ' + (f.key === 'priority' ? specPriorityLabel(specValue(c, f.key)) : specValue(c, f.key))).join('\n') }, nSpec + '/' + SPEC_FIELDS.length)
             : h('span', { class: 'muted' }, '—')),
           h('td', null, used.length ? used.map(d => h('a', { href: '#/d/' + d.id, onclick: e => e.stopPropagation(), style: { marginRight: '8px' } }, d.title)) : h('span', { class: 'muted' }, '—')),
           h('td', { class: 'muted' }, fmtWhen(c.updated)),
@@ -445,8 +472,11 @@ async function deleteChart(id) {
   const used = chartUsage(id);
   const txt = used.length ? `График «${c.name}» будет удалён и исчезнет из ${used.length} ${plural(used.length, 'шаблона', 'шаблонов', 'шаблонов')}: ${used.map(d => d.title).join(', ')}.` : `График «${c.name}» будет удалён.`;
   if (!(await confirmDialog('Удалить график', txt))) return false;
+  // Блок нужно снять с шаблонов, а для этого их тела должны быть на руках:
+  // правка объекта без тела не уедет на сервер — и не должна
+  await ensureBodies('dashboards', used.map(d => d.id));
   delete STATE.charts[id];
-  used.forEach(d => d.tabs.forEach(t => { t.items = t.items.filter(i => i.chartId !== id); }));
+  used.forEach(d => (d.tabs || []).forEach(t => { t.items = t.items.filter(i => i.chartId !== id); }));
   saveState();
   toast('График удалён');
   return true;

@@ -14,6 +14,11 @@ function renderDashboard(main, id, q) {
     main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Шаблон не найден'), 'Возможно, его удалили.', h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем шаблонам'))));
     return () => { };
   }
+  /* За сервисом в списке приезжает краткая форма: вкладок и блоков в ней нет.
+     Дожидаемся тела шаблона и тел его блоков — одним пакетом, а не по блоку. */
+  if (saved.brief || dashChartIds(saved).some(cid => (STATE.charts[cid] || {}).brief)) {
+    return waitForBodies(main, ensureDashboardBody(id));
+  }
   // Без права правки режимы правки не открываются даже по прямой ссылке
   const mayEdit = canEdit(saved);
   if (!mayEdit && (q.edit === '1' || q.tune === '1')) toast(whyReadOnly(saved), true);
@@ -651,6 +656,12 @@ function renderDashboard(main, id, q) {
     paintBody();
   }
   function addItem(item) {
+    /* Блок с чужого списка может быть ещё без тела: тогда сначала дождёмся его
+       и повторим — рисовать график по огрызку нечем. */
+    if (item.chartId && (STATE.charts[item.chartId] || {}).brief) {
+      ensureBodies('charts', [item.chartId]).then(() => addItem(item));
+      return;
+    }
     const t = curTab();
     item.i = uid('i');
     const sz = itemDefaultSize(item.type, item.chartId ? STATE.charts[item.chartId] : null);

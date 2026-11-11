@@ -1071,7 +1071,11 @@ async function renderChart(root, chart, opts = {}) {
     cross: opts.onCross || null, crossActive: opts.crossActive || null,
   };
   try { await viz.render(root, ctx); }
-  catch (e) { console.error(e); vizMsg(root, 'Ошибка построения: ' + e.message, true); return e.message; }
+  catch (e) {
+    // Отмена — не поломка: страницу закрыли, пока расчёт ждал очереди
+    if (e && e.kind === 'cancelled') return null;
+    console.error(e); vizMsg(root, 'Ошибка построения: ' + e.message, true); return e.message;
+  }
   return null;
 }
 function buildChartFilters(ds, params, extra) {

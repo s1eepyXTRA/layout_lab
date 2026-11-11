@@ -157,3 +157,72 @@ def test_vybor_kolonok_iz_predprosmotra_uvazhaetsya(client, ds, tmp_path, stage_
     # Колонка «Код» не загружалась вовсе, а подпись первой — та, что ввёл человек
     assert [c["label"] for c in res["columns"]] == ["Филиал", "Выручка, ₽"]
     assert [c["type"] for c in res["columns"]] == ["string", "number"]
+
+
+def test_predel_strok_dejstvuet(client, ds, tmp_path, stage_file, db, monkeypatch):
+    """Предел числа строк был объявлен и не применялся нигде: файл на миллион
+    строк заливался целиком. Теперь разбор останавливается на пределе, набор
+    остаётся рабочим, а срезка видна человеку."""
+    monkeypatch.setattr("app.ingest.MAX_UPLOAD_ROWS", 10)
+    res = ingest_file(stage_file("t9", write_csv(tmp_path, rows=50)), "ds_file",
+                      "vygruzka.csv", "a.smirnova")
+    assert res["rows"] == 10
+    assert res["truncated"] is True
+    with engine.connect() as conn:
+        assert conn.execute(text(
+            f"select count(*) from kobra_uploads.{table_name('ds_file')}")).scalar() == 10
+    # Набор готов к работе, а не застрял в полуготовом виде
+    from app.core import Dataset
+    body = db.get(Dataset, "ds_file").body
+    assert body["state"] == "ready"
+    assert body["rowCount"] == 10
+    assert body["truncated"] is True
+    assert body["rowLimit"] == 10
+    assert task_get("t9")["state"] == "done"
+
+
+def test_fayl_rovno_po_predelu_ne_schitaetsya_srezannym(client, ds, tmp_path, stage_file, db):
+    """«Ровно по пределу» и «срезали» — разные вещи: пометка не должна появляться
+    у набора, который влез целиком."""
+    from app.core import Dataset
+    ingest_file(stage_file("t10", write_csv(tmp_path, rows=10)), "ds_file",
+                "vygruzka.csv", "a.smirnova")
+    body = db.get(Dataset, "ds_file").body
+    assert body["truncated"] is False
+    assert body["rowLimit"] is None
+
+
+def test_indeks_po_vremeni_sozdaetsya(client, ds, tmp_path, stage_file):
+    """Фильтр по периоду стоит почти на каждом дашборде, а индексов не было
+    вовсе: каждый период читал таблицу целиком."""
+    ingest_file(stage_file("t11", write_csv(tmp_path, rows=10)), "ds_file",
+                "vygruzka.csv", "a.smirnova")
+    with engine.connect() as conn:
+        idx = conn.execute(text(
+            "select indexdef from pg_indexes where schemaname = 'kobra_uploads' and tablename = :t"
+        ), {"t": table_name("ds_file")}).scalars().all()
+    assert any("data_zakaza" in d for d in idx), idx
+
+
+def test_bez_daty_indeks_ne_sozdaetsya(client, ds, tmp_path, stage_file):
+    p = tmp_path / "bez_daty.csv"
+    with io.open(p, "w", encoding="utf-8", newline="") as fh:
+        fh.write("Город;Выручка\n")
+        for i in range(10):
+            fh.write(f"Москва;{100 + i}\n")
+    ingest_file(stage_file("t12", str(p)), "ds_file", "bez_daty.csv", "a.smirnova")
+    with engine.connect() as conn:
+        idx = conn.execute(text(
+            "select count(*) from pg_indexes where schemaname = 'kobra_uploads' and tablename = :t"
+        ), {"t": table_name("ds_file")}).scalar()
+    assert idx == 0
+
+
+def test_shag_indeksacii_idempotenten(client, ds, tmp_path, stage_file):
+    """Шаг для наборов, залитых до появления индексов, можно запускать сколько
+    угодно раз: он идёт на работающем сервисе."""
+    from app.index_datasets import main
+    ingest_file(stage_file("t13", write_csv(tmp_path, rows=10)), "ds_file",
+                "vygruzka.csv", "a.smirnova")
+    assert main() == 1
+    assert main() == 1

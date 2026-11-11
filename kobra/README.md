@@ -269,8 +269,10 @@ docker run -p 8000:8000 -e KOBRA_DATABASE_URL=... -e KOBRA_SECRET_KEY=... kobra:
 | `KOBRA_AUTH_TYPE` | `db` или `ldap` |
 | `KOBRA_LOAD_DEMO` | Загрузить демо-наборы при первом старте (`1`/`0`) |
 | `KOBRA_ADMIN_USER`, `KOBRA_ADMIN_PASSWORD` | Первый админ, если база пустая |
-| `KOBRA_MAX_UPLOAD_ROWS`, `KOBRA_MAX_FILE_MB` | Пределы загрузки |
+| `KOBRA_MAX_UPLOAD_ROWS`, `KOBRA_MAX_FILE_MB` | Пределы загрузки: строк и размера файла. Оба применяет сервис и оба называет до загрузки; строки режутся по пределу, и на странице набора написано, что загружены первые N |
+| `KOBRA_DB_POOL`, `KOBRA_DB_POOL_OVERFLOW`, `KOBRA_THREADPOOL` | Пул соединений и потоков **на под**. Потоков не больше, чем соединений. На нескольких подах считать: `(pool + overflow) × replicas + воркер + миграции < max_connections` |
 | `KOBRA_MIGRATE_ON_START` | Прокатить миграции при старте контейнера (для разработки) |
+| `KOBRA_INDEX_DATASETS` | Роль `migrate` после миграций создаёт индексы по времени у наборов, залитых раньше (`1`/`0`) |
 
 Проверить, что поднялось: `/healthz` — процесс жив, `/readyz` — база доступна и сервис готов.
 

@@ -1789,6 +1789,11 @@ async function storageDetect() {
   return storageMode;
 }
 
+/* Пределы загрузки называет тот, кто их применяет: за сервисом это сервис, и
+   его числа могут не совпадать с клиентскими. Без сервиса — свои. */
+const storageMaxRows = () => (storageIsServer() && storageInfo.maxRows) || MAX_UPLOAD_ROWS;
+const storageMaxFileMb = () => (storageIsServer() && storageInfo.maxFileMb) || 0;
+
 /* ---------- Обращение к API ---------- */
 const storageToken = () => lsGet(LS_TOKEN) || '';
 function storageSetToken(t) { if (t) lsSet(LS_TOKEN, t); else localStorage.removeItem(LS_TOKEN); }
@@ -1846,15 +1851,77 @@ async function storageLoad() {
   if (!storageIsServer()) return lsGet(LS_KEY);
   const state = { v: 2, charts: {}, dashboards: {}, datasets: {}, dsMetrics: {} };
   serverSeen.clear();
-  for (const kind of SERVER_KINDS) {
-    const list = await api(kind.path);
-    (list || []).forEach(o => {
+  /* Списки запрашиваем разом, а не друг за другом: они ни от чего не зависят,
+     а запуск приложения ждал три запроса подряд. Шаблоны и графики приезжают
+     краткой формой — тела подтянет тот экран, которому они нужны. */
+  const lists = await Promise.all(SERVER_KINDS.map(k => api(k.path)));
+  SERVER_KINDS.forEach((kind, i) => {
+    (lists[i] || []).forEach(o => {
       state[kind.key][o.id] = o;
       serverSeen.set(kind.key + ':' + o.id, { version: o.version, body: canonical(o) });
     });
-  }
+  });
   state.dsMetrics = (await api('/api/settings/dsMetrics')) || {};
   return state;
+}
+
+/* ---------- Тела объектов по требованию ----------
+   В списке приезжает краткая форма: имя, владелец, время правки и сводка для
+   карточки. Тело — когда объект открывают. Поэтому `STATE.charts[id]` больше не
+   обязательно содержит параметры, и страница, которой они нужны, сначала зовёт
+   `ensureBodies`.
+
+   Дописываем **в тот же объект**, а не подменяем его: открытая страница держит
+   ссылки на свой дашборд и его блоки — то же правило, что у `undoState`. */
+const BODY_BATCH = 50;          // столько тел берём одним запросом
+
+async function ensureBodies(kind, ids) {
+  if (!storageIsServer()) return true;
+  const path = (SERVER_KINDS.find(k => k.key === kind) || {}).path;
+  const store = STATE && STATE[kind];
+  if (!path || !store) return true;
+  const need = [...new Set(ids || [])].filter(id => store[id] && store[id].brief);
+  if (!need.length) return true;
+  const base = path.split('?')[0];
+  for (let i = 0; i < need.length; i += BODY_BATCH) {
+    const part = need.slice(i, i + BODY_BATCH);
+    const got = await api(`${base}?ids=${part.map(encodeURIComponent).join(',')}`);
+    (got || []).forEach(full => {
+      const obj = store[full.id];
+      if (!obj) return;
+      Object.assign(obj, full);
+      delete obj.brief;
+      serverSeen.set(kind + ':' + obj.id, { version: obj.version, body: canonical(obj) });
+    });
+    // Объект, которого в ответе не оказалось (удалён или доступ отозван), не
+    // должен остаться «вечно подгружающимся»: пусть страница скажет честно
+    part.forEach(id => { if (store[id] && store[id].brief) delete store[id].brief; });
+  }
+  return true;
+}
+
+/* Блоки шаблона: из тела, если оно приехало, иначе из сводки для карточки.
+   Это объявления функций, а не стрелки в const: их зовут файлы, идущие раньше
+   (auth.js, share.js, spec.js), а верхнеуровневый const виден только позже. */
+function dashChartIds(d) {
+  if (d && d.tabs) return d.tabs.flatMap(t => (t.items || []).map(i => i.chartId).filter(Boolean));
+  return (d && d.summary && d.summary.chartIds) || [];
+}
+function dashTabCount(d) {
+  return (d && d.tabs) ? d.tabs.length : ((d && d.summary && d.summary.tabs) || 0);
+}
+function dashChartCount(d) {
+  if (d && d.tabs) return d.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
+  return (d && d.summary && d.summary.charts) || 0;
+}
+
+/** Тела дашборда и всех его блоков: страница рисует их сразу все. */
+async function ensureDashboardBody(dashId) {
+  await ensureBodies('dashboards', [dashId]);
+  const d = STATE && STATE.dashboards && STATE.dashboards[dashId];
+  if (!d || !d.tabs) return true;
+  const ids = d.tabs.flatMap(t => (t.items || []).map(i => i.chartId).filter(Boolean));
+  return ensureBodies('charts', ids);
 }
 
 /** Сохранить состояние. В локальном режиме — синхронно, как было. */
@@ -1913,6 +1980,11 @@ async function serverSend(state) {
     for (const id of Object.keys(now)) {
       const obj = now[id];
       if (obj.preview) continue;              // черновик нигде не сохраняется
+      /* Тело этого объекта к нам не приезжало: отправить его значит записать
+         поверх настоящего тела огрызок из списка — то есть потерять чужую
+         работу. Такой объект не трогают, а кто собрался его править, сначала
+         зовёт ensureBodies. */
+      if (obj.brief) continue;
       const seen = serverSeen.get(kind.key + ':' + id);
       const body = canonical(obj);
       if (seen && seen.body === body) continue;
@@ -1979,7 +2051,7 @@ const isServerDataset = ds => storageIsServer() && !!ds && ds.kind === 'upload' 
 /** Тот же `runQuery`, но умеющий спросить сервер. Ответ одной формы в обоих случаях. */
 async function runQueryAsync(ds, spec) {
   if (!isServerDataset(ds)) return runQuery(ds, spec);
-  return api(`/api/datasets/${encodeURIComponent(ds.id)}/query`, { method: 'POST', body: spec });
+  return queryQueued(() => api(`/api/datasets/${encodeURIComponent(ds.id)}/query`, { method: 'POST', body: spec }));
 }
 
 /** Исходные строки для таблицы: тоже либо из памяти, либо из базы. */
@@ -1990,10 +2062,43 @@ async function runRawAsync(ds, opts) {
     if (orderCol) { const d = orderDesc ? -1 : 1; rs = rs.slice().sort((a, b) => d * cmpVals(a[orderCol], b[orderCol])); }
     return { rows: rs.slice(0, limit), filteredCount: rs.length };
   }
-  return api(`/api/datasets/${encodeURIComponent(ds.id)}/query`, {
+  return queryQueued(() => api(`/api/datasets/${encodeURIComponent(ds.id)}/query`, {
     method: 'POST',
     body: { raw: true, columns, filters, orderby: orderCol ? [{ key: orderCol, desc: !!orderDesc }] : [], limit },
-  });
+  }));
+}
+
+/* ---------- Очередь расчётов ----------
+   Дашборд рисует блоки сразу все: `cells.forEach(c => drawChart(c))`. На
+   демо-дашборде это 23 расчёта одновременно, и каждый занимает соединение к
+   базе — при пуле на 30 один человек почти исчерпывает его, а двое встают в
+   очередь уже на сервере. Поэтому очередь стоит здесь, в единственной точке,
+   через которую идёт расчёт: страницам о ней знать не нужно.
+
+   Наборы-схемы сюда не попадают — они считаются на месте и сети не касаются. */
+const QUERY_PARALLEL = 4;
+let queryActive = 0;
+const queryWaiting = [];
+
+function queryQueued(run) {
+  if (queryActive < QUERY_PARALLEL) return queryStart(run);
+  return new Promise((resolve, reject) => queryWaiting.push({ run, resolve, reject }));
+}
+function queryStart(run) {
+  queryActive++;
+  const done = () => {
+    queryActive--;
+    const next = queryWaiting.shift();
+    if (next) queryStart(next.run).then(next.resolve, next.reject);
+  };
+  return run().then(r => { done(); return r; }, e => { done(); throw e; });
+}
+/* Уход со страницы: ожидающие расчёты больше никому не нужны. Человек,
+   пролиставший три дашборда, иначе оставит сервису два десятка заявок. */
+function queryDropWaiting() {
+  const dropped = queryWaiting.splice(0, queryWaiting.length);
+  dropped.forEach(w => w.reject(Object.assign(new Error('расчёт отменён: страница закрыта'), { kind: 'cancelled' })));
+  return dropped.length;
 }
 
 /* ---------- Строки наборов ----------
@@ -2293,7 +2398,9 @@ function authStampAll() {
     n++;
   };
   const demo = STATE.dashboards && STATE.dashboards.d_demo;
-  const demoCharts = new Set(demo ? demo.tabs.flatMap(t => t.items.map(i => i.chartId)).filter(Boolean) : []);
+  // Тела у шаблона может не быть (краткая форма из списка) — тогда блоки
+  // известны из сводки: dashChartIds разбирается с обоими случаями
+  const demoCharts = new Set(demo ? dashChartIds(demo) : []);
   Object.values(STATE.dashboards || {}).forEach(d => stamp(d, d.id === 'd_demo'));
   Object.values(STATE.charts || {}).forEach(c => stamp(c, demoCharts.has(c.id)));
   Object.values(STATE.datasets || {}).forEach(d => stamp(d, false));
@@ -2660,6 +2767,8 @@ function parseRoute() {
 function route() {
   closePop();
   if (pageCleanup) { try { pageCleanup(); } catch (e) { console.error(e); } pageCleanup = null; }
+  // Расчёты, не успевшие начаться, больше никому не нужны: страницу закрыли
+  queryDropWaiting();
   const { parts, q } = parseRoute();
   const main = document.querySelector('.main');
   clear(main);
@@ -3798,7 +3907,11 @@ async function renderChart(root, chart, opts = {}) {
     cross: opts.onCross || null, crossActive: opts.crossActive || null,
   };
   try { await viz.render(root, ctx); }
-  catch (e) { console.error(e); vizMsg(root, 'Ошибка построения: ' + e.message, true); return e.message; }
+  catch (e) {
+    // Отмена — не поломка: страницу закрыли, пока расчёт ждал очереди
+    if (e && e.kind === 'cancelled') return null;
+    console.error(e); vizMsg(root, 'Ошибка построения: ' + e.message, true); return e.message;
+  }
   return null;
 }
 function buildChartFilters(ds, params, extra) {
@@ -4013,10 +4126,31 @@ async function resetAll() {
 }
 
 /* ---------- Список дашбордов ---------- */
+/* ---------- Экран ждёт тела объектов ----------
+   За сервисом список приезжает краткой формой, а тело — когда объект открывают.
+   Страница, которой нужно тело, рисует «загружаю» и перерисовывается, когда
+   оно приедет: так весь код страниц остаётся синхронным. */
+function waitForBodies(main, promise) {
+  const page = h('div', { class: 'page' });
+  const box = h('div', { class: 'empty' }, h('b', null, 'Загружаю…'));
+  page.appendChild(box);
+  main.appendChild(page);
+  let gone = false;
+  promise.then(() => { if (!gone) route(); }, e => {
+    if (gone) return;
+    clear(box);
+    box.appendChild(h('b', null, 'Не удалось загрузить'));
+    box.appendChild(document.createTextNode(e && e.message ? e.message : String(e)));
+    box.appendChild(h('br'));
+    box.appendChild(h('a', { class: 'btn', href: '#/dashboards' }, 'К шаблонам'));
+  });
+  return () => { gone = true; };
+}
 function dashThumb(d) {
   const th = h('div', { class: 'dash-thumb', 'aria-hidden': 'true' });
-  const tab = d.tabs[0];
-  if (!tab) return th;
+  // Миниатюра рисуется по сводке, если тела нет: карточке хватает раскладки
+  const tab = (d.tabs && d.tabs[0]) || (d.summary && d.summary.thumb ? { items: d.summary.thumb } : null);
+  if (!tab || !tab.items) return th;
   const maxY = Math.max(12, ...tab.items.map(i => i.y + i.h));
   tab.items.slice(0, 14).forEach(it => {
     const chart = it.type === 'chart' ? STATE.charts[it.chartId] : null;
@@ -4089,7 +4223,8 @@ function renderDashboardList(main) {
 function dashGrid(list) {
   const grid = h('div', { class: 'dash-grid' });
   list.forEach(d => {
-    const nCharts = d.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
+    const nCharts = dashChartCount(d);
+    const nTabs = dashTabCount(d);
     const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с шаблоном' }, ic('dots'));
     more.addEventListener('click', e => {
       e.stopPropagation();
@@ -4105,7 +4240,7 @@ function dashGrid(list) {
     grid.appendChild(h('div', { class: 'dash-card', tabindex: 0, role: 'link', onclick: () => go('#/d/' + d.id), onkeydown: e => { if (e.key === 'Enter') go('#/d/' + d.id); } },
       dashThumb(d),
       h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
-        h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${d.tabs.length} ${plural(d.tabs.length, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`),
+        h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${nTabs} ${plural(nTabs, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`),
         ownerTag(d)), more)));
   });
   grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый шаблон'));
@@ -4140,15 +4275,17 @@ function createBlankDashboard() {
 /* Копия должна быть самостоятельной. Раньше копировался только дашборд, а
    графики и придуманный набор оставались общими с исходником: правка в копии
    меняла оригинал, а удаление одного из двух уносило набор у второго. */
-function duplicateDashboard(id) {
+async function duplicateDashboard(id) {
   const src = STATE.dashboards[id];
   if (!src || !canView(src)) { toast('Шаблон недоступен', true); return; }
+  // Копия самостоятельная, значит нужны тела шаблона и всех его блоков
+  await ensureDashboardBody(id);
   const nid = uid('d_');
   const copy = clone(src);
   copy.id = nid; copy.title = src.title + ' (копия)'; copy.updated = Date.now();
   // Копия достаётся тому, кто копирует, — иначе чужой шаблон так и останется
   // недоступным для правки. Переписка с ассистентом личная и не копируется.
-  ['ownerLogin', 'team', 'shared', 'preview'].forEach(k => delete copy[k]);
+  ['ownerLogin', 'team', 'shared', 'preview', 'brief'].forEach(k => delete copy[k]);
 
   const srcDsId = (src.fromTemplate || {}).datasetId;
   let dsFrom = null, dsTo = null;
@@ -4166,7 +4303,7 @@ function duplicateDashboard(id) {
     if (!c) return;
     const n = clone(c);
     n.id = uid('c_');
-    ['ownerLogin', 'team', 'shared', 'preview'].forEach(k => delete n[k]);
+    ['ownerLogin', 'team', 'shared', 'preview', 'brief'].forEach(k => delete n[k]);
     if (dsTo && n.datasetId === dsFrom) n.datasetId = dsTo;
     STATE.charts[n.id] = n;
     i.chartId = n.id;
@@ -4200,8 +4337,10 @@ async function deleteDashboard(id) {
 }
 
 /* ---------- Список графиков ---------- */
+/* В каких шаблонах стоит этот график. Считается по сводке, если тело шаблона не
+   приезжало: иначе список графиков тянул бы тела всех шаблонов сервиса. */
 function chartUsage(chartId) {
-  return Object.values(STATE.dashboards).filter(d => d.tabs.some(t => t.items.some(i => i.chartId === chartId)));
+  return Object.values(STATE.dashboards).filter(d => !d.preview && dashChartIds(d).includes(chartId));
 }
 function renderChartList(main) {
   const page = h('div', { class: 'page' });
@@ -4227,13 +4366,14 @@ function renderChartList(main) {
         const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с графиком' }, ic('dots'));
         more.addEventListener('click', e => { e.stopPropagation(); openMenu(more, [
           { label: canEdit(c) ? 'Редактировать' : 'Открыть', icon: canEdit(c) ? 'edit' : 'eye', onClick: () => go('#/explore/' + c.id) },
-          { label: 'Дублировать', icon: 'copy', onClick: () => { const n = clone(c); n.id = uid('c_'); n.name += ' (копия)'; n.updated = Date.now(); delete n.ownerLogin; delete n.shared; STATE.charts[n.id] = n; saveState(); paint(); } },
+          { label: 'Дублировать', icon: 'copy', onClick: async () => { await ensureBodies('charts', [c.id]); const n = clone(c); n.id = uid('c_'); n.name += ' (копия)'; n.updated = Date.now(); delete n.ownerLogin; delete n.shared; delete n.brief; STATE.charts[n.id] = n; saveState(); paint(); } },
           canShare(c) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(c, 'графику', () => { saveState(); paint(); }) } : null,
           canEdit(c) ? '-' : null,
           canEdit(c) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteChart(c.id).then(ok => ok && paint()) } : null,
         ]); });
-        const nSpec = specFilledCount(c);
-        const question = specValue(c, 'question');
+        // Тела графика здесь нет: заполненность ТЗ и бизнес-вопрос — из сводки
+        const nSpec = c.brief ? ((c.summary || {}).spec || 0) : specFilledCount(c);
+        const question = c.brief ? (c.summary || {}).question : specValue(c, 'question');
         return h('tr', { class: 'click', onclick: () => go('#/explore/' + c.id) },
           h('td', null, h('b', { style: { fontWeight: 500 } }, c.name),
             question ? h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '2px' } }, question) : null,
@@ -4241,7 +4381,7 @@ function renderChartList(main) {
           h('td', null, h('span', { class: 'vt' }, ic(VIZ[c.viz].icon), VIZ[c.viz].label)),
           h('td', null, (DS[c.datasetId] || {}).name || h('span', { class: 'pill acc' }, 'нет данных')),
           h('td', null, nSpec
-            ? h('span', { class: 'pill pri', title: SPEC_FIELDS.filter(f => specValue(c, f.key)).map(f => f.label + ': ' + (f.key === 'priority' ? specPriorityLabel(specValue(c, f.key)) : specValue(c, f.key))).join('\n') }, nSpec + '/' + SPEC_FIELDS.length)
+            ? h('span', { class: 'pill pri', title: c.brief ? 'Откройте график, чтобы увидеть поля ТЗ' : SPEC_FIELDS.filter(f => specValue(c, f.key)).map(f => f.label + ': ' + (f.key === 'priority' ? specPriorityLabel(specValue(c, f.key)) : specValue(c, f.key))).join('\n') }, nSpec + '/' + SPEC_FIELDS.length)
             : h('span', { class: 'muted' }, '—')),
           h('td', null, used.length ? used.map(d => h('a', { href: '#/d/' + d.id, onclick: e => e.stopPropagation(), style: { marginRight: '8px' } }, d.title)) : h('span', { class: 'muted' }, '—')),
           h('td', { class: 'muted' }, fmtWhen(c.updated)),
@@ -4256,8 +4396,11 @@ async function deleteChart(id) {
   const used = chartUsage(id);
   const txt = used.length ? `График «${c.name}» будет удалён и исчезнет из ${used.length} ${plural(used.length, 'шаблона', 'шаблонов', 'шаблонов')}: ${used.map(d => d.title).join(', ')}.` : `График «${c.name}» будет удалён.`;
   if (!(await confirmDialog('Удалить график', txt))) return false;
+  // Блок нужно снять с шаблонов, а для этого их тела должны быть на руках:
+  // правка объекта без тела не уедет на сервер — и не должна
+  await ensureBodies('dashboards', used.map(d => d.id));
   delete STATE.charts[id];
-  used.forEach(d => d.tabs.forEach(t => { t.items = t.items.filter(i => i.chartId !== id); }));
+  used.forEach(d => (d.tabs || []).forEach(t => { t.items = t.items.filter(i => i.chartId !== id); }));
   saveState();
   toast('График удалён');
   return true;
@@ -4386,6 +4529,11 @@ function renderDashboard(main, id, q) {
   if (!saved) {
     main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Шаблон не найден'), 'Возможно, его удалили.', h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем шаблонам'))));
     return () => { };
+  }
+  /* За сервисом в списке приезжает краткая форма: вкладок и блоков в ней нет.
+     Дожидаемся тела шаблона и тел его блоков — одним пакетом, а не по блоку. */
+  if (saved.brief || dashChartIds(saved).some(cid => (STATE.charts[cid] || {}).brief)) {
+    return waitForBodies(main, ensureDashboardBody(id));
   }
   // Без права правки режимы правки не открываются даже по прямой ссылке
   const mayEdit = canEdit(saved);
@@ -5024,6 +5172,12 @@ function renderDashboard(main, id, q) {
     paintBody();
   }
   function addItem(item) {
+    /* Блок с чужого списка может быть ещё без тела: тогда сначала дождёмся его
+       и повторим — рисовать график по огрызку нечем. */
+    if (item.chartId && (STATE.charts[item.chartId] || {}).brief) {
+      ensureBodies('charts', [item.chartId]).then(() => addItem(item));
+      return;
+    }
     const t = curTab();
     item.i = uid('i');
     const sz = itemDefaultSize(item.type, item.chartId ? STATE.charts[item.chartId] : null);
@@ -5488,6 +5642,8 @@ function renderExplore(main, parts, q) {
   } else {
     const c = STATE.charts[parts[1]];
     if (!c) { main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'График не найден'), h('a', { class: 'btn', href: '#/charts' }, 'Ко всем графикам')))); return () => { }; }
+    // Параметров графика в краткой форме нет: конструктору нужно тело
+    if (c.brief) return waitForBodies(main, ensureBodies('charts', [c.id]));
     chart = clone(c);
   }
   const back = q.back && STATE.dashboards[q.back] ? q.back : null;
@@ -5719,7 +5875,9 @@ function renderExplore(main, parts, q) {
       foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена'), h('button', { class: 'btn primary', onclick: () => { close(); doSave(name.trim() || 'Без названия', mode, dashId); } }, 'Сохранить')],
     });
   }
-  function doSave(name, mode, dashId) {
+  async function doSave(name, mode, dashId) {
+    // Блок кладут на выбранный шаблон, значит нужны его вкладки — то есть тело
+    if (dashId && dashId !== '__new') await ensureBodies('dashboards', [dashId]);
     chart.name = name;
     if (mode === 'new' || !chart.id) { chart.id = uid('c_'); delete chart.ownerLogin; delete chart.shared; }
     chart.updated = Date.now();
@@ -5811,6 +5969,11 @@ function renderDatasetPage(main, id) {
   if (d.missingRows) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
     d.fromTemplate ? 'Набор приехал из шаблона без данных. Загрузите файл с такими же колонками — графики оживут сами.'
       : 'Строки этого набора не найдены. Загрузите файл заново.'));
+  /* Срезка по пределу — не мелочь: по такому набору человек построит шаблон и
+     решит, что видит все данные. Молчать нельзя. */
+  if (d.truncated) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
+    ic('upload'), `Загружены первые ${fmtNum(dsRowCount(d), 'int')} ${plural(dsRowCount(d), 'строка', 'строки', 'строк')}: в файле их больше, чем разрешено`
+      + (d.rowLimit ? ` (предел — ${fmtNum(d.rowLimit, 'int')}).` : '.')));
   if (isSchemaDs(d)) page.appendChild(h('div', { class: 'edit-banner fake-banner', style: { borderRadius: '8px', marginBottom: '16px' } }, ic('schema'),
     `${fmtNum(d.rows.length, 'int')} ${plural(d.rows.length, 'строка', 'строки', 'строк')} придумано по схеме: цифры правдоподобные, но ненастоящие. Период — ${fmtDate(parseIsoDate(d.schema.dateFrom))} — ${fmtDate(parseIsoDate(d.schema.dateTo))}.`));
 
@@ -5921,11 +6084,14 @@ async function deleteDataset(d) {
   const charts = Object.values(STATE.charts).filter(c => c.datasetId === d.id);
   const txt = charts.length ? `Вместе с набором «${d.name}» удалятся ${charts.length} ${plural(charts.length, 'график', 'графика', 'графиков')}, построенных на нём.` : `Набор «${d.name}» будет удалён из браузера.`;
   if (!(await confirmDialog('Удалить набор данных', txt))) return;
+  /* Блоки снимаются со всех шаблонов, а фильтры чистятся у каждого — значит
+     нужны их тела: правка объекта без тела на сервер не уедет. */
+  await ensureBodies('dashboards', Object.keys(STATE.dashboards));
   charts.forEach(c => {
     delete STATE.charts[c.id];
-    Object.values(STATE.dashboards).forEach(db => db.tabs.forEach(t => { t.items = t.items.filter(i => i.chartId !== c.id); }));
+    Object.values(STATE.dashboards).forEach(db => (db.tabs || []).forEach(t => { t.items = t.items.filter(i => i.chartId !== c.id); }));
   });
-  Object.values(STATE.dashboards).forEach(db => { db.filters = db.filters.filter(f => f.datasetId !== d.id); });
+  Object.values(STATE.dashboards).forEach(db => { db.filters = (db.filters || []).filter(f => f.datasetId !== d.id); });
   delete STATE.datasets[d.id]; delete DS[d.id];
   await storageDropRows(d.id);
   saveState();
@@ -6066,7 +6232,12 @@ function openUploadPreview(file, parsed) {
         : `${fmtNum(data.length, 'int')} ${plural(data.length, 'строка', 'строки', 'строк')}`)
       + (parsed.delimiter ? `, разделитель «${parsed.delimiter === '	' ? 'табуляция' : parsed.delimiter}»` : '')
       + '. Проверьте типы колонок: от них зависит, что можно суммировать и где строить ось времени.'
-      + (!storageIsServer() && data.length > MAX_UPLOAD_ROWS ? ` Будут загружены первые ${fmtNum(MAX_UPLOAD_ROWS, 'int')} строк.` : '')));
+      /* Предел называем всегда, а не только когда уже видно, что файл больше:
+         за сервисом начало файла короткое, и по нему не понять, влезет ли он.
+         Числа — от того, кто предел применяет (storageMaxRows). */
+      + (storageIsServer()
+        ? ` Загружается не больше ${fmtNum(storageMaxRows(), 'int')} строк${storageMaxFileMb() ? ` и не больше ${storageMaxFileMb()} МБ` : ''}.`
+        : data.length > MAX_UPLOAD_ROWS ? ` Будут загружены первые ${fmtNum(MAX_UPLOAD_ROWS, 'int')} строк.` : '')));
     const tbl = h('table', null,
       h('thead', null, h('tr', null, cols.map(c => h('th', { style: c.include ? null : { opacity: .45 } },
         h('label', { class: 'check', style: { margin: 0 } }, h('input', { type: 'checkbox', checked: c.include, onchange: e => { c.include = e.target.checked; paint(); } }), 'Загружать'),
@@ -8630,12 +8801,12 @@ function collectRefs(dashIds, includeLoose) {
     const d = STATE.dashboards[id];
     if (!d) return;
     dashboards[id] = clone(d);
-    d.tabs.forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) charts[i.chartId] = clone(STATE.charts[i.chartId]); }));
+    (d.tabs || []).forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) charts[i.chartId] = clone(STATE.charts[i.chartId]); }));
     (d.filters || []).forEach(f => { if (f.datasetId) dsIds.add(f.datasetId); });
   });
   if (includeLoose) {
     const used = new Set();
-    Object.values(STATE.dashboards).forEach(d => d.tabs.forEach(t => t.items.forEach(i => i.chartId && used.add(i.chartId))));
+    Object.values(STATE.dashboards).forEach(d => dashChartIds(d).forEach(cid => used.add(cid)));
     Object.values(STATE.charts).forEach(c => { if (!used.has(c.id)) charts[c.id] = clone(c); });
   }
   Object.values(charts).forEach(c => dsIds.add(c.datasetId));
@@ -8686,7 +8857,13 @@ function exportFileName(dashIds, withData) {
 }
 
 /* ---------- Диалог экспорта ---------- */
-function openExportDialog(presetDashId) {
+async function openExportDialog(presetDashId) {
+  /* Выгрузка кладёт в файл тела шаблонов и блоков целиком, а в списке их нет:
+     за сервисом объект приезжает краткой формой. Дожидаемся тел до диалога —
+     иначе в файл уедет огрызок, и человек узнает об этом у коллеги. */
+  const visible = Object.values(STATE.dashboards).filter(d => canView(d) && !d.preview);
+  await ensureBodies('dashboards', presetDashId ? [presetDashId] : visible.map(d => d.id));
+  await ensureBodies('charts', visible.flatMap(d => dashChartIds(d)));
   const all = Object.values(STATE.dashboards).filter(d => canView(d)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   const picked = new Set(presetDashId && STATE.dashboards[presetDashId] ? [presetDashId] : all.map(d => d.id));
   let withData = false, fakeData = true, includeLoose = false;
@@ -9129,7 +9306,7 @@ function specFilterRow(D, f) {
 /* ---------- Сборка документа ---------- */
 function dashSpecDatasets(D) {
   const ids = new Set();
-  D.tabs.forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) ids.add(STATE.charts[i.chartId].datasetId); }));
+  (D.tabs || []).forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) ids.add(STATE.charts[i.chartId].datasetId); }));
   (D.filters || []).forEach(f => { if (f.datasetId) ids.add(f.datasetId); });
   return [...ids];
 }
@@ -9140,7 +9317,7 @@ function buildSpecMd(dash, opts = {}) {
   if (!D) throw new Error('Шаблон не найден');
   const L = [];
   const dsIds = dashSpecDatasets(D);
-  const nCharts = D.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
+  const nCharts = dashChartCount(D);
   const fake = dsIds.map(x => DS[x]).filter(isSchemaDs);
 
   L.push(`# ТЗ дашборда «${mdEsc(D.title)}»`, '');
@@ -9161,7 +9338,7 @@ function buildSpecMd(dash, opts = {}) {
       + fake.map(d => '«' + mdEsc(d.name) + '»').join(', ')
       + ` ${plural(fake.length, 'создан', 'созданы', 'созданы')} по описанию колонок, цифры на графиках придуманы и для отчётности не годятся.`, '');
   }
-  L.push(`- Вкладок: ${D.tabs.length}, графиков: ${nCharts}, фильтров дашборда: ${(D.filters || []).length}`);
+  L.push(`- Вкладок: ${dashTabCount(D)}, графиков: ${nCharts}, фильтров дашборда: ${(D.filters || []).length}`);
   L.push(`- Наборы данных: ${dsIds.map(x => DS[x] ? mdEsc(DS[x].name) : `не найден (${mdEsc(x)})`).join(', ') || '—'}`);
   L.push(`- Кросс-фильтрация (клик по графику фильтрует остальные): ${D.crossFilter ? 'включена' : 'выключена'}`);
   if (D.scheme && COLOR_SCHEMES[D.scheme]) L.push(`- Цветовая схема дашборда: ${COLOR_SCHEMES[D.scheme].label}`);
@@ -9178,7 +9355,7 @@ function buildSpecMd(dash, opts = {}) {
   }
 
   const noQuestion = [];
-  D.tabs.forEach((t, ti) => {
+  (D.tabs || []).forEach((t, ti) => {
     L.push(`## Вкладка ${ti + 1}. «${mdEsc(t.title)}»`, '');
     const items = [...t.items].sort((a, b) => a.y - b.y || a.x - b.x);
     if (!items.length) L.push('_Вкладка пустая._', '');
@@ -9217,7 +9394,7 @@ function specFileName(D) {
 function openSpecTable(dash) {
   const D = typeof dash === 'string' ? STATE.dashboards[dash] : dash;
   if (!D) { toast('Шаблон не найден', true); return; }
-  const rows = D.tabs.flatMap(t => t.items
+  const rows = (D.tabs || []).flatMap(t => t.items
     .filter(i => i.type === 'chart' && STATE.charts[i.chartId])
     .map(i => ({ tab: t.title, chart: STATE.charts[i.chartId] })));
   if (!rows.length) { toast('На шаблоне нет блоков', true); return; }
@@ -9288,8 +9465,8 @@ function openSpecDialog(dash) {
   if (!D) { toast('Шаблон не найден', true); return; }
   let author = lsGet(LS_SPEC_AUTHOR) || '';
   let note = '';
-  const nCharts = D.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
-  const charts = D.tabs.flatMap(t => t.items.map(i => STATE.charts[i.chartId]).filter(Boolean));
+  const nCharts = dashChartCount(D);
+  const charts = (D.tabs || []).flatMap(t => t.items.map(i => STATE.charts[i.chartId]).filter(Boolean));
   const filled = charts.filter(c => specValue(c, 'question')).length;
   const body = h('div');
   body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 14px' } },
@@ -9301,7 +9478,7 @@ function openSpecDialog(dash) {
     field('Автор', h('input', { class: 'input', value: author, placeholder: 'Кто составил ТЗ', oninput: e => { author = e.target.value; } })),
     field('Комментарий', h('input', { class: 'input', value: note, placeholder: 'Например: на согласование с дирекцией', oninput: e => { note = e.target.value; } }))));
   body.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: 0 } },
-    `В файле: ${D.tabs.length} ${plural(D.tabs.length, 'вкладка', 'вкладки', 'вкладок')}, ${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, `
+    `В файле: ${dashTabCount(D)} ${plural(dashTabCount(D), 'вкладка', 'вкладки', 'вкладок')}, ${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, `
     + `${(D.filters || []).length} ${plural((D.filters || []).length, 'фильтр', 'фильтра', 'фильтров')} шаблона. `
     + (nCharts ? `Бизнес-вопрос заполнен у ${filled} из ${nCharts}.` : '')));
 

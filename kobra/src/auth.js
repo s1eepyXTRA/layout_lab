@@ -223,7 +223,9 @@ function authStampAll() {
     n++;
   };
   const demo = STATE.dashboards && STATE.dashboards.d_demo;
-  const demoCharts = new Set(demo ? demo.tabs.flatMap(t => t.items.map(i => i.chartId)).filter(Boolean) : []);
+  // Тела у шаблона может не быть (краткая форма из списка) — тогда блоки
+  // известны из сводки: dashChartIds разбирается с обоими случаями
+  const demoCharts = new Set(demo ? dashChartIds(demo) : []);
   Object.values(STATE.dashboards || {}).forEach(d => stamp(d, d.id === 'd_demo'));
   Object.values(STATE.charts || {}).forEach(c => stamp(c, demoCharts.has(c.id)));
   Object.values(STATE.datasets || {}).forEach(d => stamp(d, false));

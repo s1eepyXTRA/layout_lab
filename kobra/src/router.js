@@ -23,6 +23,8 @@ function parseRoute() {
 function route() {
   closePop();
   if (pageCleanup) { try { pageCleanup(); } catch (e) { console.error(e); } pageCleanup = null; }
+  // Расчёты, не успевшие начаться, больше никому не нужны: страницу закрыли
+  queryDropWaiting();
   const { parts, q } = parseRoute();
   const main = document.querySelector('.main');
   clear(main);

@@ -88,3 +88,20 @@ def test_nesushchestvuyushchiy_obyekt(probe_client, make_user, login, auth):
     make_user("a.smirnova")
     r = probe_client.get("/probe/net-takogo", headers=auth(login("a.smirnova")))
     assert r.status_code == 404
+
+
+def test_potokov_ne_bolshe_soedineniy():
+    """Пул потоков под синхронные маршруты не должен превышать пул соединений:
+    иначе лишние потоки ждут очередь к пулу, а не базу, и это выглядит как
+    «база медленная»."""
+    from app.core import DB_POOL, DB_POOL_OVERFLOW, THREADPOOL
+    assert THREADPOOL <= DB_POOL + DB_POOL_OVERFLOW
+
+
+def test_potokov_ne_bolshe_soedineniy_pri_lyuboy_nastroyke():
+    """Размеры пулов — настройка развёртывания, но запросили потоков больше,
+    чем соединений, — берём меньшее: лишние потоки ждали бы очередь к пулу."""
+    from app.core import threadpool_size
+    assert threadpool_size(40, 4, 6) == 10
+    assert threadpool_size(8, 10, 20) == 8
+    assert threadpool_size(0, 10, 20) == 1

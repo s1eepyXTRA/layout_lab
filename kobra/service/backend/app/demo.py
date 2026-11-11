@@ -18,7 +18,7 @@ import os
 from sqlalchemy import text
 
 from app.core import LOAD_DEMO, Dataset, engine
-from app.ingest import UPLOAD_SCHEMA, SQL_TYPE, convert, quoted, table_name
+from app.ingest import UPLOAD_SCHEMA, SQL_TYPE, convert, ensure_time_index, quoted, table_name
 
 DEMO_DIR = os.path.join(os.path.dirname(__file__), "demo")
 DEMO_OWNER = "kobra"
@@ -39,6 +39,9 @@ def load_demo(db) -> int:
         if db.get(Dataset, ds_id) is not None:
             continue
         total = _copy_rows(ds_id, meta["columns"], rows_path)
+        # Демо-наборы индексируются тем же правилом, что и загруженные:
+        # «Выручка по месяцам» на демо считается не реже, чем на своих данных
+        ensure_time_index(table_name(ds_id), meta.get("mainDttm"))
         body = dict(meta, kind="upload", state="ready", rowCount=total)
         db.add(Dataset(
             id=ds_id, name=meta.get("name") or ds_id, kind="upload",

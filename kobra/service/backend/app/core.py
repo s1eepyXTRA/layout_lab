@@ -32,6 +32,21 @@ SESSION_DAYS = int(os.environ.get("KOBRA_SESSION_DAYS", "14"))
 # недоступная база выглядит как зависший сервис, и трафик с него не снимают
 CONNECT_TIMEOUT_SEC = int(os.environ.get("KOBRA_CONNECT_TIMEOUT_SEC", "3"))
 LOAD_DEMO = os.environ.get("KOBRA_LOAD_DEMO", "1") == "1"
+# Пул соединений и пул потоков. Их нельзя задавать независимо: синхронные
+# маршруты живут в пуле потоков, и каждый занятый поток хочет соединение.
+# Потоков больше, чем соединений, — значит часть потоков ждёт не базу, а
+# очередь к пулу, и выглядит это как «база медленная».
+DB_POOL = int(os.environ.get("KOBRA_DB_POOL", "10"))
+DB_POOL_OVERFLOW = int(os.environ.get("KOBRA_DB_POOL_OVERFLOW", "20"))
+
+
+def threadpool_size(requested: int, pool: int, overflow: int) -> int:
+    """Сколько потоков отдать синхронным маршрутам: не больше, чем соединений."""
+    return max(1, min(requested, pool + overflow))
+
+
+THREADPOOL = threadpool_size(int(os.environ.get("KOBRA_THREADPOOL", "30")),
+                             DB_POOL, DB_POOL_OVERFLOW)
 # Собранный интерфейс: тот же build/, который открывают двойным щелчком.
 FRONTEND_DIR = os.environ.get(
     "KOBRA_FRONTEND_DIR",
@@ -46,7 +61,7 @@ ROLES = ("Admin", "Alpha", "Gamma")
 
 # ---------- База метаданных ----------
 engine = create_engine(
-    DATABASE_URL, pool_pre_ping=True, pool_size=10, max_overflow=20,
+    DATABASE_URL, pool_pre_ping=True, pool_size=DB_POOL, max_overflow=DB_POOL_OVERFLOW,
     connect_args={"options": f"-c statement_timeout={QUERY_TIMEOUT_SEC * 1000}",
                   "connect_timeout": CONNECT_TIMEOUT_SEC} if DATABASE_URL.startswith("postgresql") else {},
 )
@@ -126,6 +141,10 @@ class Chart(Base):
     dataset_id = Column(String(64), nullable=False)
     params = Column(JSON, default=dict)
     body = Column(JSON, default=dict)  # клиентский объект целиком: spec, autoName и прочее
+    # Сводка для карточки в списке: считается при записи, чтобы список не читал
+    # тела. Список со телами — это и есть то, из-за чего запуск приложения
+    # зависел от объёма чужой работы в сервисе.
+    summary = Column(JSON, default=dict)
     owner_login = Column(String(120))  # владелец: тот, кто создал
     team = Column(String(200), default="")  # команда владельца на момент создания
     shared = Column(JSONB, default=list)  # логины соправителей (owners в Superset)
@@ -139,6 +158,7 @@ class Dashboard(Base):
     id = Column(String(64), primary_key=True)
     title = Column(String(300), nullable=False)
     body = Column(JSON, default=dict)  # вкладки, фильтры, fromTemplate — клиентский объект
+    summary = Column(JSON, default=dict)  # сводка для карточки: см. Chart.summary
     owner_login = Column(String(120))  # владелец: тот, кто создал
     team = Column(String(200), default="")  # команда владельца на момент создания
     shared = Column(JSONB, default=list)  # логины соправителей (owners в Superset)

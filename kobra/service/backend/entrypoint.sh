@@ -8,7 +8,12 @@ set -e
 case "${1:-api}" in
   migrate)
     echo "Миграции: приводим схему к нужной версии…"
-    exec python -m alembic upgrade head
+    python -m alembic upgrade head
+    # Индексы по времени у наборов, залитых до их появления. Шаг идемпотентен
+    # и к схеме метаданных не относится: таблицы наборов создаются в рантайме
+    if [ "${KOBRA_INDEX_DATASETS:-1}" = "1" ]; then
+      python -m app.index_datasets
+    fi
     ;;
   worker)
     # Воркер миграций не катит: это дело одного процесса, иначе они

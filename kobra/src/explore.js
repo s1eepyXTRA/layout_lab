@@ -140,6 +140,8 @@ function renderExplore(main, parts, q) {
   } else {
     const c = STATE.charts[parts[1]];
     if (!c) { main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'График не найден'), h('a', { class: 'btn', href: '#/charts' }, 'Ко всем графикам')))); return () => { }; }
+    // Параметров графика в краткой форме нет: конструктору нужно тело
+    if (c.brief) return waitForBodies(main, ensureBodies('charts', [c.id]));
     chart = clone(c);
   }
   const back = q.back && STATE.dashboards[q.back] ? q.back : null;
@@ -371,7 +373,9 @@ function renderExplore(main, parts, q) {
       foot: close => [h('button', { class: 'btn', onclick: close }, 'Отмена'), h('button', { class: 'btn primary', onclick: () => { close(); doSave(name.trim() || 'Без названия', mode, dashId); } }, 'Сохранить')],
     });
   }
-  function doSave(name, mode, dashId) {
+  async function doSave(name, mode, dashId) {
+    // Блок кладут на выбранный шаблон, значит нужны его вкладки — то есть тело
+    if (dashId && dashId !== '__new') await ensureBodies('dashboards', [dashId]);
     chart.name = name;
     if (mode === 'new' || !chart.id) { chart.id = uid('c_'); delete chart.ownerLogin; delete chart.shared; }
     chart.updated = Date.now();

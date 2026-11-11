@@ -53,6 +53,11 @@ function renderDatasetPage(main, id) {
   if (d.missingRows) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
     d.fromTemplate ? 'Набор приехал из шаблона без данных. Загрузите файл с такими же колонками — графики оживут сами.'
       : 'Строки этого набора не найдены. Загрузите файл заново.'));
+  /* Срезка по пределу — не мелочь: по такому набору человек построит шаблон и
+     решит, что видит все данные. Молчать нельзя. */
+  if (d.truncated) page.appendChild(h('div', { class: 'edit-banner', style: { borderRadius: '8px', marginBottom: '16px' } },
+    ic('upload'), `Загружены первые ${fmtNum(dsRowCount(d), 'int')} ${plural(dsRowCount(d), 'строка', 'строки', 'строк')}: в файле их больше, чем разрешено`
+      + (d.rowLimit ? ` (предел — ${fmtNum(d.rowLimit, 'int')}).` : '.')));
   if (isSchemaDs(d)) page.appendChild(h('div', { class: 'edit-banner fake-banner', style: { borderRadius: '8px', marginBottom: '16px' } }, ic('schema'),
     `${fmtNum(d.rows.length, 'int')} ${plural(d.rows.length, 'строка', 'строки', 'строк')} придумано по схеме: цифры правдоподобные, но ненастоящие. Период — ${fmtDate(parseIsoDate(d.schema.dateFrom))} — ${fmtDate(parseIsoDate(d.schema.dateTo))}.`));
 
@@ -163,11 +168,14 @@ async function deleteDataset(d) {
   const charts = Object.values(STATE.charts).filter(c => c.datasetId === d.id);
   const txt = charts.length ? `Вместе с набором «${d.name}» удалятся ${charts.length} ${plural(charts.length, 'график', 'графика', 'графиков')}, построенных на нём.` : `Набор «${d.name}» будет удалён из браузера.`;
   if (!(await confirmDialog('Удалить набор данных', txt))) return;
+  /* Блоки снимаются со всех шаблонов, а фильтры чистятся у каждого — значит
+     нужны их тела: правка объекта без тела на сервер не уедет. */
+  await ensureBodies('dashboards', Object.keys(STATE.dashboards));
   charts.forEach(c => {
     delete STATE.charts[c.id];
-    Object.values(STATE.dashboards).forEach(db => db.tabs.forEach(t => { t.items = t.items.filter(i => i.chartId !== c.id); }));
+    Object.values(STATE.dashboards).forEach(db => (db.tabs || []).forEach(t => { t.items = t.items.filter(i => i.chartId !== c.id); }));
   });
-  Object.values(STATE.dashboards).forEach(db => { db.filters = db.filters.filter(f => f.datasetId !== d.id); });
+  Object.values(STATE.dashboards).forEach(db => { db.filters = (db.filters || []).filter(f => f.datasetId !== d.id); });
   delete STATE.datasets[d.id]; delete DS[d.id];
   await storageDropRows(d.id);
   saveState();
@@ -308,7 +316,12 @@ function openUploadPreview(file, parsed) {
         : `${fmtNum(data.length, 'int')} ${plural(data.length, 'строка', 'строки', 'строк')}`)
       + (parsed.delimiter ? `, разделитель «${parsed.delimiter === '	' ? 'табуляция' : parsed.delimiter}»` : '')
       + '. Проверьте типы колонок: от них зависит, что можно суммировать и где строить ось времени.'
-      + (!storageIsServer() && data.length > MAX_UPLOAD_ROWS ? ` Будут загружены первые ${fmtNum(MAX_UPLOAD_ROWS, 'int')} строк.` : '')));
+      /* Предел называем всегда, а не только когда уже видно, что файл больше:
+         за сервисом начало файла короткое, и по нему не понять, влезет ли он.
+         Числа — от того, кто предел применяет (storageMaxRows). */
+      + (storageIsServer()
+        ? ` Загружается не больше ${fmtNum(storageMaxRows(), 'int')} строк${storageMaxFileMb() ? ` и не больше ${storageMaxFileMb()} МБ` : ''}.`
+        : data.length > MAX_UPLOAD_ROWS ? ` Будут загружены первые ${fmtNum(MAX_UPLOAD_ROWS, 'int')} строк.` : '')));
     const tbl = h('table', null,
       h('thead', null, h('tr', null, cols.map(c => h('th', { style: c.include ? null : { opacity: .45 } },
         h('label', { class: 'check', style: { margin: 0 } }, h('input', { type: 'checkbox', checked: c.include, onchange: e => { c.include = e.target.checked; paint(); } }), 'Загружать'),

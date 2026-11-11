@@ -13,6 +13,8 @@
 import os
 from contextlib import asynccontextmanager
 
+import anyio.to_thread
+
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,14 +26,18 @@ from app.auth import router as auth_router
 from app.objects import charts_router, dashboards_router, datasets_router
 from app.query_api import router as query_router
 from app.users import router as users_router
-from app.core import FRONTEND_DIR, SessionLocal, engine
+from app.core import FRONTEND_DIR, MAX_UPLOAD_ROWS, THREADPOOL, SessionLocal, engine
 from app.settings import router as settings_router
-from app.upload import router as upload_router
+from app.upload import MAX_FILE_MB, router as upload_router
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Старт сервиса: первый админ и демо-наполнение. Оба шага идемпотентны —
     при перезапуске и при нескольких экземплярах ничего не задвоится."""
+    # Пул потоков под синхронные маршруты: по умолчанию его 40, а соединений к
+    # базе 30 — десять потоков ждали бы очередь к пулу, а не базу. Менять его
+    # можно только внутри цикла событий, то есть здесь.
+    anyio.to_thread.current_default_thread_limiter().total_tokens = THREADPOOL
     db = SessionLocal()
     try:
         ensure_admin(db)
@@ -63,8 +69,13 @@ app.include_router(upload_router)
 def ping():
     """По этому ответу клиент понимает, что за страницей стоит сервис, и
     переключается на серверное хранилище. Без входа: отвечать «кто ты» ещё
-    некому, а решение о режиме нужно до экрана входа."""
-    return {"kobra": 1, "mode": "server", "auth": AUTH_TYPE}
+    некому, а решение о режиме нужно до экрана входа.
+
+    Пределы загрузки здесь же: их применяет сервис, значит он и должен их
+    называть — иначе клиент предупреждает человека своими числами, которые к
+    серверу отношения не имеют."""
+    return {"kobra": 1, "mode": "server", "auth": AUTH_TYPE,
+            "maxRows": MAX_UPLOAD_ROWS, "maxFileMb": MAX_FILE_MB}
 
 
 @app.get("/healthz")

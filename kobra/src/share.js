@@ -14,12 +14,12 @@ function collectRefs(dashIds, includeLoose) {
     const d = STATE.dashboards[id];
     if (!d) return;
     dashboards[id] = clone(d);
-    d.tabs.forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) charts[i.chartId] = clone(STATE.charts[i.chartId]); }));
+    (d.tabs || []).forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) charts[i.chartId] = clone(STATE.charts[i.chartId]); }));
     (d.filters || []).forEach(f => { if (f.datasetId) dsIds.add(f.datasetId); });
   });
   if (includeLoose) {
     const used = new Set();
-    Object.values(STATE.dashboards).forEach(d => d.tabs.forEach(t => t.items.forEach(i => i.chartId && used.add(i.chartId))));
+    Object.values(STATE.dashboards).forEach(d => dashChartIds(d).forEach(cid => used.add(cid)));
     Object.values(STATE.charts).forEach(c => { if (!used.has(c.id)) charts[c.id] = clone(c); });
   }
   Object.values(charts).forEach(c => dsIds.add(c.datasetId));
@@ -70,7 +70,13 @@ function exportFileName(dashIds, withData) {
 }
 
 /* ---------- Диалог экспорта ---------- */
-function openExportDialog(presetDashId) {
+async function openExportDialog(presetDashId) {
+  /* Выгрузка кладёт в файл тела шаблонов и блоков целиком, а в списке их нет:
+     за сервисом объект приезжает краткой формой. Дожидаемся тел до диалога —
+     иначе в файл уедет огрызок, и человек узнает об этом у коллеги. */
+  const visible = Object.values(STATE.dashboards).filter(d => canView(d) && !d.preview);
+  await ensureBodies('dashboards', presetDashId ? [presetDashId] : visible.map(d => d.id));
+  await ensureBodies('charts', visible.flatMap(d => dashChartIds(d)));
   const all = Object.values(STATE.dashboards).filter(d => canView(d)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   const picked = new Set(presetDashId && STATE.dashboards[presetDashId] ? [presetDashId] : all.map(d => d.id));
   let withData = false, fakeData = true, includeLoose = false;

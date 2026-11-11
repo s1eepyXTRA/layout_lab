@@ -23,7 +23,7 @@ from typing import Iterator, Optional
 
 from sqlalchemy import text
 
-from app.core import SessionLocal, Dataset, engine
+from app.core import MAX_UPLOAD_ROWS, SessionLocal, Dataset, engine
 from app.guess import guess_type, parse_date_loose, parse_number_loose
 from app.queue import celery_app, task_set
 
@@ -203,22 +203,32 @@ def _ingest(task_id: str, ds_id: str, path: str, file_name: str, login: str,
     _create_table(table, keys, kinds)
 
     total = 0
+    src = _chain(sample, rows)
     with engine.raw_connection() as raw:
         cur = raw.cursor()
         copy_sql = f'COPY {UPLOAD_SCHEMA}.{table} ({", ".join(quoted(k) for k in keys)}) FROM STDIN'
         with cur.copy(copy_sql) as copy:
-            for row in _chain(sample, rows):
-                values = [convert(row[src] if src < len(row) else None, kinds[i])
-                          for i, src in enumerate(order)]
+            for row in src:
+                values = [convert(row[src_i] if src_i < len(row) else None, kinds[i])
+                          for i, src_i in enumerate(order)]
                 copy.write_row(values)
                 total += 1
                 if total % PROGRESS_EVERY == 0:
                     task_set(task_id, state="running", rows=total)
+                if total >= MAX_UPLOAD_ROWS:
+                    break
         raw.commit()
 
+    # Предел достигнут — но в файле могло ничего и не остаться. Разницу между
+    # «ровно по пределу» и «срезали» человеку знать важно: по срезанному набору
+    # он построит шаблон и не узнает, что видит часть данных.
+    truncated = total >= MAX_UPLOAD_ROWS and next(src, None) is not None
+
     columns = [{"key": keys[i], "label": labels[i], "type": kinds[i]} for i in range(len(keys))]
-    _finish_dataset(ds_id, columns, total, file_name, login)
-    return {"rows": total, "columns": columns, "dataset": ds_id}
+    main_dttm = next((c["key"] for c in columns if c["type"] == "date"), None)
+    ensure_time_index(table, main_dttm)
+    _finish_dataset(ds_id, columns, total, file_name, login, truncated)
+    return {"rows": total, "columns": columns, "dataset": ds_id, "truncated": truncated}
 
 
 def _fetch_file(task_id: str, file_name: str) -> str:
@@ -284,6 +294,28 @@ def _create_table(table: str, keys: list, kinds: list) -> None:
         conn.execute(text(f"CREATE TABLE {UPLOAD_SCHEMA}.{table} ({cols})"))
 
 
+def index_name(table: str) -> str:
+    return f"{table}_dttm_idx"
+
+
+def ensure_time_index(table: str, key: Optional[str]) -> None:
+    """Индекс по колонке времени набора — и `ANALYZE` следом.
+
+    Фильтр по периоду стоит почти на каждом дашборде, и без индекса он читает
+    таблицу целиком. Строим **после** `COPY`: на заливке индекс только замедляет
+    вставку и получается хуже по плотности. Составной (время плюс разрез) не
+    делаем — разрезы у каждого дашборда свои, и угадывать их значит угадать не то.
+    """
+    if not key:
+        return
+    with engine.begin() as conn:
+        conn.execute(text(
+            f"CREATE INDEX IF NOT EXISTS {index_name(table)} "
+            f"ON {UPLOAD_SCHEMA}.{table} ({quoted(key)})"
+        ))
+        conn.execute(text(f"ANALYZE {UPLOAD_SCHEMA}.{table}"))
+
+
 def table_exists(ds_id: str) -> bool:
     """Есть ли таблица со строками набора.
 
@@ -313,7 +345,8 @@ def _drop_table(ds_id: str) -> None:
         pass
 
 
-def _finish_dataset(ds_id: str, columns: list, total: int, file_name: str, login: str) -> None:
+def _finish_dataset(ds_id: str, columns: list, total: int, file_name: str, login: str,
+                    truncated: bool = False) -> None:
     """Набор становится готовым: колонки, счётчик строк и метрики по числовым."""
     db = SessionLocal()
     try:
@@ -326,6 +359,7 @@ def _finish_dataset(ds_id: str, columns: list, total: int, file_name: str, login
             "rowCount": total, "state": "ready",
             "mainDttm": next((c["key"] for c in columns if c["type"] == "date"), None),
             "metrics": _metrics(columns),
+            "truncated": truncated, "rowLimit": MAX_UPLOAD_ROWS if truncated else None,
         })
         ds.body = body
         ds.columns = columns

@@ -220,7 +220,7 @@ function specFilterRow(D, f) {
 /* ---------- Сборка документа ---------- */
 function dashSpecDatasets(D) {
   const ids = new Set();
-  D.tabs.forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) ids.add(STATE.charts[i.chartId].datasetId); }));
+  (D.tabs || []).forEach(t => t.items.forEach(i => { if (i.chartId && STATE.charts[i.chartId]) ids.add(STATE.charts[i.chartId].datasetId); }));
   (D.filters || []).forEach(f => { if (f.datasetId) ids.add(f.datasetId); });
   return [...ids];
 }
@@ -231,7 +231,7 @@ function buildSpecMd(dash, opts = {}) {
   if (!D) throw new Error('Шаблон не найден');
   const L = [];
   const dsIds = dashSpecDatasets(D);
-  const nCharts = D.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
+  const nCharts = dashChartCount(D);
   const fake = dsIds.map(x => DS[x]).filter(isSchemaDs);
 
   L.push(`# ТЗ дашборда «${mdEsc(D.title)}»`, '');
@@ -252,7 +252,7 @@ function buildSpecMd(dash, opts = {}) {
       + fake.map(d => '«' + mdEsc(d.name) + '»').join(', ')
       + ` ${plural(fake.length, 'создан', 'созданы', 'созданы')} по описанию колонок, цифры на графиках придуманы и для отчётности не годятся.`, '');
   }
-  L.push(`- Вкладок: ${D.tabs.length}, графиков: ${nCharts}, фильтров дашборда: ${(D.filters || []).length}`);
+  L.push(`- Вкладок: ${dashTabCount(D)}, графиков: ${nCharts}, фильтров дашборда: ${(D.filters || []).length}`);
   L.push(`- Наборы данных: ${dsIds.map(x => DS[x] ? mdEsc(DS[x].name) : `не найден (${mdEsc(x)})`).join(', ') || '—'}`);
   L.push(`- Кросс-фильтрация (клик по графику фильтрует остальные): ${D.crossFilter ? 'включена' : 'выключена'}`);
   if (D.scheme && COLOR_SCHEMES[D.scheme]) L.push(`- Цветовая схема дашборда: ${COLOR_SCHEMES[D.scheme].label}`);
@@ -269,7 +269,7 @@ function buildSpecMd(dash, opts = {}) {
   }
 
   const noQuestion = [];
-  D.tabs.forEach((t, ti) => {
+  (D.tabs || []).forEach((t, ti) => {
     L.push(`## Вкладка ${ti + 1}. «${mdEsc(t.title)}»`, '');
     const items = [...t.items].sort((a, b) => a.y - b.y || a.x - b.x);
     if (!items.length) L.push('_Вкладка пустая._', '');
@@ -308,7 +308,7 @@ function specFileName(D) {
 function openSpecTable(dash) {
   const D = typeof dash === 'string' ? STATE.dashboards[dash] : dash;
   if (!D) { toast('Шаблон не найден', true); return; }
-  const rows = D.tabs.flatMap(t => t.items
+  const rows = (D.tabs || []).flatMap(t => t.items
     .filter(i => i.type === 'chart' && STATE.charts[i.chartId])
     .map(i => ({ tab: t.title, chart: STATE.charts[i.chartId] })));
   if (!rows.length) { toast('На шаблоне нет блоков', true); return; }
@@ -379,8 +379,8 @@ function openSpecDialog(dash) {
   if (!D) { toast('Шаблон не найден', true); return; }
   let author = lsGet(LS_SPEC_AUTHOR) || '';
   let note = '';
-  const nCharts = D.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
-  const charts = D.tabs.flatMap(t => t.items.map(i => STATE.charts[i.chartId]).filter(Boolean));
+  const nCharts = dashChartCount(D);
+  const charts = (D.tabs || []).flatMap(t => t.items.map(i => STATE.charts[i.chartId]).filter(Boolean));
   const filled = charts.filter(c => specValue(c, 'question')).length;
   const body = h('div');
   body.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 14px' } },
@@ -392,7 +392,7 @@ function openSpecDialog(dash) {
     field('Автор', h('input', { class: 'input', value: author, placeholder: 'Кто составил ТЗ', oninput: e => { author = e.target.value; } })),
     field('Комментарий', h('input', { class: 'input', value: note, placeholder: 'Например: на согласование с дирекцией', oninput: e => { note = e.target.value; } }))));
   body.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: 0 } },
-    `В файле: ${D.tabs.length} ${plural(D.tabs.length, 'вкладка', 'вкладки', 'вкладок')}, ${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, `
+    `В файле: ${dashTabCount(D)} ${plural(dashTabCount(D), 'вкладка', 'вкладки', 'вкладок')}, ${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, `
     + `${(D.filters || []).length} ${plural((D.filters || []).length, 'фильтр', 'фильтра', 'фильтров')} шаблона. `
     + (nCharts ? `Бизнес-вопрос заполнен у ${filled} из ${nCharts}.` : '')));
 

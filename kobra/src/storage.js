@@ -57,6 +57,11 @@ async function storageDetect() {
   return storageMode;
 }
 
+/* Пределы загрузки называет тот, кто их применяет: за сервисом это сервис, и
+   его числа могут не совпадать с клиентскими. Без сервиса — свои. */
+const storageMaxRows = () => (storageIsServer() && storageInfo.maxRows) || MAX_UPLOAD_ROWS;
+const storageMaxFileMb = () => (storageIsServer() && storageInfo.maxFileMb) || 0;
+
 /* ---------- Обращение к API ---------- */
 const storageToken = () => lsGet(LS_TOKEN) || '';
 function storageSetToken(t) { if (t) lsSet(LS_TOKEN, t); else localStorage.removeItem(LS_TOKEN); }
@@ -114,15 +119,77 @@ async function storageLoad() {
   if (!storageIsServer()) return lsGet(LS_KEY);
   const state = { v: 2, charts: {}, dashboards: {}, datasets: {}, dsMetrics: {} };
   serverSeen.clear();
-  for (const kind of SERVER_KINDS) {
-    const list = await api(kind.path);
-    (list || []).forEach(o => {
+  /* Списки запрашиваем разом, а не друг за другом: они ни от чего не зависят,
+     а запуск приложения ждал три запроса подряд. Шаблоны и графики приезжают
+     краткой формой — тела подтянет тот экран, которому они нужны. */
+  const lists = await Promise.all(SERVER_KINDS.map(k => api(k.path)));
+  SERVER_KINDS.forEach((kind, i) => {
+    (lists[i] || []).forEach(o => {
       state[kind.key][o.id] = o;
       serverSeen.set(kind.key + ':' + o.id, { version: o.version, body: canonical(o) });
     });
-  }
+  });
   state.dsMetrics = (await api('/api/settings/dsMetrics')) || {};
   return state;
+}
+
+/* ---------- Тела объектов по требованию ----------
+   В списке приезжает краткая форма: имя, владелец, время правки и сводка для
+   карточки. Тело — когда объект открывают. Поэтому `STATE.charts[id]` больше не
+   обязательно содержит параметры, и страница, которой они нужны, сначала зовёт
+   `ensureBodies`.
+
+   Дописываем **в тот же объект**, а не подменяем его: открытая страница держит
+   ссылки на свой дашборд и его блоки — то же правило, что у `undoState`. */
+const BODY_BATCH = 50;          // столько тел берём одним запросом
+
+async function ensureBodies(kind, ids) {
+  if (!storageIsServer()) return true;
+  const path = (SERVER_KINDS.find(k => k.key === kind) || {}).path;
+  const store = STATE && STATE[kind];
+  if (!path || !store) return true;
+  const need = [...new Set(ids || [])].filter(id => store[id] && store[id].brief);
+  if (!need.length) return true;
+  const base = path.split('?')[0];
+  for (let i = 0; i < need.length; i += BODY_BATCH) {
+    const part = need.slice(i, i + BODY_BATCH);
+    const got = await api(`${base}?ids=${part.map(encodeURIComponent).join(',')}`);
+    (got || []).forEach(full => {
+      const obj = store[full.id];
+      if (!obj) return;
+      Object.assign(obj, full);
+      delete obj.brief;
+      serverSeen.set(kind + ':' + obj.id, { version: obj.version, body: canonical(obj) });
+    });
+    // Объект, которого в ответе не оказалось (удалён или доступ отозван), не
+    // должен остаться «вечно подгружающимся»: пусть страница скажет честно
+    part.forEach(id => { if (store[id] && store[id].brief) delete store[id].brief; });
+  }
+  return true;
+}
+
+/* Блоки шаблона: из тела, если оно приехало, иначе из сводки для карточки.
+   Это объявления функций, а не стрелки в const: их зовут файлы, идущие раньше
+   (auth.js, share.js, spec.js), а верхнеуровневый const виден только позже. */
+function dashChartIds(d) {
+  if (d && d.tabs) return d.tabs.flatMap(t => (t.items || []).map(i => i.chartId).filter(Boolean));
+  return (d && d.summary && d.summary.chartIds) || [];
+}
+function dashTabCount(d) {
+  return (d && d.tabs) ? d.tabs.length : ((d && d.summary && d.summary.tabs) || 0);
+}
+function dashChartCount(d) {
+  if (d && d.tabs) return d.tabs.reduce((a, t) => a + t.items.filter(i => i.type === 'chart').length, 0);
+  return (d && d.summary && d.summary.charts) || 0;
+}
+
+/** Тела дашборда и всех его блоков: страница рисует их сразу все. */
+async function ensureDashboardBody(dashId) {
+  await ensureBodies('dashboards', [dashId]);
+  const d = STATE && STATE.dashboards && STATE.dashboards[dashId];
+  if (!d || !d.tabs) return true;
+  const ids = d.tabs.flatMap(t => (t.items || []).map(i => i.chartId).filter(Boolean));
+  return ensureBodies('charts', ids);
 }
 
 /** Сохранить состояние. В локальном режиме — синхронно, как было. */
@@ -181,6 +248,11 @@ async function serverSend(state) {
     for (const id of Object.keys(now)) {
       const obj = now[id];
       if (obj.preview) continue;              // черновик нигде не сохраняется
+      /* Тело этого объекта к нам не приезжало: отправить его значит записать
+         поверх настоящего тела огрызок из списка — то есть потерять чужую
+         работу. Такой объект не трогают, а кто собрался его править, сначала
+         зовёт ensureBodies. */
+      if (obj.brief) continue;
       const seen = serverSeen.get(kind.key + ':' + id);
       const body = canonical(obj);
       if (seen && seen.body === body) continue;
@@ -247,7 +319,7 @@ const isServerDataset = ds => storageIsServer() && !!ds && ds.kind === 'upload' 
 /** Тот же `runQuery`, но умеющий спросить сервер. Ответ одной формы в обоих случаях. */
 async function runQueryAsync(ds, spec) {
   if (!isServerDataset(ds)) return runQuery(ds, spec);
-  return api(`/api/datasets/${encodeURIComponent(ds.id)}/query`, { method: 'POST', body: spec });
+  return queryQueued(() => api(`/api/datasets/${encodeURIComponent(ds.id)}/query`, { method: 'POST', body: spec }));
 }
 
 /** Исходные строки для таблицы: тоже либо из памяти, либо из базы. */
@@ -258,10 +330,43 @@ async function runRawAsync(ds, opts) {
     if (orderCol) { const d = orderDesc ? -1 : 1; rs = rs.slice().sort((a, b) => d * cmpVals(a[orderCol], b[orderCol])); }
     return { rows: rs.slice(0, limit), filteredCount: rs.length };
   }
-  return api(`/api/datasets/${encodeURIComponent(ds.id)}/query`, {
+  return queryQueued(() => api(`/api/datasets/${encodeURIComponent(ds.id)}/query`, {
     method: 'POST',
     body: { raw: true, columns, filters, orderby: orderCol ? [{ key: orderCol, desc: !!orderDesc }] : [], limit },
-  });
+  }));
+}
+
+/* ---------- Очередь расчётов ----------
+   Дашборд рисует блоки сразу все: `cells.forEach(c => drawChart(c))`. На
+   демо-дашборде это 23 расчёта одновременно, и каждый занимает соединение к
+   базе — при пуле на 30 один человек почти исчерпывает его, а двое встают в
+   очередь уже на сервере. Поэтому очередь стоит здесь, в единственной точке,
+   через которую идёт расчёт: страницам о ней знать не нужно.
+
+   Наборы-схемы сюда не попадают — они считаются на месте и сети не касаются. */
+const QUERY_PARALLEL = 4;
+let queryActive = 0;
+const queryWaiting = [];
+
+function queryQueued(run) {
+  if (queryActive < QUERY_PARALLEL) return queryStart(run);
+  return new Promise((resolve, reject) => queryWaiting.push({ run, resolve, reject }));
+}
+function queryStart(run) {
+  queryActive++;
+  const done = () => {
+    queryActive--;
+    const next = queryWaiting.shift();
+    if (next) queryStart(next.run).then(next.resolve, next.reject);
+  };
+  return run().then(r => { done(); return r; }, e => { done(); throw e; });
+}
+/* Уход со страницы: ожидающие расчёты больше никому не нужны. Человек,
+   пролиставший три дашборда, иначе оставит сервису два десятка заявок. */
+function queryDropWaiting() {
+  const dropped = queryWaiting.splice(0, queryWaiting.length);
+  dropped.forEach(w => w.reject(Object.assign(new Error('расчёт отменён: страница закрыта'), { kind: 'cancelled' })));
+  return dropped.length;
 }
 
 /* ---------- Строки наборов ----------

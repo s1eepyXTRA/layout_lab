@@ -27,6 +27,14 @@ from app.queue import cache_drop
 
 # Поля, которыми распоряжается сервер: в `body` они не попадают
 SERVER_FIELDS = {"id", "ownerLogin", "team", "shared", "version", "updated", "updatedBy"}
+# Сколько тел отдаём за один пакетный запрос. Тел нужно столько, сколько блоков
+# на дашборде: у самого большого демо-шаблона их 23.
+MAX_BATCH = 50
+# Сколько объектов в странице списка по умолчанию и не больше
+LIST_LIMIT = 500
+MAX_LIST_LIMIT = 2000
+# Сколько плиток первого уровня попадает в миниатюру карточки
+THUMB_TILES = 14
 
 
 def _out(obj: Any, name_field: str) -> dict:
@@ -43,6 +51,63 @@ def _out(obj: Any, name_field: str) -> dict:
         "updatedBy": obj.updated_by,
     })
     return body
+
+
+def _brief(obj: Any, name_field: str) -> dict:
+    """Объект для карточки в списке — без тела.
+
+    Список с телами означал, что человек при входе скачивает всю видимую ему
+    работу: у роли, видящей чужое, — работу всей компании, при каждой загрузке
+    страницы. Карточке нужно другое: имя, владелец, время правки и сводка
+    содержимого. Тело приезжает, когда объект открывают.
+    """
+    out = {
+        "id": obj.id,
+        name_field: getattr(obj, "title" if name_field == "title" else "name"),
+        "ownerLogin": obj.owner_login,
+        "team": obj.team or "",
+        "shared": list(obj.shared or []),
+        "version": obj.version,
+        "updated": int(obj.updated_at.timestamp() * 1000) if obj.updated_at else None,
+        "updatedBy": obj.updated_by,
+        "summary": dict(getattr(obj, "summary", None) or {}),
+        # Признак «тело не приезжало»: по нему страницы знают, что надо дозагрузить
+        "brief": True,
+    }
+    if isinstance(obj, Chart):
+        # Вид и набор нужны самой карточке графика, и они уже в колонках
+        out["viz"] = obj.viz
+        out["datasetId"] = obj.dataset_id
+    return out
+
+
+def _summary(body: dict, model) -> dict:
+    """Сводка содержимого для карточки. Считается при записи: считать её при
+    каждом чтении списка значит снова читать тела, то есть не решить задачу."""
+    if model is Dashboard:
+        tabs = body.get("tabs") or []
+        items = (tabs[0].get("items") if tabs and isinstance(tabs[0], dict) else []) or []
+        charts = sum(1 for t in tabs if isinstance(t, dict)
+                     for i in (t.get("items") or []) if (i or {}).get("type") == "chart")
+        return {
+            "tabs": len(tabs),
+            "charts": charts,
+            # Идентификаторы блоков всех уровней: по ним список графиков
+            # отвечает «в каких шаблонах используется», не читая тел шаблонов
+            "chartIds": sorted({i["chartId"] for t in tabs if isinstance(t, dict)
+                                for i in (t.get("items") or [])
+                                if isinstance(i, dict) and i.get("chartId")}),
+            "thumb": [{"x": i.get("x", 0), "y": i.get("y", 0), "w": i.get("w", 1),
+                       "h": i.get("h", 1), "type": i.get("type"), "chartId": i.get("chartId")}
+                      for i in items[:THUMB_TILES] if isinstance(i, dict)],
+        }
+    if model is Chart:
+        # Заполненность ТЗ видна в списке графиков, а сами поля — в теле.
+        # Бизнес-вопрос там же подписью, поэтому он тоже в сводке
+        spec = body.get("spec") or {}
+        return {"spec": sum(1 for v in spec.values() if v),
+                "question": str(spec.get("question") or "")[:300] or None}
+    return {}
 
 
 def _split(payload: dict, name_field: str) -> tuple[str, dict]:
@@ -80,12 +145,32 @@ def make_router(model, prefix: str, name_field: str, tag: str) -> APIRouter:
 
     @router.get("")
     def list_objects(db: Session = Depends(get_db), user: User = Depends(current_user),
-                     owned_by_dashboard: bool = False):
+                     owned_by_dashboard: bool = False, ids: Optional[str] = None,
+                     limit: int = LIST_LIMIT, offset: int = 0):
+        """Список — краткой формой, без тел. `ids` отдаёт тела названных
+        объектов: страница дашборда берёт так все свои блоки одним запросом, а
+        не по одному на блок.
+
+        Наборы пока уезжают целиком: их описания нужны реестру `DS` при старте,
+        и ленивая загрузка тут — отдельная работа. Их и меньше всего: тела
+        графиков в сервисе на порядок объёмнее.
+        """
         q = visible(db, user)
         if is_dataset and not owned_by_dashboard:
             # Скрытый набор макета принадлежит шаблону и в списке данных не нужен
             q = q.filter(model.owner_dashboard_id.is_(None))
-        return [_out(o, name_field) for o in q.all()]
+        if ids:
+            wanted = [i for i in (s.strip() for s in ids.split(",")) if i][:MAX_BATCH]
+            if not wanted:
+                return []
+            # Права проверяются тем же фильтром видимости, что и список: иначе
+            # пакетная выдача стала бы дырой в обход can_view
+            return [_out(o, name_field) for o in q.filter(model.id.in_(wanted)).all()]
+        q = q.order_by(model.updated_at.desc().nullslast(), model.id)
+        rows = q.offset(max(0, offset)).limit(max(1, min(limit, MAX_LIST_LIMIT))).all()
+        if is_dataset:
+            return [_out(o, name_field) for o in rows]
+        return [_brief(o, name_field) for o in rows]
 
     @router.post("", status_code=201)
     def create_object(payload: dict = Body(...), db: Session = Depends(get_db),
@@ -221,6 +306,8 @@ def _check_version(obj, payload: dict, name_field: str) -> None:
 def _mirror(obj, body: dict, model) -> None:
     """Поля, по которым сервер ищет, дублируются в колонки. Источник правды —
     всё равно `body`: расходиться они не могут, потому что пишутся отсюда."""
+    if model in (Chart, Dashboard):
+        obj.summary = _summary(body, model)
     if model is Chart:
         obj.viz = str(body.get("viz") or "")
         obj.dataset_id = str(body.get("datasetId") or "")
