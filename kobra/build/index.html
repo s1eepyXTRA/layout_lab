@@ -1820,7 +1820,11 @@ async function api(path, opts = {}) {
   if (res.ok) return data;
   const detail = data && data.detail;
   const err = Object.assign(new Error(typeof detail === 'string' ? detail : 'сервис ответил ' + res.status), {
-    kind: res.status === 401 ? 'auth' : res.status === 403 ? 'denied' : res.status === 409 ? 'conflict' : 'http',
+    /* 429 — это не поломка и не отказ в доступе: человек слишком часто просил,
+       и сервис сказал, когда повторить. Путать его с «нет доступа» нельзя —
+       разные действия у человека. */
+    kind: res.status === 401 ? 'auth' : res.status === 403 ? 'denied'
+      : res.status === 409 ? 'conflict' : res.status === 429 ? 'limit' : 'http',
     status: res.status,
     detail,
   });

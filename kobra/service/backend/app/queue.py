@@ -53,6 +53,40 @@ class QueueUnavailable(RuntimeError):
     """Фоновая работа невозможна: Redis недоступен."""
 
 
+def metrics_bump(name: str, by: int = 1) -> None:
+    """Счётчик, который растит воркер, а показывает веб-сервис.
+
+    Это разные процессы (в кластере — разные поды), поэтому счётчик в памяти
+    воркера никто никогда не увидит. Кладём в Redis: без него счёт просто не
+    ведётся, и это не повод ломать разбор файла.
+    """
+    try:
+        redis_conn().incrby("kobra:metrics:" + name, by)
+    except Exception:
+        pass
+
+
+def metrics_read(name: str) -> Optional[int]:
+    try:
+        v = redis_conn().get("kobra:metrics:" + name)
+        return int(v) if v is not None else None
+    except Exception:
+        return None
+
+
+def queue_len() -> Optional[int]:
+    """Сколько файлов ждёт разбора. None — спросить не у кого (нет Redis).
+
+    Нужно для наблюдения: «загрузка висит» бывает и потому, что воркер лежит, и
+    потому, что перед этим файлом стоят ещё десять. По логу сервиса это не
+    различить, а по длине очереди — сразу.
+    """
+    try:
+        return int(redis_conn().llen("celery"))
+    except Exception:
+        return None
+
+
 # ---------- Кэш ----------
 CACHE_TTL_SEC = int(os.environ.get("KOBRA_CACHE_TTL_SEC", "300"))
 

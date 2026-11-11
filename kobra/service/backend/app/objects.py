@@ -22,6 +22,7 @@ from app.auth import current_user
 from app.core import Chart, Dashboard, Dataset, User, now
 from app.db import get_db
 from app.ingest import drop_dataset_table
+from app.limits import check_rate
 from app.ldap_auth import ldap_lookup
 from app.queue import cache_drop
 
@@ -175,6 +176,7 @@ def make_router(model, prefix: str, name_field: str, tag: str) -> APIRouter:
     @router.post("", status_code=201)
     def create_object(payload: dict = Body(...), db: Session = Depends(get_db),
                       user: User = Depends(current_user)):
+        check_rate("write", user.username)
         obj_id = str(payload.get("id") or "").strip()
         if not obj_id:
             raise HTTPException(status_code=422, detail="Поле «id» обязательно: идентификаторы выдаёт клиент")
@@ -200,6 +202,7 @@ def make_router(model, prefix: str, name_field: str, tag: str) -> APIRouter:
     @router.put("/{obj_id}")
     def update_object(obj_id: str, response: Response, payload: dict = Body(...),
                       db: Session = Depends(get_db), user: User = Depends(current_user)):
+        check_rate("write", user.username)
         obj = _get(db, model, obj_id)
         if not can_edit(user, obj):
             raise HTTPException(status_code=403, detail=why_read_only(obj))

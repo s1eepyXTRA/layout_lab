@@ -11,12 +11,13 @@
 всех экземпляров сервиса, а это ровно то, что не нужно.
 """
 import os
+import time
 from contextlib import asynccontextmanager
 
 import anyio.to_thread
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
@@ -26,6 +27,8 @@ from app.auth import router as auth_router
 from app.objects import charts_router, dashboards_router, datasets_router
 from app.query_api import router as query_router
 from app.users import router as users_router
+from app import metrics
+from app.queue import metrics_read, queue_len
 from app.core import FRONTEND_DIR, MAX_UPLOAD_ROWS, THREADPOOL, SessionLocal, engine
 from app.settings import router as settings_router
 from app.upload import MAX_FILE_MB, router as upload_router
@@ -38,6 +41,21 @@ async def lifespan(_app: FastAPI):
     # базе 30 — десять потоков ждали бы очередь к пулу, а не базу. Менять его
     # можно только внутри цикла событий, то есть здесь.
     anyio.to_thread.current_default_thread_limiter().total_tokens = THREADPOOL
+    # Датчики спрашиваются в момент сбора: занятость пула и длина очереди живут
+    # не у нас, и заранее их знать незачем
+    pool = engine.pool
+    metrics.gauge("kobra_db_pool_in_use", pool.checkedout)
+    # overflow() — сколько соединений взято сверх pool_size: по нему видно, что
+    # пул на пределе, задолго до того, как запросы начнут ждать. Ниже pool_size
+    # он отрицательный (внутренний счётчик начинается с -pool_size), и «минус
+    # восемь ожидающих» в метрике сбивало бы с толку
+    metrics.gauge("kobra_db_pool_overflow", lambda: max(0, pool.overflow()))
+    metrics.gauge("kobra_ingest_queue", queue_len)
+    # Эти три растит воркер — другой процесс, и его память нам не видна:
+    # он кладёт их в Redis, мы читаем в момент сбора
+    metrics.gauge("kobra_upload_done_total", lambda: metrics_read("uploads_done"))
+    metrics.gauge("kobra_upload_error_total", lambda: metrics_read("uploads_error"))
+    metrics.gauge("kobra_upload_rows_total", lambda: metrics_read("upload_rows"))
     db = SessionLocal()
     try:
         ensure_admin(db)
@@ -53,6 +71,25 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Кобра", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def measure(request: Request, call_next):
+    """Сколько запросов и сколько времени — по маршрутам.
+
+    Считаем шаблон маршрута (`/api/charts/{obj_id}`), а не путь: иначе каждый
+    идентификатор стал бы отдельной метрикой, а в их именах оказались бы чужие
+    данные. Сам маршрут известен только после обработки — до неё его ещё не
+    сопоставили.
+    """
+    started = time.perf_counter()
+    response = await call_next(request)
+    route = request.scope.get("route")
+    path = getattr(route, "path", None) or "прочее"
+    metrics.inc("kobra_requests_total", route=path, method=request.method,
+                status=response.status_code // 100 * 100)
+    metrics.inc("kobra_request_seconds_total", time.perf_counter() - started, route=path)
+    return response
 
 
 app.include_router(auth_router)
@@ -76,6 +113,18 @@ def ping():
     серверу отношения не имеют."""
     return {"kobra": 1, "mode": "server", "auth": AUTH_TYPE,
             "maxRows": MAX_UPLOAD_ROWS, "maxFileMb": MAX_FILE_MB}
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+def prometheus_metrics():
+    """Метрики для системы наблюдения.
+
+    Без входа: система наблюдения не ходит с человеческой сессией. Поэтому
+    здесь нет ни логинов, ни названий шаблонов и наборов — только числа и
+    шаблоны маршрутов. Пределы доступа к этому адресу ставит сеть кластера, как
+    и для `/healthz`.
+    """
+    return metrics.render()
 
 
 @app.get("/healthz")

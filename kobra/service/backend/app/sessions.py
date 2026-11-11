@@ -8,11 +8,15 @@ JWT сам по себе не отзывается: он подписан и ж�
 невозможен (о чём говорим честно), ограничение частоты перестаёт считаться. Если
 бы они падали вместе с Redis, он стал бы точкой отказа надёжнее базы.
 """
+import logging
 import os
 import time
 from typing import Optional
 
+from app import metrics
 from app.queue import redis_conn
+
+log = logging.getLogger("kobra.sessions")
 
 RATE_LOGIN_LIMIT = int(os.environ.get("KOBRA_RATE_LIMIT_LOGIN", "10"))
 RATE_LOGIN_WINDOW = int(os.environ.get("KOBRA_RATE_LIMIT_WINDOW_SEC", "60"))
@@ -26,7 +30,8 @@ def revoke(jti: str, ttl_sec: int) -> bool:
     try:
         redis_conn().set("kobra:revoked:" + jti, "1", ex=max(ttl_sec, 1))
         return True
-    except Exception:
+    except Exception as e:                      # noqa: BLE001
+        _revoke_failed("сессию", e)
         return False
 
 
@@ -47,8 +52,21 @@ def revoke_user(user_id: int, ttl_sec: int) -> bool:
     try:
         redis_conn().set(f"kobra:revoked-user:{user_id}", str(int(time.time())), ex=max(ttl_sec, 1))
         return True
-    except Exception:
+    except Exception as e:                      # noqa: BLE001
+        _revoke_failed("все сессии сотрудника", e)
         return False
+
+
+def _revoke_failed(what: str, e: Exception) -> None:
+    """Неудавшийся отзыв не должен быть молчаливым.
+
+    Вызывающему мы и так отвечаем «не удалось», но это видит один человек в
+    одном окне. А означает это, что отозванная сессия продолжает работать —
+    то есть вопрос доступа, а не удобства. Поэтому ещё и предупреждение в лог,
+    и метрика, по которой это заметят без жалобы.
+    """
+    metrics.inc("kobra_session_revoke_failed_total")
+    log.warning("Не удалось отозвать %s: %s. Отозванная сессия продолжает работать", what, e)
 
 
 def user_revoked_at(user_id: int) -> Optional[int]:

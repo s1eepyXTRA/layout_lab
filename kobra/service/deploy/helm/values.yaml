@@ -57,6 +57,13 @@ env:
   KOBRA_DB_POOL: "10"
   KOBRA_DB_POOL_OVERFLOW: "20"
   KOBRA_THREADPOOL: "30"
+  # Порог медленного расчёта: такие попадают в лог с текстом запроса
+  KOBRA_SLOW_QUERY_MS: "2000"
+  # Пределы частоты на человека. Предел на расчёт обязан быть заметно выше
+  # одновременности клиента: дашборд из двадцати блоков — нормальная работа
+  KOBRA_RATE_QUERY: "600"
+  KOBRA_RATE_WRITE: "300"
+  KOBRA_RATE_UPLOAD: "20"
 
 # Миграции катит отдельный job перед обновлением: приложение не должно
 # стартовать на несовпадающей схеме, а катить их каждым подом нельзя — они
@@ -67,6 +74,15 @@ migrations:
 service:
   type: ClusterIP
   port: 80
+
+# Метрики: /metrics отдаётся без входа, персональных данных в нём нет.
+# Аннотации — для сборщика, который смотрит на поды сам.
+metrics:
+  enabled: true
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: /metrics
+    prometheus.io/port: "8000"
 
 ingress:
   enabled: false

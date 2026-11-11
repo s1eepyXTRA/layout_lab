@@ -25,7 +25,7 @@ from sqlalchemy import text
 
 from app.core import MAX_UPLOAD_ROWS, SessionLocal, Dataset, engine
 from app.guess import guess_type, parse_date_loose, parse_number_loose
-from app.queue import celery_app, task_set
+from app.queue import celery_app, metrics_bump, task_set
 
 SAMPLE_ROWS = 300          # столько строк смотрим, чтобы угадать типы
 COPY_BATCH = 10000         # пачка для COPY: больше памяти не даёт выигрыша
@@ -144,10 +144,13 @@ def ingest_file(task_id: str, ds_id: str, file_name: str, login: str,
         path = _fetch_file(task_id, file_name)
         result = _ingest(task_id, ds_id, path, file_name, login, chosen)
         task_set(task_id, state="done", **result)
+        metrics_bump("upload_rows", result.get("rows") or 0)
+        metrics_bump("uploads_done")
         return result
     except Exception as e:                      # noqa: BLE001 — причину показываем человеку
         _drop_table(ds_id)
         task_set(task_id, state="error", error=str(e)[:500])
+        metrics_bump("uploads_error")
         raise
     finally:
         _forget_file(task_id)

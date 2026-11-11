@@ -12,6 +12,9 @@ spec:
       app.kubernetes.io/component: api
   template:
     metadata:
+      {{- if and .Values.metrics .Values.metrics.enabled .Values.metrics.annotations }}
+      annotations: {{- toYaml .Values.metrics.annotations | nindent 8 }}
+      {{- end }}
       labels:
         {{- include "kobra.labels" . | nindent 8 }}
         app.kubernetes.io/component: api

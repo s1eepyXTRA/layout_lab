@@ -20,6 +20,8 @@ from app.access import can_edit, why_read_only
 from app.auth import current_user
 from app.core import Dataset, UploadChunk, User
 from app.db import get_db
+from app import metrics
+from app.limits import check_rate
 from app.ingest import ingest_file
 from app.queue import redis_ok, task_get, task_set
 
@@ -32,6 +34,7 @@ MAX_FILE_MB = int(os.environ.get("KOBRA_MAX_FILE_MB", "512"))
 @router.post("/datasets/{ds_id}/file")
 async def upload_file(ds_id: str, file: UploadFile = File(...), columns: str = Form(""),
                       db: Session = Depends(get_db), user: User = Depends(current_user)):
+    check_rate("upload", user.username)
     ds = db.get(Dataset, ds_id)
     if ds is None:
         raise HTTPException(status_code=404, detail="Набор не найден")
@@ -64,6 +67,7 @@ async def upload_file(ds_id: str, file: UploadFile = File(...), columns: str = F
     except ValueError:
         chosen = None
     task_set(task_id, state="queued", rows=0, dataset=ds_id, file=file.filename, bytes=size)
+    metrics.inc("kobra_uploads_total")
     ingest_file.delay(task_id, ds_id, file.filename or "file.csv", user.username, chosen)
     return {"task": task_id, "bytes": size}
 

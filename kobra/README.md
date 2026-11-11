@@ -259,6 +259,9 @@ docker run -p 8000:8000 -e KOBRA_DATABASE_URL=... -e KOBRA_SECRET_KEY=... kobra:
 **В Kubernetes** — чартом из `kobra/service/deploy/helm`, см. его README. Postgres и Redis внешние;
 миграции катит job перед обновлением, а не каждый под.
 
+Запуск, эксплуатация, метрики, резервные копии и разбор частых отказов — в
+[service/backend/README.md](service/backend/README.md). Ниже — то, без чего не стартует.
+
 **Переменные окружения:**
 
 | Переменная | Зачем |
