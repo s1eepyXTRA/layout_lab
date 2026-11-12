@@ -29,6 +29,7 @@ spec:
           args: ["api"]
           ports: [{containerPort: 8000, name: http}]
           env: {{- include "kobra.env" . | nindent 12 }}
+            {{- include "kobra.aiEnv" . | nindent 12 }}
           livenessProbe:
             httpGet: {path: {{ .Values.probes.liveness }}, port: http}
             initialDelaySeconds: 10

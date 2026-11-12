@@ -4239,7 +4239,10 @@ function renderShell() {
     { label: 'Экспорт в файл…', icon: 'download', onClick: () => openExportDialog() },
     { label: 'Импорт из файла…', icon: 'upload', onClick: openImportDialog },
     '-',
-    { label: 'Доступ к модели…', icon: 'wand', onClick: () => openAiSettings() },
+    /* За сервисом настраивать нечего: адрес, модель и токен живут в сервисе, а
+       два пути настройки означали бы вечный вопрос «а у меня свой ключ, почему
+       не работает». Поэтому пункт не прячется под роль, а уходит совсем. */
+    storageIsServer() ? null : { label: 'Доступ к модели…', icon: 'wand', onClick: () => openAiSettings() },
     authIsAdmin() ? { label: 'Сотрудники…', icon: 'users', onClick: openUsersDialog } : null,
     authIsAdmin() ? { label: 'Доступ: вход и роли…', icon: 'link', onClick: openAuthCfgDialog } : null,
     '-',
@@ -8589,16 +8592,55 @@ function guidedWhat(ds, chart) {
    а сборка по описанию — прижилась.
    ============================================================ */
 const AI_LS_CFG = 'kobra.ai.cfg';          // адрес, токен и модель — только в этом браузере
+/* Версия формата ответа: сервис собирает промпт сам и должен знать, что
+   разбирать его будет именно этот клиент. Страница живёт в браузере из кэша
+   неделями — иначе старый разбор молча встретил бы новый промпт. */
+const AI_FORMAT = 1;
 
 /* ---------- Доступ к модели ---------- */
 /* Транспорт назван по протоколу, а не по имени шлюза: один и тот же код
-   работает с личным эндпоинтом и с LiteLLM компании — меняется настройка. */
+   работает с личным эндпоинтом и с LiteLLM компании — меняется настройка.
+
+   За сервисом настроек у человека нет вовсе: адрес, модель и токен живут в
+   сервисе, а сюда приезжает только «настроена или нет» (`/api/ping`). */
 function aiCfg() {
   const c = lsGet(AI_LS_CFG) || {};
   return { url: c.url || '', token: c.token || '', model: c.model || '' };
 }
 function aiSaveCfg(cfg) { lsSet(AI_LS_CFG, { url: cfg.url || '', token: cfg.token || '', model: cfg.model || '' }); }
-const aiReady = () => { const c = aiCfg(); return !!(c.url && c.model); };
+/** Можно ли обратиться к модели. За сервисом это знает сервис. */
+function aiReady() {
+  if (storageIsServer()) return !!storageInfo.ai;
+  const c = aiCfg();
+  return !!(c.url && c.model);
+}
+/** Предел длины описания: за сервисом его называет сервис. */
+const aiMaxChars = () => (storageIsServer() && storageInfo.aiMaxChars) || 4000;
+
+/* Обращение к модели **через сервис**: задача, колонки и версия формата, а
+   текст запроса собирает сервер. Прислать свой запрос нельзя намеренно — иначе
+   служебный ключ компании становится общим доступом к модели (см. app/ai.py).
+
+   Возвращает тот же текст ответа модели, что и прямой путь, плюс номер записи
+   в журнале: по нему клиент потом скажет, чем дело кончилось у человека. */
+async function aiAskService(task, opts = {}) {
+  try {
+    const r = await api('/api/ai/draft', { method: 'POST', body: {
+      формат: AI_FORMAT, задача: task, черновик: opts.draft || null, ошибки: opts.errors || [],
+    } });
+    return { text: String((r && r.ответ) || ''), logId: (r && r.id) || null };
+  } catch (e) {
+    /* Отказы сервиса уже написаны для человека: «проверьте токен» ему
+       советовать нечего — токена у него нет. Виды нужны экрану: 503 и 504
+       оставляют смысл предложить перенос вручную. */
+    throw Object.assign(new Error(e.message), {
+      kind: e.status === 403 ? 'no_access' : e.status === 429 ? 'limit'
+        : e.status === 413 ? 'too_big' : e.status === 504 ? 'timeout'
+          : e.status === 503 ? 'service' : e.kind || 'http',
+      status: e.status,
+    });
+  }
+}
 
 /* Обращение к OpenAI-совместимому эндпоинту. Ошибки разделяем по видам:
    человеку нужно знать, чинить доступ, ждать лимита или смотреть сеть. */
@@ -8626,6 +8668,19 @@ async function aiAsk(messages, opts = {}) {
   const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
   if (!text) throw Object.assign(new Error('ответ не разобрать'), { kind: 'parse' });
   return String(text);
+}
+
+/* Чем обращение кончилось у человека: собрался шаблон или нет и сколько блоков
+   пропущено. Сервер этого знать не может — ответ разбирает клиент, а «HTTP 200,
+   1400 токенов» ничего не говорит о пользе. Не доехало — не беда: сборку из-за
+   отчёта ломать нельзя. */
+async function aiReportOutcome(logId, built, skipped) {
+  if (!logId || !storageIsServer()) return false;
+  try {
+    await api(`/api/ai/draft/${encodeURIComponent(logId)}/outcome`,
+      { method: 'POST', body: { собрался: !!built, пропущено: skipped || 0 } });
+    return true;
+  } catch (e) { return false; }
 }
 
 /* Показ длинного текста: запрос для внешнего чата и ответ модели как есть */
@@ -9130,9 +9185,17 @@ function openAiComposer(opts = {}) {
       ' Кобра приложит их к запросу — описывать словами не нужно: ',
       errors.map(e => e.name).join(', ') + '.'));
     body.appendChild(h('div', { class: 'ai-note', style: { marginTop: '10px' } },
-      'Наружу уходит только текст запроса и описание колонок.'));
+      /* За сервисом запрос уходит не в браузерное никуда, а в общую базу, и
+         молчать об этом нельзя: тексты читает администратор. Но только если
+         сервис к модели и правда обращается: при переносе вручную в сервис не
+         уходит ничего, и обещать обратное — врать. */
+      storageIsServer() && aiReady()
+        ? 'Наружу уходит только текст запроса и описание колонок. Текст запроса сохраняется в сервисе.'
+        : 'Наружу уходит только текст запроса и описание колонок.'));
     if (!aiReady()) body.appendChild(h('div', { class: 'ai-note' },
-      'Модель не настроена: скопируйте запрос во внешний чат и вставьте ответ сюда.'));
+      storageIsServer()
+        ? 'Модель в сервисе не настроена: скопируйте запрос во внешний чат и вставьте ответ сюда.'
+        : 'Модель не настроена: скопируйте запрос во внешний чат и вставьте ответ сюда.'));
   };
   paint();
 
@@ -9157,15 +9220,26 @@ function openAiComposer(opts = {}) {
         const q = ta.value.trim();
         if (!q) { toast('Напишите, что нужно', true); return; }
         if (!aiReady()) { toast('Доступ к модели не настроен — скопируйте запрос и вставьте ответ', true); return; }
+        /* Предел проверяем и здесь, чтобы сказать сразу, и в сервисе, потому
+           что клиенту верить нельзя. Написанное остаётся в поле: человек сам
+           решит, что сократить. */
+        const limit = aiMaxChars();
+        if (q.length > limit) { toast(`Описание длиннее ${limit} символов: сократите на ${q.length - limit}`, true); return; }
         if (busy) return;
         busy = true;
         toast('Собираю…');
         try {
-          const text = await aiAsk([{ role: 'system', content: AI_TPL_SYSTEM }, { role: 'user', content: prompt() }]);
+          /* За сервисом промпт собирает сервер: сюда он не приезжает, и
+             прислать свой нельзя — это не ограничение клиента, а то, из-за чего
+             единый служебный ключ вообще уместен. */
+          const res = storageIsServer()
+            ? await aiAskService(q, { draft: refine ? aiDraftState(D) : null, errors })
+            : { text: await aiAsk([{ role: 'system', content: AI_TPL_SYSTEM }, { role: 'user', content: prompt() }]), logId: null };
           close();
-          aiApplyAnswer(text, { prompt: q, draftId });
+          aiApplyAnswer(res.text, { prompt: q, draftId, logId: res.logId });
         } catch (e) {
-          toast('Не получилось: ' + e.message + (e.kind === 'network' ? ' Можно перенести запрос вручную.' : ''), true);
+          const вручную = e.kind === 'network' || e.kind === 'service' || e.kind === 'timeout';
+          toast('Не получилось: ' + e.message + (вручную ? ' Можно перенести запрос вручную.' : ''), true);
         }
         busy = false;
       } }, ic('wand'), refine ? 'Пересобрать' : 'Собрать'),
@@ -9181,6 +9255,10 @@ function aiApplyAnswer(text, opts = {}) {
   const prev = opts.draftId ? (STATE.dashboards[opts.draftId] || {}).aiDraft : null;
   const r = aiParseTemplate(text);
   const id = r.блоки.length ? aiBuildDraft(r, { prompt: opts.prompt, answer: r.ответ }) : null;
+  /* Журнал должен знать не только «шлюз ответил», но и «собралось ли»: без
+     этого он отвечает про деньги и молчит про пользу. Отчёт идёт мимо сборки —
+     не доехал, и ладно. */
+  aiReportOutcome(opts.logId, !!id, r.пропущено || 0);
   if (!id) {
     toast(r.plain ? 'В ответе нет шаблона — показываю текст как есть' : 'Не удалось собрать ни одного блока', true);
     showTextModal('Что ответила модель', r.ответ || String(text || ''));

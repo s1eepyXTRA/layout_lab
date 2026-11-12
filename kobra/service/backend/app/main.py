@@ -23,13 +23,15 @@ from sqlalchemy import text
 
 from app.auth import AUTH_TYPE, ensure_admin
 from app.demo import load_demo
+from app.ai import router as ai_router
 from app.auth import router as auth_router
 from app.objects import charts_router, dashboards_router, datasets_router
 from app.query_api import router as query_router
 from app.users import router as users_router
 from app import metrics
 from app.queue import metrics_read, queue_len
-from app.core import FRONTEND_DIR, MAX_UPLOAD_ROWS, THREADPOOL, SessionLocal, engine
+from app.core import (AI_MAX_CHARS, FRONTEND_DIR, MAX_UPLOAD_ROWS, THREADPOOL, SessionLocal,
+                      ai_configured, engine)
 from app.settings import router as settings_router
 from app.upload import MAX_FILE_MB, router as upload_router
 
@@ -100,6 +102,7 @@ app.include_router(query_router)
 app.include_router(datasets_router)
 app.include_router(settings_router)
 app.include_router(upload_router)
+app.include_router(ai_router)
 
 
 @app.get("/api/ping")
@@ -110,9 +113,14 @@ def ping():
 
     Пределы загрузки здесь же: их применяет сервис, значит он и должен их
     называть — иначе клиент предупреждает человека своими числами, которые к
-    серверу отношения не имеют."""
+    серверу отношения не имеют.
+
+    Про модель сказано только «настроена или нет»: ни адреса шлюза, ни названия
+    модели. Экрану входа они не нужны, а светить внутреннюю инфраструктуру без
+    сессии незачем."""
     return {"kobra": 1, "mode": "server", "auth": AUTH_TYPE,
-            "maxRows": MAX_UPLOAD_ROWS, "maxFileMb": MAX_FILE_MB}
+            "maxRows": MAX_UPLOAD_ROWS, "maxFileMb": MAX_FILE_MB,
+            "ai": ai_configured(), "aiMaxChars": AI_MAX_CHARS}
 
 
 @app.get("/metrics", response_class=PlainTextResponse)

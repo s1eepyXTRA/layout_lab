@@ -139,7 +139,10 @@ function renderShell() {
     { label: 'Экспорт в файл…', icon: 'download', onClick: () => openExportDialog() },
     { label: 'Импорт из файла…', icon: 'upload', onClick: openImportDialog },
     '-',
-    { label: 'Доступ к модели…', icon: 'wand', onClick: () => openAiSettings() },
+    /* За сервисом настраивать нечего: адрес, модель и токен живут в сервисе, а
+       два пути настройки означали бы вечный вопрос «а у меня свой ключ, почему
+       не работает». Поэтому пункт не прячется под роль, а уходит совсем. */
+    storageIsServer() ? null : { label: 'Доступ к модели…', icon: 'wand', onClick: () => openAiSettings() },
     authIsAdmin() ? { label: 'Сотрудники…', icon: 'users', onClick: openUsersDialog } : null,
     authIsAdmin() ? { label: 'Доступ: вход и роли…', icon: 'link', onClick: openAuthCfgDialog } : null,
     '-',

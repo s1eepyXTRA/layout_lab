@@ -27,6 +27,9 @@ const BRIDGE = [
   'BUILTIN_DATASETS', 'visibleDatasets', 'MAX_UPLOAD_ROWS',
   'QUERY_PARALLEL', 'queryQueued', 'queryDropWaiting', 'LIST_PAGE',
   'UNDO_MAX', 'canUndo', 'hasUndo',
+  // Режим хранилища: по нему ветвится доступ к модели, и тест должен уметь его
+  // переключать — настоящего сервиса в тестах нет
+  'storageMode', 'storageInfo', 'STORAGE_SERVER', 'STORAGE_LOCAL', 'AI_FORMAT', 'aiMaxChars',
 ];
 
 /* Заглушки браузера: ядро их не зовёт, но файлы лежат в одном скрипте

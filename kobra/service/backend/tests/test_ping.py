@@ -23,6 +23,10 @@ def test_predely_zagruzki_nazvany(client):
 
 def test_v_probe_net_lishnego(client):
     """Проба отвечает без сессии, поэтому в ней не должно быть ничего, кроме
-    режима, способа входа и пределов."""
+    режима, способа входа и пределов.
+
+    Про модель сказано «настроена или нет» и предел длины описания — ни адреса
+    шлюза, ни названия модели: экрану входа они не нужны, а светить внутреннюю
+    инфраструктуру без сессии незачем."""
     assert set(client.get("/api/ping").json()) == {
-        "kobra", "mode", "auth", "maxRows", "maxFileMb"}
+        "kobra", "mode", "auth", "maxRows", "maxFileMb", "ai", "aiMaxChars"}

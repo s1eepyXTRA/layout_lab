@@ -473,9 +473,17 @@ function openAiComposer(opts = {}) {
       ' Кобра приложит их к запросу — описывать словами не нужно: ',
       errors.map(e => e.name).join(', ') + '.'));
     body.appendChild(h('div', { class: 'ai-note', style: { marginTop: '10px' } },
-      'Наружу уходит только текст запроса и описание колонок.'));
+      /* За сервисом запрос уходит не в браузерное никуда, а в общую базу, и
+         молчать об этом нельзя: тексты читает администратор. Но только если
+         сервис к модели и правда обращается: при переносе вручную в сервис не
+         уходит ничего, и обещать обратное — врать. */
+      storageIsServer() && aiReady()
+        ? 'Наружу уходит только текст запроса и описание колонок. Текст запроса сохраняется в сервисе.'
+        : 'Наружу уходит только текст запроса и описание колонок.'));
     if (!aiReady()) body.appendChild(h('div', { class: 'ai-note' },
-      'Модель не настроена: скопируйте запрос во внешний чат и вставьте ответ сюда.'));
+      storageIsServer()
+        ? 'Модель в сервисе не настроена: скопируйте запрос во внешний чат и вставьте ответ сюда.'
+        : 'Модель не настроена: скопируйте запрос во внешний чат и вставьте ответ сюда.'));
   };
   paint();
 
@@ -500,15 +508,26 @@ function openAiComposer(opts = {}) {
         const q = ta.value.trim();
         if (!q) { toast('Напишите, что нужно', true); return; }
         if (!aiReady()) { toast('Доступ к модели не настроен — скопируйте запрос и вставьте ответ', true); return; }
+        /* Предел проверяем и здесь, чтобы сказать сразу, и в сервисе, потому
+           что клиенту верить нельзя. Написанное остаётся в поле: человек сам
+           решит, что сократить. */
+        const limit = aiMaxChars();
+        if (q.length > limit) { toast(`Описание длиннее ${limit} символов: сократите на ${q.length - limit}`, true); return; }
         if (busy) return;
         busy = true;
         toast('Собираю…');
         try {
-          const text = await aiAsk([{ role: 'system', content: AI_TPL_SYSTEM }, { role: 'user', content: prompt() }]);
+          /* За сервисом промпт собирает сервер: сюда он не приезжает, и
+             прислать свой нельзя — это не ограничение клиента, а то, из-за чего
+             единый служебный ключ вообще уместен. */
+          const res = storageIsServer()
+            ? await aiAskService(q, { draft: refine ? aiDraftState(D) : null, errors })
+            : { text: await aiAsk([{ role: 'system', content: AI_TPL_SYSTEM }, { role: 'user', content: prompt() }]), logId: null };
           close();
-          aiApplyAnswer(text, { prompt: q, draftId });
+          aiApplyAnswer(res.text, { prompt: q, draftId, logId: res.logId });
         } catch (e) {
-          toast('Не получилось: ' + e.message + (e.kind === 'network' ? ' Можно перенести запрос вручную.' : ''), true);
+          const вручную = e.kind === 'network' || e.kind === 'service' || e.kind === 'timeout';
+          toast('Не получилось: ' + e.message + (вручную ? ' Можно перенести запрос вручную.' : ''), true);
         }
         busy = false;
       } }, ic('wand'), refine ? 'Пересобрать' : 'Собрать'),
@@ -524,6 +543,10 @@ function aiApplyAnswer(text, opts = {}) {
   const prev = opts.draftId ? (STATE.dashboards[opts.draftId] || {}).aiDraft : null;
   const r = aiParseTemplate(text);
   const id = r.блоки.length ? aiBuildDraft(r, { prompt: opts.prompt, answer: r.ответ }) : null;
+  /* Журнал должен знать не только «шлюз ответил», но и «собралось ли»: без
+     этого он отвечает про деньги и молчит про пользу. Отчёт идёт мимо сборки —
+     не доехал, и ладно. */
+  aiReportOutcome(opts.logId, !!id, r.пропущено || 0);
   if (!id) {
     toast(r.plain ? 'В ответе нет шаблона — показываю текст как есть' : 'Не удалось собрать ни одного блока', true);
     showTextModal('Что ответила модель', r.ответ || String(text || ''));

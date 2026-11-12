@@ -47,6 +47,41 @@ def threadpool_size(requested: int, pool: int, overflow: int) -> int:
 
 THREADPOOL = threadpool_size(int(os.environ.get("KOBRA_THREADPOOL", "30")),
                              DB_POOL, DB_POOL_OVERFLOW)
+# ---------- Доступ к модели ----------
+# Адрес шлюза, модель и токен живут **только здесь**: в браузер токен не уходит
+# ни в одном ответе. `KOBRA_AI_MODEL` — алиас в шлюзе (LiteLLM), а не
+# идентификатор вендора: смена модели не требует нового образа.
+AI_URL = os.environ.get("KOBRA_AI_URL", "").strip()
+AI_MODEL = os.environ.get("KOBRA_AI_MODEL", "").strip()
+AI_TOKEN = os.environ.get("KOBRA_AI_TOKEN", "").strip()
+# Таймаут нашего запроса к шлюзу. Цепочка сверху вниз: обратный прокси (120) >
+# AI_TIMEOUT_SEC (60) > клиент ждёт 70. Нарушишь порядок — человек получит обрыв
+# соединения вместо внятного «модель не ответила», а токен будет уже потрачен.
+AI_TIMEOUT_SEC = int(os.environ.get("KOBRA_AI_TIMEOUT_SEC", "60"))
+# Кому разрешено тратить служебный ключ. Пусто — всем вошедшим, как было до
+# изменения: поведение меняется только когда администратор сузит доступ сам.
+AI_ROLES = tuple(r.strip() for r in os.environ.get("KOBRA_AI_ROLES", "").split(",") if r.strip())
+# Размер запроса. Проверяется и в клиенте (чтобы сказать человеку сразу), и
+# здесь — клиенту верить нельзя
+AI_MAX_CHARS = int(os.environ.get("KOBRA_AI_MAX_CHARS", "4000"))
+AI_MAX_COLS = int(os.environ.get("KOBRA_AI_MAX_COLS", "40"))
+# Пределы частоты — местная защита от цикла, а не бюджет: потолок расхода
+# ставится виртуальным ключом в самом LiteLLM, там, где деньги
+AI_LIMIT_USER = int(os.environ.get("KOBRA_AI_LIMIT_USER", "20"))
+AI_LIMIT_ALL = int(os.environ.get("KOBRA_AI_LIMIT_ALL", "200"))
+AI_LOG_DAYS = int(os.environ.get("KOBRA_AI_LOG_DAYS", "90"))
+# Шлюз обычно пишет запросы сам, и тогда чужие тексты не нужны в двух местах.
+# Расход и итог пишутся всегда: без них журнал не отвечает ни на «сколько», ни
+# на «работает ли»
+AI_LOG_TEXT = os.environ.get("KOBRA_AI_LOG_TEXT", "1") != "0"
+
+
+def ai_configured() -> bool:
+    """Настроен ли доступ к модели. Клиент узнаёт об этом из `/api/ping` — и
+    только это: ни адреса шлюза, ни названия модели ему знать незачем."""
+    return bool(AI_URL and AI_MODEL and AI_TOKEN)
+
+
 # Собранный интерфейс: тот же build/, который открывают двойным щелчком.
 FRONTEND_DIR = os.environ.get(
     "KOBRA_FRONTEND_DIR",
@@ -144,7 +179,7 @@ class Chart(Base):
     # Сводка для карточки в списке: считается при записи, чтобы список не читал
     # тела. Список со телами — это и есть то, из-за чего запуск приложения
     # зависел от объёма чужой работы в сервисе.
-    summary = Column(JSON, default=dict)
+    summary = Column(JSONB, default=dict)   # сводка для карточки: что нужно списку, без тела
     owner_login = Column(String(120))  # владелец: тот, кто создал
     team = Column(String(200), default="")  # команда владельца на момент создания
     shared = Column(JSONB, default=list)  # логины соправителей (owners в Superset)
@@ -158,7 +193,7 @@ class Dashboard(Base):
     id = Column(String(64), primary_key=True)
     title = Column(String(300), nullable=False)
     body = Column(JSON, default=dict)  # вкладки, фильтры, fromTemplate — клиентский объект
-    summary = Column(JSON, default=dict)  # сводка для карточки: см. Chart.summary
+    summary = Column(JSONB, default=dict)  # сводка для карточки: см. Chart.summary
     owner_login = Column(String(120))  # владелец: тот, кто создал
     team = Column(String(200), default="")  # команда владельца на момент создания
     shared = Column(JSONB, default=list)  # логины соправителей (owners в Superset)
@@ -181,6 +216,33 @@ class UploadChunk(Base):
     task_id = Column(String(64), primary_key=True)
     idx = Column(Integer, primary_key=True)
     data = Column(LargeBinary, nullable=False)
+
+
+class AiLog(Base):
+    """Обращение к модели: кто, когда, какая модель, сколько токенов и чем
+    кончилось — и чем кончилось **для человека**.
+
+    Последнее сервер знать не может: ответ разбирает клиент, а «HTTP 200,
+    1400 токенов» ничего не говорит о том, не выбросил ли человек результат
+    сразу. Поэтому клиент дописывает итог сборки в уже существующую запись.
+    Без этого журнал отвечает про деньги и молчит про пользу.
+    """
+
+    __tablename__ = "kobra_ai_log"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    login = Column(String(120), index=True)
+    created_at = Column(DateTime(timezone=True), default=now, index=True)
+    model = Column(String(200), default="")
+    tokens_in = Column(Integer, default=0)
+    tokens_out = Column(Integer, default=0)
+    # Итог обращения к шлюзу: ok, denied, limit, timeout, parse, gateway
+    outcome = Column(String(40), default="")
+    # Итог сборки у человека: built, empty — или пусто, пока клиент не сказал
+    built = Column(String(20), default="")
+    skipped = Column(Integer, default=0)
+    # Тексты хранятся, только если KOBRA_AI_LOG_TEXT включён
+    task = Column(Text)
+    answer = Column(Text)
 
 
 class Setting(Base):

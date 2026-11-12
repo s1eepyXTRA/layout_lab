@@ -65,7 +65,23 @@ services:
     build:
       context: ../../..
       dockerfile: kobra/service/backend/Dockerfile
-    environment: *env
+    # Доступ к модели нужен только веб-сервису: воркер к модели не ходит, он
+    # разбирает файлы. Пусто по умолчанию — тогда /api/ping отвечает ai: false,
+    # и окно описания предлагает перенос вручную, как до изменения. Задать можно
+    # из окружения:
+    #   KOBRA_AI_URL=https://litellm.company.local/v1 KOBRA_AI_MODEL=алиас     #   KOBRA_AI_TOKEN=sk-... docker compose up -d --force-recreate api
+    environment:
+      <<: *env
+      KOBRA_AI_URL: ${KOBRA_AI_URL:-}
+      KOBRA_AI_MODEL: ${KOBRA_AI_MODEL:-}
+      KOBRA_AI_TOKEN: ${KOBRA_AI_TOKEN:-}
+      KOBRA_AI_TIMEOUT_SEC: ${KOBRA_AI_TIMEOUT_SEC:-60}
+      KOBRA_AI_ROLES: ${KOBRA_AI_ROLES:-}
+      KOBRA_AI_LOG_TEXT: ${KOBRA_AI_LOG_TEXT:-1}
+      # Шлюз внутри контура нужно внести в NO_PROXY, иначе запрос уйдёт во
+      # внешний прокси и встанет на таймауте, а симптом будет «модель не отвечает»
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
     ports: ["8000:8000"]
     depends_on:
       db: {condition: service_healthy}

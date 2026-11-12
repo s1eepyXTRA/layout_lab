@@ -36,3 +36,16 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
   value: {{ $v | quote }}
 {{- end }}
 {{- end -}}
+
+{{/* Доступ к модели — только у пода сервиса: воркер к модели не ходит, он
+     разбирает файлы. Токен приезжает из секрета и помечен optional, чтобы под
+     поднимался и без него: тогда сборка по описанию просто выключена. */}}
+{{- define "kobra.aiEnv" -}}
+- name: KOBRA_AI_TOKEN
+  valueFrom:
+    secretKeyRef: {name: {{ include "kobra.secretName" . }}, key: aiToken, optional: true}
+{{- range $k, $v := .Values.ai }}
+- name: {{ $k }}
+  value: {{ $v | quote }}
+{{- end }}
+{{- end -}}
