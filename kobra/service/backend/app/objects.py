@@ -10,13 +10,15 @@
 колонок, поэтому маршруты собираются одной фабрикой: три почти одинаковых
 роутера разъехались бы на первой же правке правил.
 """
+import logging
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app import auth as auth_mod
+from app import metrics
 from app.access import TEAM_ALL, can_edit, can_share, can_view, why_read_only
 from app.auth import current_user
 from app.core import Chart, Dashboard, Dataset, User, now
@@ -36,6 +38,8 @@ LIST_LIMIT = 500
 MAX_LIST_LIMIT = 2000
 # Сколько плиток первого уровня попадает в миниатюру карточки
 THUMB_TILES = 14
+
+log = logging.getLogger("kobra.objects")
 
 
 def _out(obj: Any, name_field: str) -> dict:
@@ -145,30 +149,52 @@ def make_router(model, prefix: str, name_field: str, tag: str) -> APIRouter:
         ))
 
     @router.get("")
-    def list_objects(db: Session = Depends(get_db), user: User = Depends(current_user),
+    def list_objects(response: Response, db: Session = Depends(get_db),
+                     user: User = Depends(current_user),
                      owned_by_dashboard: bool = False, ids: Optional[str] = None,
+                     q: Optional[str] = None, mine: bool = False, viz: Optional[str] = None,
                      limit: int = LIST_LIMIT, offset: int = 0):
         """Список — краткой формой, без тел. `ids` отдаёт тела названных
         объектов: страница дашборда берёт так все свои блоки одним запросом, а
         не по одному на блок.
 
+        `q` ищет подстроку в названии без учёта регистра, `mine` оставляет то,
+        чем человек владеет, `viz` — тип графика. Считает это сервер, а не
+        клиент: роль, видящая чужую работу, иначе скачивала бы работу всей
+        компании, чтобы показать десять карточек, — ровно то, из-за чего список
+        стал кратким. По той же причине и тип графика отбирается здесь: отбор
+        по странице списка давал бы неверный счёт найденного.
+
         Наборы пока уезжают целиком: их описания нужны реестру `DS` при старте,
         и ленивая загрузка тут — отдельная работа. Их и меньше всего: тела
         графиков в сервисе на порядок объёмнее.
         """
-        q = visible(db, user)
+        base = visible(db, user)
         if is_dataset and not owned_by_dashboard:
             # Скрытый набор макета принадлежит шаблону и в списке данных не нужен
-            q = q.filter(model.owner_dashboard_id.is_(None))
+            base = base.filter(model.owner_dashboard_id.is_(None))
         if ids:
             wanted = [i for i in (s.strip() for s in ids.split(",")) if i][:MAX_BATCH]
             if not wanted:
                 return []
             # Права проверяются тем же фильтром видимости, что и список: иначе
             # пакетная выдача стала бы дырой в обход can_view
-            return [_out(o, name_field) for o in q.filter(model.id.in_(wanted)).all()]
-        q = q.order_by(model.updated_at.desc().nullslast(), model.id)
-        rows = q.offset(max(0, offset)).limit(max(1, min(limit, MAX_LIST_LIMIT))).all()
+            return [_out(o, name_field) for o in base.filter(model.id.in_(wanted)).all()]
+        picked = base
+        if mine:
+            # «Мои» — это владелец, а не доступ: объект, которым поделились,
+            # человек своим не считает, и прятать его под этим словом нельзя
+            picked = picked.filter(model.owner_login == user.username)
+        if q and q.strip():
+            picked = picked.filter(func.lower(_name_col(model, name_field)).like(_like(q), escape="\\"))
+        if viz and model is Chart:
+            picked = picked.filter(model.viz == viz)
+        # Два числа, а не одно: «найдено» объясняет пустой список, а «всего
+        # видно» не даёт решить, что объект пропал, когда он отфильтрован
+        response.headers["X-Kobra-Found"] = str(picked.count())
+        response.headers["X-Kobra-Total"] = str(base.count())
+        rows = (picked.order_by(model.updated_at.desc().nullslast(), model.id)
+                .offset(max(0, offset)).limit(max(1, min(limit, MAX_LIST_LIMIT))).all())
         if is_dataset:
             return [_out(o, name_field) for o in rows]
         return [_brief(o, name_field) for o in rows]
@@ -200,13 +226,18 @@ def make_router(model, prefix: str, name_field: str, tag: str) -> APIRouter:
         return _out(obj, name_field)
 
     @router.put("/{obj_id}")
-    def update_object(obj_id: str, response: Response, payload: dict = Body(...),
+    def update_object(obj_id: str, response: Response, overwrite: bool = False,
+                      payload: dict = Body(...),
                       db: Session = Depends(get_db), user: User = Depends(current_user)):
+        """`overwrite=1` — человек увидел расхождение и решил записать своё
+        поверх. Признак идёт параметром запроса, а не полем тела: в теле он
+        попал бы в клиентский объект, а здесь он виден в журнале обращений —
+        перезапись чужой правки должна оставлять след."""
         check_rate("write", user.username)
         obj = _get(db, model, obj_id)
         if not can_edit(user, obj):
             raise HTTPException(status_code=403, detail=why_read_only(obj))
-        _check_version(obj, payload, name_field)
+        _check_version(obj, payload, name_field, overwrite, user)
         name, body = _split(payload, name_field)
         set_name(obj, name)
         obj.body = body
@@ -282,6 +313,21 @@ def _from_directory(db: Session, login: str):
     return u
 
 
+def _name_col(model, name_field: str):
+    """Колонка с названием. Она же индексируется под поиск, поэтому имя берётся
+    здесь, а не угадывается в каждом месте."""
+    return model.title if name_field == "title" else model.name
+
+
+def _like(q: str) -> str:
+    """Подстрока для LIKE в нижнем регистре. Служебные знаки экранируются:
+    человек, набравший «50%», ищет именно это, а не «что угодно»."""
+    text = q.strip().lower()
+    for ch in ("\\", "%", "_"):
+        text = text.replace(ch, "\\" + ch)
+    return f"%{text}%"
+
+
 def _get(db: Session, model, obj_id: str):
     obj = db.get(model, obj_id)
     if obj is None:
@@ -289,21 +335,43 @@ def _get(db: Session, model, obj_id: str):
     return obj
 
 
-def _check_version(obj, payload: dict, name_field: str) -> None:
+def _check_version(obj, payload: dict, name_field: str, overwrite: bool = False,
+                   user: Optional[User] = None) -> None:
     """Запись принимается, только если клиент видел текущую версию. Иначе чужая
-    правка пропала бы оттого, что кто-то сохранил свою позже."""
+    правка пропала бы оттого, что кто-то сохранил свою позже.
+
+    Отказ называет, кто и когда записал чужую версию: «изменилось» не говорит
+    человеку ничего, а выбирать между своей и чужой правкой он может только
+    зная, чья она. Тела чужой версии в отказе нет — оно бывает большим, а для
+    выбора достаточно автора и времени; кому нужно посмотреть, тот перечитает.
+    """
     seen: Optional[int] = payload.get("version")
     if seen is None:
         raise HTTPException(status_code=422, detail="Нужна версия объекта: без неё запись затрёт чужую правку")
-    if int(seen) != int(obj.version):
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": "version_conflict",
-                "message": "Объект изменился с тех пор, как вы его открыли",
-                "current": _out(obj, name_field),
+    if int(seen) == int(obj.version):
+        return
+    if overwrite:
+        # Чужая правка пропала по решению человека. Это вопрос сохранности
+        # работы, и молчать о нём нельзя — как и о неудавшемся отзыве сессии
+        metrics.inc("kobra_overwrites_total")
+        log.warning("Запись поверх чужой правки: %s %s, версия %s поверх %s, автор чужой — %s, пишет — %s",
+                    type(obj).__name__, obj.id, seen, obj.version, obj.updated_by,
+                    getattr(user, "username", "?"))
+        return
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "error": "version_conflict",
+            "message": "Объект изменился с тех пор, как вы его открыли",
+            "current": {
+                "id": obj.id,
+                name_field: getattr(obj, "title" if name_field == "title" else "name"),
+                "version": obj.version,
+                "updated": int(obj.updated_at.timestamp() * 1000) if obj.updated_at else None,
+                "updatedBy": obj.updated_by,
             },
-        )
+        },
+    )
 
 
 def _mirror(obj, body: dict, model) -> None:

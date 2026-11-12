@@ -85,7 +85,12 @@ async function api(path, opts = {}) {
   }
   if (res.status === 204) return null;
   const data = await res.json().catch(() => null);
-  if (res.ok) return data;
+  /* Сколько найдено и сколько всего видно — заголовками, а не обёрткой вокруг
+     списка: обёртку пришлось бы разбирать во всех местах, где список читают,
+     включая выдачу тел по идентификаторам. */
+  if (res.ok) return opts.meta
+    ? { data, found: +res.headers.get('X-Kobra-Found') || 0, total: +res.headers.get('X-Kobra-Total') || 0 }
+    : data;
   const detail = data && data.detail;
   const err = Object.assign(new Error(typeof detail === 'string' ? detail : 'сервис ответил ' + res.status), {
     /* 429 — это не поломка и не отказ в доступе: человек слишком часто просил,
@@ -103,9 +108,9 @@ async function api(path, opts = {}) {
 /* Виды объектов, из которых состоит состояние. Скрытые наборы макетов тянем
    тоже: без них у шаблона нет данных. */
 const SERVER_KINDS = [
-  { key: 'dashboards', path: '/api/dashboards' },
-  { key: 'charts', path: '/api/charts' },
-  { key: 'datasets', path: '/api/datasets?owned_by_dashboard=true' },
+  { key: 'dashboards', path: '/api/dashboards', name: 'title' },
+  { key: 'charts', path: '/api/charts', name: 'name' },
+  { key: 'datasets', path: '/api/datasets?owned_by_dashboard=true', name: 'name' },
 ];
 /** Что сервер подтвердил: ключ «вид:id» → версия и снимок тела. */
 const serverSeen = new Map();
@@ -135,6 +140,60 @@ async function storageLoad() {
   });
   state.dsMetrics = (await api('/api/settings/dsMetrics')) || {};
   return state;
+}
+
+/* ---------- Страница списка ----------
+   Поиск и «только мои» считает сервер, а не фильтр по скачанному: роль,
+   видящая чужую работу, иначе качала бы работу всей компании, чтобы показать
+   десять карточек, — ровно то, из-за чего список стал кратким.
+
+   В локальном режиме считается здесь же: там список и так весь в памяти, и
+   второй путь нужен только чтобы страницы не знали о режиме.
+
+   Возвращаются **объекты из состояния**, а не ответ сервера: страница держит на
+   них ссылки, и подменять их нельзя (то же правило, что у `undoState`). */
+const LIST_PAGE = 48;            // столько карточек в странице списка
+
+async function storageList(kind, opts = {}) {
+  const { q = '', mine = false, viz = '', limit = LIST_PAGE, offset = 0 } = opts;
+  const kindDef = SERVER_KINDS.find(k => k.key === kind);
+  const store = (STATE && STATE[kind]) || {};
+  if (!kindDef) return { items: [], found: 0, total: 0 };
+  if (!storageIsServer()) return listLocal(store, kindDef, { q, mine, viz, limit, offset });
+  const base = kindDef.path.split('?')[0];
+  const url = `${base}?limit=${limit}&offset=${Math.max(0, offset)}`
+    + (q.trim() ? `&q=${encodeURIComponent(q.trim())}` : '')
+    + (mine ? '&mine=1' : '')
+    + (viz ? `&viz=${encodeURIComponent(viz)}` : '');
+  const res = await api(url, { meta: true });
+  const items = (res.data || []).map(o => {
+    /* Объект, тело которого уже на руках, не затираем краткой формой: в нём
+       могут быть несохранённые правки, и список их молча бы потерял. */
+    const have = store[o.id];
+    if (have && !have.brief) return have;
+    store[o.id] = o;
+    serverSeen.set(kind + ':' + o.id, { version: o.version, body: canonical(o) });
+    return o;
+  });
+  return { items, found: res.found, total: res.total };
+}
+
+/** Тот же отбор без сервера. Порядок один: последние правки сверху. */
+function listLocal(store, kindDef, opts) {
+  const { q, mine, viz, limit, offset } = opts;
+  const me = typeof authUser === 'function' ? authUser() : null;
+  const all = Object.values(store).filter(o => !o.preview && canView(o));
+  const text = String(q || '').trim().toLowerCase();
+  let picked = all;
+  if (mine && me) picked = picked.filter(o => (o.ownerLogin || null) === me.login);
+  if (viz) picked = picked.filter(o => o.viz === viz);
+  if (text) picked = picked.filter(o => String(o[kindDef.name] || '').toLowerCase().includes(text));
+  picked = picked.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  return {
+    items: limit ? picked.slice(Math.max(0, offset), Math.max(0, offset) + limit) : picked,
+    found: picked.length,
+    total: all.length,
+  };
 }
 
 /* ---------- Тела объектов по требованию ----------
@@ -189,6 +248,19 @@ function dashChartCount(d) {
 
 /** Тела дашборда и всех его блоков: страница рисует их сразу все. */
 async function ensureDashboardBody(dashId) {
+  /* Ссылка на шаблон, которого в состоянии нет вовсе: в сервисе их бывает
+     больше, чем приезжает при запуске, а ссылками люди обмениваются. Спросим
+     поимённо — иначе чужая ссылка открывает «шаблон не найден» при живом
+     шаблоне. Нет такого или нет доступа — страница скажет это сама. */
+  if (storageIsServer() && STATE && STATE.dashboards && !STATE.dashboards[dashId]) {
+    try {
+      const got = await api('/api/dashboards/' + encodeURIComponent(dashId));
+      if (got && got.id) {
+        STATE.dashboards[got.id] = got;
+        serverSeen.set('dashboards:' + got.id, { version: got.version, body: canonical(got) });
+      }
+    } catch (e) { /* не нашли — дальше по обычному пути */ }
+  }
   await ensureBodies('dashboards', [dashId]);
   const d = STATE && STATE.dashboards && STATE.dashboards[dashId];
   if (!d || !d.tabs) return true;
@@ -209,6 +281,12 @@ function storageSave(state) {
 let pendingState = null;
 let saveTimer = null;
 let saving = false;
+/** Что разошлось: вид, идентификатор, название и чужая версия с автором. */
+let conflictInfo = null;
+/** Объекты, которые человек решил записать поверх чужой правки — по одному разу. */
+const overwriteOnce = new Set();
+
+const storageConflict = () => conflictInfo;
 
 function serverQueueSave(state) {
   pendingState = state;
@@ -227,7 +305,10 @@ async function serverPush() {
     setStorageState(pendingState ? 'pending' : 'saved');
   } catch (e) {
     if (e.kind === 'conflict') {
-      // Чужую правку не затираем: решение за человеком
+      /* Чужую правку не затираем: решение за человеком. Правки остаются в
+         очереди — выбор «записать своё поверх» иначе нечего было бы писать. */
+      conflictInfo = e.conflict || null;
+      pendingState = state;
       setStorageState('conflict', (e.detail && e.detail.message) || 'Объект изменился в другом месте');
     } else if (e.kind === 'auth') {
       setStorageState('error', 'Сессия закончилась: войдите заново');
@@ -260,9 +341,27 @@ async function serverSend(state) {
       const seen = serverSeen.get(kind.key + ':' + id);
       const body = canonical(obj);
       if (seen && seen.body === body) continue;
-      const sent = seen
-        ? await api(`${path}/${id}`, { method: 'PUT', body: Object.assign({}, obj, { version: seen.version }) })
-        : await api(path, { method: 'POST', body: obj });
+      const key = kind.key + ':' + id;
+      const over = overwriteOnce.has(key);
+      let sent;
+      try {
+        sent = seen
+          ? await api(`${path}/${id}` + (over ? '?overwrite=1' : ''),
+            { method: 'PUT', body: Object.assign({}, obj, { version: seen.version }) })
+          : await api(path, { method: 'POST', body: obj });
+      } catch (e) {
+        /* Отказ по версии: человеку нужно знать, что именно разошлось и чья
+           это правка, — без этого выбор «перечитать или поверх» вслепую. */
+        if (e.kind === 'conflict') {
+          const cur = (e.detail && e.detail.current) || null;
+          /* Название берём **с сервера**: своё, ещё не сохранённое, назвало бы
+             чужую правку нашим словом — а сохранил коллега свою версию. */
+          e.conflict = { kind: kind.key, id, current: cur,
+            name: (cur && cur[kind.name]) || obj[kind.name] || id };
+        }
+        throw e;
+      }
+      overwriteOnce.delete(key);
       // Сервер вернул объект со своими полями — кладём их обратно в состояние
       Object.assign(obj, { version: sent.version, updated: sent.updated, updatedBy: sent.updatedBy,
         ownerLogin: sent.ownerLogin, team: sent.team, shared: sent.shared });
@@ -309,10 +408,24 @@ async function storageFlush() {
 /** Перечитать состояние с сервера — после отказа по версии. */
 async function storageReload() {
   pendingState = null;
+  conflictInfo = null;
+  overwriteOnce.clear();
   if (saveTimer) clearTimeout(saveTimer);
   const fresh = await storageLoad();
   setStorageState('saved');
   return fresh;
+}
+
+/** Записать своё поверх чужой правки. Только по решению человека: сервер
+    принимает такую запись лишь с явным признаком, и она остаётся в его журнале. */
+async function storageOverwrite() {
+  if (!conflictInfo) return false;
+  overwriteOnce.add(conflictInfo.kind + ':' + conflictInfo.id);
+  conflictInfo = null;
+  if (!pendingState) return false;
+  setStorageState('pending');
+  await serverPush();
+  return storageState === 'saved';
 }
 
 /* ---------- Расчёт ----------

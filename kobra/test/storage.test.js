@@ -63,3 +63,67 @@ test('отказ одной заявки не держит очередь', asyn
   assert.equal(seen.filter(r => String(r).startsWith('сбой')).length, 4);
   assert.equal(seen.filter(r => String(r).startsWith('поздняя')).length, 3);
 });
+
+/* ---------- Страница списка ----------
+   Отбор за сервисом считает сервер, но без сервиса тот же отбор идёт здесь —
+   второй путь нужен, чтобы страницы не знали о режиме. Проверяем именно его:
+   он единственный, который можно проверить без сети. */
+
+/** Состояние и вошедший сотрудник: списки отбираются по правам. */
+function setup(dashboards) {
+  K.authInit();
+  assert.ok(K.authSignIn('d.orlov'));           // Продажи, Gamma
+  K.STATE = { v: 2, charts: {}, dashboards: {}, datasets: {}, dsMetrics: {} };
+  dashboards.forEach(d => { K.STATE.dashboards[d.id] = d; });
+  return K.authUser();
+}
+const dash = (id, title, owner, updated, extra) => Object.assign(
+  { id, title, ownerLogin: owner, team: 'Продажи', shared: [], updated }, extra || {});
+
+test('поиск по названию без учёта регистра и порядок по свежести', async () => {
+  setup([
+    dash('d1', 'Выручка по филиалам', 'd.orlov', 100),
+    dash('d2', 'ВЫРУЧКА и план', 'e.kuznecova', 300),
+    dash('d3', 'Заявки в поддержку', 'd.orlov', 200),
+  ]);
+  const res = await K.storageList('dashboards', { q: 'выручка' });
+  assert.deepEqual(res.items.map(d => d.id), ['d2', 'd1']);
+  assert.equal(res.found, 2);
+  assert.equal(res.total, 3);
+});
+
+test('«только мои» — это владелец, а не выданный доступ', async () => {
+  const me = setup([
+    dash('d_my', 'Моё', 'd.orlov', 100),
+    dash('d_shared', 'Выданное', 'e.kuznecova', 200, { shared: ['d.orlov'] }),
+    dash('d_team', 'Командное', 'e.kuznecova', 300),
+  ]);
+  assert.equal(me.login, 'd.orlov');
+  const res = await K.storageList('dashboards', { mine: true });
+  assert.deepEqual(res.items.map(d => d.id), ['d_my']);
+  // Оба числа: иначе человек решит, что выданное ему пропало
+  assert.equal(res.found, 1);
+  assert.equal(res.total, 3);
+});
+
+test('чужое, которого не видно, не попадает ни в список, ни в счёт', async () => {
+  setup([
+    dash('d_my', 'Моё', 'd.orlov', 100),
+    Object.assign(dash('d_alien', 'Чужое', 'e.kuznecova', 200), { team: 'Поддержка' }),
+  ]);
+  const res = await K.storageList('dashboards', {});
+  assert.deepEqual(res.items.map(d => d.id), ['d_my']);
+  assert.equal(res.total, 1);
+});
+
+test('список идёт страницами, предпросмотр в него не попадает', async () => {
+  setup([
+    ...Array.from({ length: 5 }, (_, i) => dash('d' + i, 'Шаблон ' + i, 'd.orlov', 100 + i)),
+    dash('d_prev', 'Пример', 'd.orlov', 999, { preview: true }),
+  ]);
+  const first = await K.storageList('dashboards', { limit: 2 });
+  const second = await K.storageList('dashboards', { limit: 2, offset: 2 });
+  assert.equal(first.found, 5);
+  assert.deepEqual(first.items.map(d => d.id), ['d4', 'd3']);
+  assert.deepEqual(second.items.map(d => d.id), ['d2', 'd1']);
+});

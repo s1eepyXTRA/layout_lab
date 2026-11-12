@@ -235,3 +235,125 @@ def test_svodka_obnovlyaetsya_pri_pravke(client, smirnova):
     d = client.get("/api/dashboards", headers=smirnova).json()[0]
     assert d["summary"]["tabs"] == 2
     assert d["summary"]["chartIds"] == ["c1", "c9"]
+
+
+def test_poisk_po_nazvaniyu_bez_ucheta_registra(client, smirnova):
+    """Человек, видящий чужую работу, ищет свой шаблон среди всех. Считает это
+    сервер: скачать всё, чтобы показать одно, — то, из-за чего список стал
+    кратким."""
+    for i, name in enumerate(["Выручка по филиалам", "ВЫРУЧКА и план", "Заявки в поддержку"]):
+        client.post("/api/charts", json=dict(CHART, id=f"c{i}", name=name), headers=smirnova)
+    r = client.get("/api/charts?q=выручка", headers=smirnova)
+    assert {c["name"] for c in r.json()} == {"Выручка по филиалам", "ВЫРУЧКА и план"}
+    assert r.headers["X-Kobra-Found"] == "2"
+    assert r.headers["X-Kobra-Total"] == "3"
+
+
+def test_poisk_ne_prinimaet_sluzhebnye_znaki_za_shablon(client, smirnova):
+    """Набравший «50%» ищет именно это, а не «что угодно»."""
+    client.post("/api/charts", json=dict(CHART, id="c_pct", name="Выполнение 50% плана"), headers=smirnova)
+    client.post("/api/charts", json=dict(CHART, id="c_other", name="Заявки"), headers=smirnova)
+    # Знак процента в адресе — сам по себе экранирование, поэтому через params
+    assert {c["id"] for c in client.get("/api/charts", params={"q": "50%"},
+                                        headers=smirnova).json()} == {"c_pct"}
+    # Один знак процента ищет знак процента, а не «что угодно»
+    assert {c["id"] for c in client.get("/api/charts", params={"q": "%"},
+                                        headers=smirnova).json()} == {"c_pct"}
+
+
+def test_tolko_moi_eto_vladelec_a_ne_dostup(client, make_user, login, auth, db):
+    """Объект, которым поделились, человек своим не считает, и прятать его под
+    этим словом нельзя."""
+    from app.core import Chart
+    make_user("d.orlov", team="Продажи")
+    make_user("e.kuznecova", team="Продажи")
+    db.add_all([
+        Chart(id="c_my", name="Мой график", viz="bar", dataset_id="ds_1", body={}, owner_login="d.orlov",
+              team="Продажи", shared=[]),
+        Chart(id="c_shared", name="Выданный график", viz="bar", dataset_id="ds_1", body={}, owner_login="e.kuznecova",
+              team="Продажи", shared=["d.orlov"]),
+        Chart(id="c_team", name="Командный график", viz="bar", dataset_id="ds_1", body={}, owner_login="e.kuznecova",
+              team="Продажи", shared=[]),
+    ])
+    db.commit()
+    head = auth(login("d.orlov"))
+    r = client.get("/api/charts?mine=1", headers=head)
+    assert {c["id"] for c in r.json()} == {"c_my"}
+    # Оба числа: иначе человек решит, что выданный ему график пропал
+    assert (r.headers["X-Kobra-Found"], r.headers["X-Kobra-Total"]) == ("1", "3")
+
+
+def test_poisk_i_tolko_moi_vmeste(client, make_user, login, auth, db):
+    from app.core import Dashboard
+    make_user("d.orlov", team="Продажи")
+    make_user("e.kuznecova", team="Продажи")
+    db.add_all([
+        Dashboard(id="d_1", title="Выручка моя", body={}, owner_login="d.orlov", team="Продажи", shared=[]),
+        Dashboard(id="d_2", title="Выручка чужая", body={}, owner_login="e.kuznecova", team="Продажи", shared=[]),
+        Dashboard(id="d_3", title="Заявки мои", body={}, owner_login="d.orlov", team="Продажи", shared=[]),
+    ])
+    db.commit()
+    r = client.get("/api/dashboards?q=выручка&mine=1", headers=auth(login("d.orlov")))
+    assert {d["id"] for d in r.json()} == {"d_1"}
+    assert (r.headers["X-Kobra-Found"], r.headers["X-Kobra-Total"]) == ("1", "3")
+
+
+def test_poisk_ne_pokazyvaet_chuzhoe(client, make_user, login, auth, db):
+    """Поиск идёт поверх прав, а не вместо них."""
+    from app.core import Dashboard
+    make_user("d.orlov", team="Продажи")
+    make_user("e.kuznecova", team="Поддержка")
+    db.add_all([
+        Dashboard(id="d_mine", title="Выручка филиалов", body={}, owner_login="d.orlov",
+                  team="Продажи", shared=[]),
+        Dashboard(id="d_alien", title="Выручка дирекции", body={}, owner_login="e.kuznecova",
+                  team="Поддержка", shared=[]),
+    ])
+    db.commit()
+    r = client.get("/api/dashboards?q=выручка", headers=auth(login("d.orlov")))
+    assert {d["id"] for d in r.json()} == {"d_mine"}
+    assert r.headers["X-Kobra-Found"] == "1"
+
+
+def test_otkaz_po_versii_nazyvaet_avtora_i_vremya(client, make_user, login, auth):
+    """«Изменилось» не говорит человеку ничего: выбирать между своей и чужой
+    правкой можно, только зная, чья она."""
+    make_user("d.orlov", team="Продажи")
+    make_user("e.kuznecova", team="Продажи")
+    svoy = auth(login("d.orlov"))
+    client.post("/api/dashboards", json=DASH, headers=svoy)
+    client.post("/api/dashboards/d_sales/share", json={"login": "e.kuznecova"}, headers=svoy)
+    client.put("/api/dashboards/d_sales", json=dict(DASH, title="Правка коллеги", version=1),
+               headers=auth(login("e.kuznecova")))
+    r = client.put("/api/dashboards/d_sales", json=dict(DASH, title="Моя правка", version=1), headers=svoy)
+    assert r.status_code == 409
+    cur = r.json()["detail"]["current"]
+    assert cur["version"] == 2
+    assert cur["updatedBy"] == "e.kuznecova"
+    assert cur["updated"] > 0
+    assert cur["title"] == "Правка коллеги"
+    # Тела чужой версии в отказе нет: оно бывает большим, а для выбора не нужно
+    assert "tabs" not in cur and "filters" not in cur
+
+
+def test_zapis_poverh_tolko_s_yavnym_priznakom(client, smirnova, caplog):
+    """Без признака — по-прежнему отказ: отличить осознанное «поверх» от
+    «клиент не заметил отказа» иначе нельзя."""
+    import logging
+
+    from app import metrics
+    client.post("/api/dashboards", json=DASH, headers=smirnova)
+    client.put("/api/dashboards/d_sales", json=dict(DASH, version=1), headers=smirnova)
+    assert client.put("/api/dashboards/d_sales", json=dict(DASH, title="Моё", version=1),
+                      headers=smirnova).status_code == 409
+    metrics.reset()
+    with caplog.at_level(logging.WARNING, logger="kobra.objects"):
+        r = client.put("/api/dashboards/d_sales?overwrite=1",
+                       json=dict(DASH, title="Моё поверх", version=1), headers=smirnova)
+    assert r.status_code == 200
+    assert r.json()["title"] == "Моё поверх"
+    assert r.json()["version"] == 3
+    # Чужая правка пропала по решению человека — об этом остаётся след
+    assert any("поверх чужой правки" in rec.getMessage() for rec in caplog.records)
+    assert metrics.snapshot()["kobra_overwrites_total"][()] == 1
+    metrics.reset()

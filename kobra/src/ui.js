@@ -159,6 +159,55 @@ function confirmDialog(title, text, okText = 'Удалить', danger = true) {
     });
   });
 }
+/* ---------- Полоса над списком ----------
+   Поиск, «только мои» и счёт найденного. Одна на все списки: три похожие
+   полосы разъехались бы на первой же правке — у одной появился бы сброс
+   поиска, у другой нет.
+
+   Переключатель помнится в личных настройках, а не в адресе: человек один раз
+   выбирает, как ему смотреть, и возвращается к тому же. Запрос не помнится —
+   возвращаться в чужой поиск незачем.
+   @param {string} key раздел: под этим именем хранится состояние
+   @param {() => void} onChange зовут при смене запроса или переключателя */
+function listBar(key, onChange) {
+  const LS = 'kobra.list.' + key;
+  const state = { q: '', mine: !!(lsGet(LS) || {}).mine };
+  const input = h('input', { class: 'input', type: 'search', placeholder: 'Найти по названию',
+    'aria-label': 'Поиск по названию' });
+  const mineBtn = h('button', { class: 'btn', type: 'button' }, 'Только мои');
+  const count = h('span', { class: 'list-count' });
+  const paintMine = () => {
+    mineBtn.className = 'btn' + (state.mine ? ' on' : '');
+    mineBtn.setAttribute('aria-pressed', state.mine ? 'true' : 'false');
+  };
+  paintMine();
+  input.addEventListener('input', debounce(() => {
+    if (input.value.trim() === state.q) return;
+    state.q = input.value.trim();
+    onChange();
+  }, 250));
+  mineBtn.addEventListener('click', () => {
+    state.mine = !state.mine;
+    lsSet(LS, { mine: state.mine });
+    paintMine();
+    onChange();
+  });
+  return {
+    el: h('div', { class: 'toolbar' }, input, mineBtn, count),
+    state,
+    /** Два числа, а не одно: «найдено 3» без «из 40» выглядит как потеря работы. */
+    setCount(found, total, one, few, many) {
+      const filtered = !!state.q || state.mine;
+      clear(count).appendChild(document.createTextNode(
+        !filtered ? (total ? `${total} ${plural(total, one, few, many)}` : '')
+          : found ? `Найдено ${found} из ${total}` : ''));
+    },
+    /** Сбросить поиск: предлагается с пустого результата. */
+    reset() { input.value = ''; state.q = ''; paintMine(); onChange(); },
+    focus() { input.focus(); },
+  };
+}
+
 function promptDialog(title, label, value = '', okText = 'Сохранить') {
   return new Promise(res => {
     let done = false;

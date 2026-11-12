@@ -102,6 +102,13 @@ a { color: var(--primary); }
 /* ---------- Списки (дашборды, графики, данные) ---------- */
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
 .toolbar .input { max-width: 320px; }
+/* Счёт найденного: это подпись к полосе поиска, а не действие — цвет нейтральный */
+.list-count { color: var(--ink-2); font-size: 13px; margin-left: 2px; }
+/* display у класса сильнее, чем [hidden] у браузера, — иначе «показать ещё»
+   остаётся на экране поверх «ничего не нашлось» */
+.list-more { display: flex; justify-content: center; margin: 18px 0 4px; }
+.list-more[hidden] { display: none; }
+.list-empty { grid-column: 1 / -1; }
 .dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 .dash-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); overflow: hidden;
@@ -155,6 +162,8 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .dash-main { flex: 1; min-width: 0; overflow: auto; display: flex; flex-direction: column; }
 .dash-head { display: flex; align-items: center; gap: 10px; padding: 16px 24px 8px; flex-wrap: wrap; }
 .dash-head h1 { font: 600 21px/1.25 var(--font-display); margin: 0; letter-spacing: -.01em; }
+/* Кто правил — подписью у названия: шрифт обычный, иначе читается как часть имени */
+.head-when { font: 400 12.5px/1 var(--font); color: var(--ink-2); margin-left: 10px; vertical-align: middle; white-space: nowrap; }
 .dash-head .grow { flex: 1; }
 /* Пример шаблона: возврат в каталог должен бросаться в глаза и не уезжать
    при прокрутке — иначе человек застревает в чужом дашборде */

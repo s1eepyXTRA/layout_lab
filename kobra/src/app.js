@@ -156,7 +156,7 @@ function renderShell() {
   paintSave(cur.state, cur.note);
   onStorageState(paintSave);
   saveTag.addEventListener('click', () => {
-    if (storageStateNow().state === 'conflict') reloadFromServer();
+    if (storageStateNow().state === 'conflict') openConflictDialog();
     else storageFlush();
   });
 
@@ -244,6 +244,43 @@ function fmtWhen(ts) {
   const same = d.toDateString() === now.toDateString();
   return same ? `сегодня в ${pad2(d.getHours())}:${pad2(d.getMinutes())}` : `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()}`;
 }
+/* «12 минут назад» вместо даты: в общем сервисе важно не когда по календарю, а
+   насколько свежая правка — не правит ли кто-то этот шаблон прямо сейчас.
+   Точная дата остаётся в подсказке. */
+function fmtAgo(ts) {
+  if (!ts) return '';
+  const sec = Math.round((Date.now() - ts) / 1000);
+  if (sec < 90) return 'только что';
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} ${plural(min, 'минуту', 'минуты', 'минут')} назад`;
+  const hour = Math.round(min / 60);
+  if (hour < 24) return `${hour} ${plural(hour, 'час', 'часа', 'часов')} назад`;
+  const day = Math.round(hour / 24);
+  if (day === 1) return 'вчера';
+  if (day < 7) return `${day} ${plural(day, 'день', 'дня', 'дней')} назад`;
+  return fmtWhen(ts);
+}
+function fmtFull(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()} в ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+/* Кто правил последним — одной строкой. Своё имя не пишем: «правил я» занимает
+   место и ничего не сообщает, у своих остаётся только время. Имя печатается
+   без глагола: по имени пол не угадать, а «правил Смирнова» — это брак. */
+function editedLine(obj) {
+  const when = fmtAgo(obj && obj.updated);
+  if (!when) return '';
+  const me = authUser();
+  const by = obj && obj.updatedBy;
+  return by && me && by !== me.login ? `правка: ${authName(by)}, ${when}` : `изменён ${when}`;
+}
+/** Та же подпись элементом, с полной датой в подсказке. */
+function editedTag(obj, cls = 'muted') {
+  const text = editedLine(obj);
+  if (!text) return null;
+  return h('span', { class: cls, title: obj.updated ? 'Последняя правка: ' + fmtFull(obj.updated) : '' }, text);
+}
 /* Три пути: взять готовое, строить самому, принести свои данные. Описаны
    одним списком, потому что показываются в двух местах — на стартовом экране
    и в диалоге «Новый дашборд», и расходиться им нельзя. В диалоге путей два:
@@ -272,55 +309,123 @@ function startChoice(ids) {
   const ways = START_WAYS.filter(w => !ids || ids.includes(w.id));
   return h('div', { class: 'start-choice' }, ways.map(w => startCard(w)));
 }
+/* Список шаблонов. Отбор считает сервер (`storageList`), а страница только
+   показывает: роль, видящая чужую работу, иначе качала бы работу всей компании
+   ради десяти карточек. Поэтому и рисуется он не сразу, а по первому ответу —
+   от него зависит даже шапка: без своих шаблонов это экран «с чего начнём». */
 function renderDashboardList(main) {
   const page = h('div', { class: 'page' });
+  const head = h('div');
+  const body = h('div');
+  page.appendChild(head);
+  page.appendChild(body);
   main.appendChild(page);
-  const list = Object.values(STATE.dashboards).filter(d => !d.preview && canView(d)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
-  // Свой шаблон — любой, кроме демо: пока их нет, показываем выбор пути
-  const own = list.filter(d => d.id !== 'd_demo');
-  if (!own.length) {
-    page.appendChild(h('div', { class: 'page-head' },
-      h('div', { class: 'grow' }, h('h1', null, 'С чего начнём')),
-      h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла')));
-    page.appendChild(startChoice());
-    if (list.length) {
-      page.appendChild(h('h2', { style: { fontSize: '17px', margin: '28px 0 10px' } }, 'Демо-шаблон'));
-      page.appendChild(dashGrid(list));
+  let gone = false;
+  let offset = 0;
+  const bar = listBar('dashboards', () => load(true));
+  const grid = h('div', { class: 'dash-grid' });
+  const newCard = h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый шаблон');
+  const more = h('button', { class: 'btn', onclick: () => load(false) }, 'Показать ещё');
+  const moreWrap = h('div', { class: 'list-more', hidden: true }, more);
+  const busy = h('div', { class: 'empty' }, h('b', null, 'Загружаю…'));
+  body.appendChild(busy);
+
+  /** @param {boolean} fresh заново (сменился запрос) или дописать следующую страницу */
+  async function load(fresh) {
+    if (fresh) offset = 0;
+    more.disabled = true;
+    let res;
+    try {
+      res = await storageList('dashboards', { q: bar.state.q, mine: bar.state.mine, offset });
+    } catch (e) {
+      if (gone) return;
+      clear(body).appendChild(h('div', { class: 'empty' }, h('b', null, 'Не удалось получить список'),
+        e.message, h('br'), h('button', { class: 'btn', onclick: () => load(true) }, 'Повторить')));
+      return;
     }
-    return;
+    if (gone) return;
+    more.disabled = false;
+    paint(res, fresh);
+    offset += res.items.length;
   }
-  page.appendChild(h('div', { class: 'page-head' },
-    h('div', { class: 'grow' }, h('h1', null, 'Шаблоны'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. '
-      + (storageIsServer() ? 'Всё сохраняется в сервисе.' : 'Всё сохраняется в этом браузере.'))),
-    h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
-    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый шаблон')));
-  page.appendChild(dashGrid(list));
+
+  function paint(res, fresh) {
+    const filtered = !!bar.state.q || bar.state.mine;
+    // Свой шаблон — любой, кроме демо: пока их нет, показываем выбор пути
+    const onlyDemo = !filtered && res.total <= (res.items.some(d => d.id === 'd_demo') ? 1 : 0);
+    if (!head.firstChild || head.dataset.mode !== (onlyDemo ? 'start' : 'list')) {
+      head.dataset.mode = onlyDemo ? 'start' : 'list';
+      clear(head).appendChild(onlyDemo
+        ? h('div', { class: 'page-head' },
+          h('div', { class: 'grow' }, h('h1', null, 'С чего начнём')),
+          h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'))
+        : h('div', { class: 'page-head' },
+          h('div', { class: 'grow' }, h('h1', null, 'Шаблоны'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. '
+            + (storageIsServer() ? 'Всё сохраняется в сервисе.' : 'Всё сохраняется в этом браузере.'))),
+          h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
+          h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый шаблон')));
+    }
+    if (onlyDemo) {
+      clear(body);
+      body.appendChild(startChoice());
+      if (res.items.length) {
+        body.appendChild(h('h2', { style: { fontSize: '17px', margin: '28px 0 10px' } }, 'Демо-шаблон'));
+        body.appendChild(dashGrid(res.items));
+      }
+      return;
+    }
+    if (fresh) {
+      clear(body);
+      body.appendChild(bar.el);
+      body.appendChild(grid);
+      body.appendChild(moreWrap);
+      clear(grid);
+    }
+    bar.setCount(res.found, res.total, 'шаблон', 'шаблона', 'шаблонов');
+    if (!res.found) {
+      clear(grid);
+      moreWrap.hidden = true;
+      grid.appendChild(h('div', { class: 'empty list-empty' }, h('b', null, 'Ничего не нашлось'),
+        bar.state.mine && bar.state.q ? 'Среди ваших шаблонов нет такого названия.'
+          : bar.state.mine ? 'Своих шаблонов пока нет.' : 'Попробуйте другое название.',
+        h('br'), h('button', { class: 'btn', onclick: () => bar.reset() }, 'Сбросить поиск')));
+      return;
+    }
+    res.items.forEach(d => grid.appendChild(dashCard(d)));
+    grid.appendChild(newCard);
+    moreWrap.hidden = offset + res.items.length >= res.found;
+  }
+
+  load(true);
+  return () => { gone = true; };
 }
 function dashGrid(list) {
   const grid = h('div', { class: 'dash-grid' });
-  list.forEach(d => {
-    const nCharts = dashChartCount(d);
-    const nTabs = dashTabCount(d);
-    const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с шаблоном' }, ic('dots'));
-    more.addEventListener('click', e => {
-      e.stopPropagation();
-      openMenu(more, [
-        { label: 'Открыть', icon: 'eye', onClick: () => go('#/d/' + d.id) },
-        { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(d.id) },
-        { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(d.id) },
-        canShare(d) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(d, 'шаблону', () => { saveState(); route(); }) } : null,
-        canEdit(d) ? '-' : null,
-        canEdit(d) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteDashboard(d.id) } : null,
-      ]);
-    });
-    grid.appendChild(h('div', { class: 'dash-card', tabindex: 0, role: 'link', onclick: () => go('#/d/' + d.id), onkeydown: e => { if (e.key === 'Enter') go('#/d/' + d.id); } },
-      dashThumb(d),
-      h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
-        h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${nTabs} ${plural(nTabs, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`),
-        ownerTag(d)), more)));
-  });
+  list.forEach(d => grid.appendChild(dashCard(d)));
   grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый шаблон'));
   return grid;
+}
+function dashCard(d) {
+  const nCharts = dashChartCount(d);
+  const nTabs = dashTabCount(d);
+  const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с шаблоном' }, ic('dots'));
+  more.addEventListener('click', e => {
+    e.stopPropagation();
+    openMenu(more, [
+      { label: 'Открыть', icon: 'eye', onClick: () => go('#/d/' + d.id) },
+      { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(d.id) },
+      { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(d.id) },
+      canShare(d) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(d, 'шаблону', () => { saveState(); route(); }) } : null,
+      canEdit(d) ? '-' : null,
+      canEdit(d) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteDashboard(d.id) } : null,
+    ]);
+  });
+  return h('div', { class: 'dash-card', tabindex: 0, role: 'link', onclick: () => go('#/d/' + d.id), onkeydown: e => { if (e.key === 'Enter') go('#/d/' + d.id); } },
+    dashThumb(d),
+    h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
+      h('span', { title: d.updated ? 'Последняя правка: ' + fmtFull(d.updated) : '' },
+        `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${nTabs} ${plural(nTabs, 'вкладка', 'вкладки', 'вкладок')} · ${editedLine(d)}`),
+      ownerTag(d)), more));
 }
 // Пустые дашборды, созданные кнопкой «Новый дашборд»: если с такого ушли,
 // ничего не добавив, запись убирается, чтобы в списке не оставался мусор.
@@ -424,47 +529,93 @@ function renderChartList(main) {
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('h1', null, 'Графики'), h('p', null, 'Каждый график можно добавить в один или несколько шаблонов.')),
     h('button', { class: 'btn primary', onclick: () => newChartDialog() }, ic('plus'), 'Новый график')));
-  const search = h('input', { class: 'input', type: 'search', placeholder: 'Найти график', 'aria-label': 'Поиск графиков' });
-  const vizF = selectEl([['', 'Все типы'], ...VIZ_ORDER.map(k => [k, VIZ[k].label])], '', () => paint(), { style: { maxWidth: '240px' }, 'aria-label': 'Тип графика' });
-  page.appendChild(h('div', { class: 'toolbar' }, search, vizF));
+  let gone = false;
+  let offset = 0;
+  const bar = listBar('charts', () => load(true));
+  /* Тип графика отбирается там же, где поиск, — на сервере: иначе отбор шёл бы
+     по одной странице списка, и счёт найденного врал. */
+  const vizF = selectEl([['', 'Все типы'], ...VIZ_ORDER.map(k => [k, VIZ[k].label])], '', () => load(true), { style: { maxWidth: '240px' }, 'aria-label': 'Тип графика' });
+  bar.el.appendChild(vizF);
+  page.appendChild(bar.el);
   const wrap = h('div', { class: 'tbl-wrap' });
+  const rows = h('tbody');
+  const table = h('table', { class: 'list' },
+    h('thead', null, h('tr', null, h('th', null, 'Название'), h('th', null, 'Тип'), h('th', null, 'Набор данных'), h('th', null, 'ТЗ'), h('th', null, 'В шаблонах'), h('th', null, 'Изменён'), h('th'))),
+    rows);
+  const more = h('button', { class: 'btn', onclick: () => load(false) }, 'Показать ещё');
+  const moreWrap = h('div', { class: 'list-more', hidden: true }, more);
+  const empty = h('div', { hidden: true });
   page.appendChild(wrap);
-  search.addEventListener('input', debounce(() => paint(), 150));
-  function paint() {
-    const q = search.value.trim().toLowerCase();
-    const list = Object.values(STATE.charts).filter(c => canView(c) && (!q || c.name.toLowerCase().includes(q)) && (!vizF.value || c.viz === vizF.value)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
-    clear(wrap);
-    if (!list.length) { wrap.appendChild(h('div', { class: 'empty' }, h('b', null, Object.keys(STATE.charts).length ? 'Ничего не найдено' : 'Графиков пока нет'), 'Создайте первый график из набора данных.', h('br'), h('button', { class: 'btn primary', onclick: () => newChartDialog() }, ic('plus'), 'Новый график'))); return; }
-    wrap.appendChild(h('table', { class: 'list' },
-      h('thead', null, h('tr', null, h('th', null, 'Название'), h('th', null, 'Тип'), h('th', null, 'Набор данных'), h('th', null, 'ТЗ'), h('th', null, 'В шаблонах'), h('th', null, 'Изменён'), h('th'))),
-      h('tbody', null, list.map(c => {
-        const used = chartUsage(c.id);
-        const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с графиком' }, ic('dots'));
-        more.addEventListener('click', e => { e.stopPropagation(); openMenu(more, [
-          { label: canEdit(c) ? 'Редактировать' : 'Открыть', icon: canEdit(c) ? 'edit' : 'eye', onClick: () => go('#/explore/' + c.id) },
-          { label: 'Дублировать', icon: 'copy', onClick: async () => { await ensureBodies('charts', [c.id]); const n = clone(c); n.id = uid('c_'); n.name += ' (копия)'; n.updated = Date.now(); delete n.ownerLogin; delete n.shared; delete n.brief; STATE.charts[n.id] = n; saveState(); paint(); } },
-          canShare(c) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(c, 'графику', () => { saveState(); paint(); }) } : null,
-          canEdit(c) ? '-' : null,
-          canEdit(c) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteChart(c.id).then(ok => ok && paint()) } : null,
-        ]); });
-        // Тела графика здесь нет: заполненность ТЗ и бизнес-вопрос — из сводки
-        const nSpec = c.brief ? ((c.summary || {}).spec || 0) : specFilledCount(c);
-        const question = c.brief ? (c.summary || {}).question : specValue(c, 'question');
-        return h('tr', { class: 'click', onclick: () => go('#/explore/' + c.id) },
-          h('td', null, h('b', { style: { fontWeight: 500 } }, c.name),
-            question ? h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '2px' } }, question) : null,
-            authIsOwn(c) ? null : h('div', null, ownerTag(c))),
-          h('td', null, h('span', { class: 'vt' }, ic(VIZ[c.viz].icon), VIZ[c.viz].label)),
-          h('td', null, (DS[c.datasetId] || {}).name || h('span', { class: 'pill acc' }, 'нет данных')),
-          h('td', null, nSpec
-            ? h('span', { class: 'pill pri', title: c.brief ? 'Откройте график, чтобы увидеть поля ТЗ' : SPEC_FIELDS.filter(f => specValue(c, f.key)).map(f => f.label + ': ' + (f.key === 'priority' ? specPriorityLabel(specValue(c, f.key)) : specValue(c, f.key))).join('\n') }, nSpec + '/' + SPEC_FIELDS.length)
-            : h('span', { class: 'muted' }, '—')),
-          h('td', null, used.length ? used.map(d => h('a', { href: '#/d/' + d.id, onclick: e => e.stopPropagation(), style: { marginRight: '8px' } }, d.title)) : h('span', { class: 'muted' }, '—')),
-          h('td', { class: 'muted' }, fmtWhen(c.updated)),
-          h('td', { class: 'act' }, more));
-      }))));
+  page.appendChild(empty);
+  page.appendChild(moreWrap);
+  wrap.appendChild(table);
+
+  async function load(fresh) {
+    if (fresh) offset = 0;
+    more.disabled = true;
+    let res;
+    try {
+      res = await storageList('charts', { q: bar.state.q, mine: bar.state.mine, viz: vizF.value, offset });
+    } catch (e) {
+      if (gone) return;
+      wrap.hidden = true; moreWrap.hidden = true; empty.hidden = false;
+      clear(empty).appendChild(h('div', { class: 'empty' }, h('b', null, 'Не удалось получить список'),
+        e.message, h('br'), h('button', { class: 'btn', onclick: () => load(true) }, 'Повторить')));
+      return;
+    }
+    if (gone) return;
+    more.disabled = false;
+    if (fresh) clear(rows);
+    bar.setCount(res.found, res.total, 'график', 'графика', 'графиков');
+    const filtered = !!bar.state.q || bar.state.mine || !!vizF.value;
+    wrap.hidden = !res.found;
+    empty.hidden = !!res.found;
+    if (!res.found) {
+      moreWrap.hidden = true;
+      clear(empty).appendChild(filtered
+        ? h('div', { class: 'empty' }, h('b', null, 'Ничего не нашлось'),
+          bar.state.mine && !bar.state.q && !vizF.value ? 'Своих графиков пока нет.' : 'Попробуйте другое название или тип.',
+          h('br'), h('button', { class: 'btn', onclick: () => { vizF.value = ''; bar.reset(); } }, 'Сбросить поиск'))
+        : h('div', { class: 'empty' }, h('b', null, 'Графиков пока нет'),
+          'Создайте первый график из набора данных.', h('br'),
+          h('button', { class: 'btn primary', onclick: () => newChartDialog() }, ic('plus'), 'Новый график')));
+      return;
+    }
+    res.items.forEach(c => rows.appendChild(chartRow(c, () => load(true))));
+    offset += res.items.length;
+    moreWrap.hidden = offset >= res.found;
   }
-  paint();
+  load(true);
+  return () => { gone = true; };
+}
+/** Строка списка графиков. `repaint` зовут, когда строка себя же меняет. */
+function chartRow(c, repaint) {
+  const paint = repaint;
+  const used = chartUsage(c.id);
+  const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с графиком' }, ic('dots'));
+  more.addEventListener('click', e => { e.stopPropagation(); openMenu(more, [
+    { label: canEdit(c) ? 'Редактировать' : 'Открыть', icon: canEdit(c) ? 'edit' : 'eye', onClick: () => go('#/explore/' + c.id) },
+    { label: 'Дублировать', icon: 'copy', onClick: async () => { await ensureBodies('charts', [c.id]); const n = clone(c); n.id = uid('c_'); n.name += ' (копия)'; n.updated = Date.now(); delete n.ownerLogin; delete n.shared; delete n.brief; STATE.charts[n.id] = n; saveState(); paint(); } },
+    canShare(c) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(c, 'графику', () => { saveState(); paint(); }) } : null,
+    canEdit(c) ? '-' : null,
+    canEdit(c) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteChart(c.id).then(ok => ok && paint()) } : null,
+  ]); });
+  // Тела графика здесь нет: заполненность ТЗ и бизнес-вопрос — из сводки
+  const nSpec = c.brief ? ((c.summary || {}).spec || 0) : specFilledCount(c);
+  const question = c.brief ? (c.summary || {}).question : specValue(c, 'question');
+  return h('tr', { class: 'click', onclick: () => go('#/explore/' + c.id) },
+    h('td', null, h('b', { style: { fontWeight: 500 } }, c.name),
+      question ? h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '2px' } }, question) : null,
+      authIsOwn(c) ? null : h('div', null, ownerTag(c))),
+    h('td', null, h('span', { class: 'vt' }, ic(VIZ[c.viz].icon), VIZ[c.viz].label)),
+    h('td', null, (DS[c.datasetId] || {}).name || h('span', { class: 'pill acc' }, 'нет данных')),
+    h('td', null, nSpec
+      ? h('span', { class: 'pill pri', title: c.brief ? 'Откройте график, чтобы увидеть поля ТЗ' : SPEC_FIELDS.filter(f => specValue(c, f.key)).map(f => f.label + ': ' + (f.key === 'priority' ? specPriorityLabel(specValue(c, f.key)) : specValue(c, f.key))).join('\n') }, nSpec + '/' + SPEC_FIELDS.length)
+      : h('span', { class: 'muted' }, '—')),
+    h('td', null, used.length ? used.map(d => h('a', { href: '#/d/' + d.id, onclick: e => e.stopPropagation(), style: { marginRight: '8px' } }, d.title)) : h('span', { class: 'muted' }, '—')),
+    // Кто правил: у своих графиков только время, чужое имя — подписью
+    h('td', { class: 'muted' }, editedTag(c, '') || '—'),
+    h('td', { class: 'act' }, more));
 }
 async function deleteChart(id) {
   if (!canEdit(STATE.charts[id])) { toast('График принадлежит другому сотруднику: попросите доступ', true); return false; }
@@ -506,9 +657,48 @@ function newChartDialog(opts = {}) {
   });
 }
 
-/* Сервер отказал в записи, потому что объект изменился в другом месте.
-   Навязывать свою версию нельзя — это и есть та самая потерянная чужая правка,
-   поэтому перечитываем состояние и показываем то, что на сервере. */
+/* Сервер отказал в записи: объект изменился в другом месте.
+
+   Раньше здесь была одна кнопка «перечитать», и своя правка пропадала молча.
+   Выбор не должен делаться за человека: он видит, кто и когда записал чужую
+   версию, и решает сам. Слияния тут нет и не будет — шаблон это дерево блоков,
+   и автоматическая смесь не нужна никому; выбирают чью версию оставить. */
+function openConflictDialog() {
+  const c = storageConflict() || {};
+  const cur = c.current || {};
+  const who = cur.updatedBy ? authName(cur.updatedBy) : 'кто-то другой';
+  const when = cur.updated ? fmtAgo(cur.updated) : 'недавно';
+  const what = c.name ? `«${c.name}»` : 'объект';
+  openModal({
+    title: 'Правки разошлись',
+    body: h('div', null,
+      /* Без глагола при имени: по имени пол не угадать, а «сохранил Смирнова» —
+         это брак. Подпись той же формы, что в списках: «правка: Имя, когда». */
+      h('p', { style: { margin: '0 0 10px', maxWidth: '60ch' } },
+        `Пока вы правили, ${what} изменился. Последняя правка: ${who}, ${when}.`),
+      h('p', { class: 'muted', style: { margin: 0, maxWidth: '60ch' } },
+        'Перечитать — ваши несохранённые правки пропадут. Записать своё поверх — пропадёт правка коллеги.'),
+      cur.updated ? h('p', { class: 'muted', style: { margin: '8px 0 0' } },
+        'Чужая правка: ' + fmtFull(cur.updated)) : null),
+    foot: close => [
+      h('button', { class: 'btn', onclick: close }, 'Пока не решил'),
+      h('button', {
+        class: 'btn', style: { background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff' },
+        onclick: async () => {
+          close();
+          try {
+            const ok = await storageOverwrite();
+            toast(ok ? 'Записано поверх: чужая правка заменена вашей'
+              : 'Не удалось записать поверх — попробуйте ещё раз', !ok);
+          } catch (e) { toast('Не удалось записать поверх: ' + e.message, true); }
+        },
+      }, 'Записать моё поверх'),
+      h('button', { class: 'btn primary', onclick: () => { close(); reloadFromServer(); } }, 'Перечитать чужое'),
+    ],
+  });
+}
+
+/* Перечитать состояние с сервера и показать то, что там есть. */
 async function reloadFromServer() {
   try {
     const fresh = await storageReload();

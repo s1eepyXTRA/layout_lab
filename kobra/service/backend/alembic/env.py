@@ -24,8 +24,15 @@ target_metadata = Base.metadata
 def include_object(obj, name, type_, reflected, compare_to):
     """Таблицы загруженных наборов (`kobra_uploads.ds_*`) создаются в рантайме и
     миграциями не управляются. Без этого фильтра autogenerate предлагает их
-    удалить — то есть однажды снесёт данные пользователей."""
+    удалить — то есть однажды снесёт данные пользователей.
+
+    Индексы поиска по названию — та же история с другой стороны: какой из двух
+    создался (триграммный или btree), зависит от прав на расширение pg_trgm, и
+    в моделях их объявить нельзя. Без фильтра autogenerate предложил бы их
+    удалить, и поиск по чужой работе однажды снова стал бы перебором."""
     if type_ == "table" and getattr(obj, "schema", None) == "kobra_uploads" and name.startswith("ds_"):
+        return False
+    if type_ == "index" and name and (name.endswith("_trgm") or name.endswith("_lower")):
         return False
     return True
 

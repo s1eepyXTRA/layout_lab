@@ -25,7 +25,7 @@ const BRIDGE = [
   'clone', 'uid', 'LS_KEY', 'AUTH_ROLES', 'AUTH_ROLE_ORDER', 'AUTH_SYSTEM', 'AUTH_TEAM_ALL',
   'AGGS', 'FILTER_OPS', 'TIME_PRESETS', 'TIME_GRAINS', 'NUMBER_FORMATS', 'COLOR_SCHEMES',
   'BUILTIN_DATASETS', 'visibleDatasets', 'MAX_UPLOAD_ROWS',
-  'QUERY_PARALLEL', 'queryQueued', 'queryDropWaiting',
+  'QUERY_PARALLEL', 'queryQueued', 'queryDropWaiting', 'LIST_PAGE',
 ];
 
 /* Заглушки браузера: ядро их не зовёт, но файлы лежат в одном скрипте

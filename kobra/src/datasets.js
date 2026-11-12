@@ -18,19 +18,43 @@ function renderDatasetList(main) {
     h('div', { class: 'grow' }, h('h1', null, 'Данные'), h('p', null, 'Встроенные демо-наборы и ваши файлы. Загруженные данные хранятся ' + (storageIsServer() ? 'на сервере.' : 'только в этом браузере.'))),
     h('button', { class: 'btn', onclick: () => openSchemaDialog() }, ic('schema'), 'Описать набор'),
     h('button', { class: 'btn primary', onclick: openUpload }, ic('upload'), 'Загрузить CSV или Excel')));
-  const list = visibleDatasets().sort((a, b) => (b.builtin ? 1 : 0) - (a.builtin ? 1 : 0) || a.name.localeCompare(b.name, 'ru'));
+  /* Отбор здесь считается на месте, а не на сервере: описания наборов нужны
+     реестру `DS` целиком при запуске (без них графики не нарисовать), и ходить
+     за тем, что уже в памяти, незачем. У шаблонов и графиков наоборот — там
+     список краткий и постраничный. */
   const usage = id => Object.values(STATE.charts).filter(c => c.datasetId === id).length;
-  page.appendChild(h('div', { class: 'tbl-wrap' }, h('table', { class: 'list' },
-    h('thead', null, h('tr', null, h('th', null, 'Набор данных'), h('th', null, 'Источник'), h('th', null, 'Строк'), h('th', null, 'Колонок'), h('th', null, 'Графиков'), h('th'))),
-    h('tbody', null, list.map(d => h('tr', { class: 'click', onclick: () => go('#/data/' + d.id) },
-      h('td', null, h('span', { class: 'vt' }, ic('db'), h('b', { style: { fontWeight: 500 } }, d.name))),
-      h('td', null, d.builtin ? h('span', { class: 'pill pri' }, 'Демо')
-        : isSchemaDs(d) ? h('span', { class: 'pill acc' }, 'Схема, данные вымышленные')
-          : h('span', { class: 'pill' }, d.fileName || 'Файл')),
-      h('td', null, fmtNum(dsRowCount(d), 'int')),
-      h('td', null, d.columns.length),
-      h('td', null, usage(d.id) || h('span', { class: 'muted' }, '—')),
-      h('td', { class: 'act' }, h('button', { class: 'btn sm', onclick: e => { e.stopPropagation(); newChartDialog({ datasetId: d.id }); } }, ic('plus'), 'График'))))))));
+  const bar = listBar('datasets', () => paint());
+  page.appendChild(bar.el);
+  const wrap = h('div');
+  page.appendChild(wrap);
+  function paint() {
+    const me = authUser();
+    const all = visibleDatasets().sort((a, b) => (b.builtin ? 1 : 0) - (a.builtin ? 1 : 0) || a.name.localeCompare(b.name, 'ru'));
+    const text = bar.state.q.toLowerCase();
+    const list = all.filter(d => (!bar.state.mine || (me && d.ownerLogin === me.login))
+      && (!text || d.name.toLowerCase().includes(text)));
+    bar.setCount(list.length, all.length, 'набор', 'набора', 'наборов');
+    clear(wrap);
+    if (!list.length) {
+      wrap.appendChild(h('div', { class: 'empty' }, h('b', null, 'Ничего не нашлось'),
+        bar.state.mine && !text ? 'Своих наборов пока нет: загрузите файл или опишите набор.' : 'Попробуйте другое название.',
+        h('br'), h('button', { class: 'btn', onclick: () => bar.reset() }, 'Сбросить поиск')));
+      return;
+    }
+    wrap.appendChild(h('div', { class: 'tbl-wrap' }, h('table', { class: 'list' },
+      h('thead', null, h('tr', null, h('th', null, 'Набор данных'), h('th', null, 'Источник'), h('th', null, 'Строк'), h('th', null, 'Колонок'), h('th', null, 'Графиков'), h('th', null, 'Изменён'), h('th'))),
+      h('tbody', null, list.map(d => h('tr', { class: 'click', onclick: () => go('#/data/' + d.id) },
+        h('td', null, h('span', { class: 'vt' }, ic('db'), h('b', { style: { fontWeight: 500 } }, d.name))),
+        h('td', null, d.builtin ? h('span', { class: 'pill pri' }, 'Демо')
+          : isSchemaDs(d) ? h('span', { class: 'pill acc' }, 'Схема, данные вымышленные')
+            : h('span', { class: 'pill' }, d.fileName || 'Файл')),
+        h('td', null, fmtNum(dsRowCount(d), 'int')),
+        h('td', null, d.columns.length),
+        h('td', null, usage(d.id) || h('span', { class: 'muted' }, '—')),
+        h('td', { class: 'muted' }, d.builtin ? '—' : (editedTag(d, '') || '—')),
+        h('td', { class: 'act' }, h('button', { class: 'btn sm', onclick: e => { e.stopPropagation(); newChartDialog({ datasetId: d.id }); } }, ic('plus'), 'График'))))))));
+  }
+  paint();
 }
 
 function renderDatasetPage(main, id) {
@@ -42,7 +66,9 @@ function renderDatasetPage(main, id) {
   const nameEl = editable ? h('input', { class: 'input', value: d.name, style: { font: '600 22px/1.2 var(--font-display)', height: '44px', maxWidth: '520px' }, 'aria-label': 'Название набора', onchange: e => { d.name = e.target.value.trim() || d.name; persistDs(d); toast('Название сохранено'); } }) : h('h1', null, d.name);
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('a', { href: '#/data', style: { fontSize: '13px', textDecoration: 'none' } }, '← Все наборы'), h('div', { style: { marginTop: '8px' } }, nameEl),
-      h('p', null, d.description || `Загружен из файла ${d.fileName || ''}. ${fmtNum(dsRowCount(d), 'int')} ${plural(dsRowCount(d), 'строка', 'строки', 'строк')}.`)),
+      h('p', null, d.description || `Загружен из файла ${d.fileName || ''}. ${fmtNum(dsRowCount(d), 'int')} ${plural(dsRowCount(d), 'строка', 'строки', 'строк')}.`,
+        // Кто правил последним: у чужого набора это первый вопрос
+        d.builtin ? null : editedTag(d, 'head-when'))),
     isSchemaDs(d) ? h('button', { class: 'btn', onclick: () => openSchemaDialog(d.id) }, ic('schema'), 'Изменить схему') : null,
     h('button', { class: 'btn', onclick: () => newChartDialog({ datasetId: d.id }) }, ic('plus'), 'Создать график'),
     h('button', { class: 'btn primary', onclick: () => openAutoDashDialog(d.id) }, ic('wand'), 'Собрать черновик шаблона'),

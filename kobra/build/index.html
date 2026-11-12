@@ -111,6 +111,13 @@ a { color: var(--primary); }
 /* ---------- Списки (дашборды, графики, данные) ---------- */
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
 .toolbar .input { max-width: 320px; }
+/* Счёт найденного: это подпись к полосе поиска, а не действие — цвет нейтральный */
+.list-count { color: var(--ink-2); font-size: 13px; margin-left: 2px; }
+/* display у класса сильнее, чем [hidden] у браузера, — иначе «показать ещё»
+   остаётся на экране поверх «ничего не нашлось» */
+.list-more { display: flex; justify-content: center; margin: 18px 0 4px; }
+.list-more[hidden] { display: none; }
+.list-empty { grid-column: 1 / -1; }
 .dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 .dash-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); overflow: hidden;
@@ -164,6 +171,8 @@ table.list td.act { text-align: right; white-space: nowrap; width: 1%; }
 .dash-main { flex: 1; min-width: 0; overflow: auto; display: flex; flex-direction: column; }
 .dash-head { display: flex; align-items: center; gap: 10px; padding: 16px 24px 8px; flex-wrap: wrap; }
 .dash-head h1 { font: 600 21px/1.25 var(--font-display); margin: 0; letter-spacing: -.01em; }
+/* Кто правил — подписью у названия: шрифт обычный, иначе читается как часть имени */
+.head-when { font: 400 12.5px/1 var(--font); color: var(--ink-2); margin-left: 10px; vertical-align: middle; white-space: nowrap; }
 .dash-head .grow { flex: 1; }
 /* Пример шаблона: возврат в каталог должен бросаться в глаза и не уезжать
    при прокрутке — иначе человек застревает в чужом дашборде */
@@ -1535,6 +1544,55 @@ function confirmDialog(title, text, okText = 'Удалить', danger = true) {
     });
   });
 }
+/* ---------- Полоса над списком ----------
+   Поиск, «только мои» и счёт найденного. Одна на все списки: три похожие
+   полосы разъехались бы на первой же правке — у одной появился бы сброс
+   поиска, у другой нет.
+
+   Переключатель помнится в личных настройках, а не в адресе: человек один раз
+   выбирает, как ему смотреть, и возвращается к тому же. Запрос не помнится —
+   возвращаться в чужой поиск незачем.
+   @param {string} key раздел: под этим именем хранится состояние
+   @param {() => void} onChange зовут при смене запроса или переключателя */
+function listBar(key, onChange) {
+  const LS = 'kobra.list.' + key;
+  const state = { q: '', mine: !!(lsGet(LS) || {}).mine };
+  const input = h('input', { class: 'input', type: 'search', placeholder: 'Найти по названию',
+    'aria-label': 'Поиск по названию' });
+  const mineBtn = h('button', { class: 'btn', type: 'button' }, 'Только мои');
+  const count = h('span', { class: 'list-count' });
+  const paintMine = () => {
+    mineBtn.className = 'btn' + (state.mine ? ' on' : '');
+    mineBtn.setAttribute('aria-pressed', state.mine ? 'true' : 'false');
+  };
+  paintMine();
+  input.addEventListener('input', debounce(() => {
+    if (input.value.trim() === state.q) return;
+    state.q = input.value.trim();
+    onChange();
+  }, 250));
+  mineBtn.addEventListener('click', () => {
+    state.mine = !state.mine;
+    lsSet(LS, { mine: state.mine });
+    paintMine();
+    onChange();
+  });
+  return {
+    el: h('div', { class: 'toolbar' }, input, mineBtn, count),
+    state,
+    /** Два числа, а не одно: «найдено 3» без «из 40» выглядит как потеря работы. */
+    setCount(found, total, one, few, many) {
+      const filtered = !!state.q || state.mine;
+      clear(count).appendChild(document.createTextNode(
+        !filtered ? (total ? `${total} ${plural(total, one, few, many)}` : '')
+          : found ? `Найдено ${found} из ${total}` : ''));
+    },
+    /** Сбросить поиск: предлагается с пустого результата. */
+    reset() { input.value = ''; state.q = ''; paintMine(); onChange(); },
+    focus() { input.focus(); },
+  };
+}
+
 function promptDialog(title, label, value = '', okText = 'Сохранить') {
   return new Promise(res => {
     let done = false;
@@ -1817,7 +1875,12 @@ async function api(path, opts = {}) {
   }
   if (res.status === 204) return null;
   const data = await res.json().catch(() => null);
-  if (res.ok) return data;
+  /* Сколько найдено и сколько всего видно — заголовками, а не обёрткой вокруг
+     списка: обёртку пришлось бы разбирать во всех местах, где список читают,
+     включая выдачу тел по идентификаторам. */
+  if (res.ok) return opts.meta
+    ? { data, found: +res.headers.get('X-Kobra-Found') || 0, total: +res.headers.get('X-Kobra-Total') || 0 }
+    : data;
   const detail = data && data.detail;
   const err = Object.assign(new Error(typeof detail === 'string' ? detail : 'сервис ответил ' + res.status), {
     /* 429 — это не поломка и не отказ в доступе: человек слишком часто просил,
@@ -1835,9 +1898,9 @@ async function api(path, opts = {}) {
 /* Виды объектов, из которых состоит состояние. Скрытые наборы макетов тянем
    тоже: без них у шаблона нет данных. */
 const SERVER_KINDS = [
-  { key: 'dashboards', path: '/api/dashboards' },
-  { key: 'charts', path: '/api/charts' },
-  { key: 'datasets', path: '/api/datasets?owned_by_dashboard=true' },
+  { key: 'dashboards', path: '/api/dashboards', name: 'title' },
+  { key: 'charts', path: '/api/charts', name: 'name' },
+  { key: 'datasets', path: '/api/datasets?owned_by_dashboard=true', name: 'name' },
 ];
 /** Что сервер подтвердил: ключ «вид:id» → версия и снимок тела. */
 const serverSeen = new Map();
@@ -1867,6 +1930,60 @@ async function storageLoad() {
   });
   state.dsMetrics = (await api('/api/settings/dsMetrics')) || {};
   return state;
+}
+
+/* ---------- Страница списка ----------
+   Поиск и «только мои» считает сервер, а не фильтр по скачанному: роль,
+   видящая чужую работу, иначе качала бы работу всей компании, чтобы показать
+   десять карточек, — ровно то, из-за чего список стал кратким.
+
+   В локальном режиме считается здесь же: там список и так весь в памяти, и
+   второй путь нужен только чтобы страницы не знали о режиме.
+
+   Возвращаются **объекты из состояния**, а не ответ сервера: страница держит на
+   них ссылки, и подменять их нельзя (то же правило, что у `undoState`). */
+const LIST_PAGE = 48;            // столько карточек в странице списка
+
+async function storageList(kind, opts = {}) {
+  const { q = '', mine = false, viz = '', limit = LIST_PAGE, offset = 0 } = opts;
+  const kindDef = SERVER_KINDS.find(k => k.key === kind);
+  const store = (STATE && STATE[kind]) || {};
+  if (!kindDef) return { items: [], found: 0, total: 0 };
+  if (!storageIsServer()) return listLocal(store, kindDef, { q, mine, viz, limit, offset });
+  const base = kindDef.path.split('?')[0];
+  const url = `${base}?limit=${limit}&offset=${Math.max(0, offset)}`
+    + (q.trim() ? `&q=${encodeURIComponent(q.trim())}` : '')
+    + (mine ? '&mine=1' : '')
+    + (viz ? `&viz=${encodeURIComponent(viz)}` : '');
+  const res = await api(url, { meta: true });
+  const items = (res.data || []).map(o => {
+    /* Объект, тело которого уже на руках, не затираем краткой формой: в нём
+       могут быть несохранённые правки, и список их молча бы потерял. */
+    const have = store[o.id];
+    if (have && !have.brief) return have;
+    store[o.id] = o;
+    serverSeen.set(kind + ':' + o.id, { version: o.version, body: canonical(o) });
+    return o;
+  });
+  return { items, found: res.found, total: res.total };
+}
+
+/** Тот же отбор без сервера. Порядок один: последние правки сверху. */
+function listLocal(store, kindDef, opts) {
+  const { q, mine, viz, limit, offset } = opts;
+  const me = typeof authUser === 'function' ? authUser() : null;
+  const all = Object.values(store).filter(o => !o.preview && canView(o));
+  const text = String(q || '').trim().toLowerCase();
+  let picked = all;
+  if (mine && me) picked = picked.filter(o => (o.ownerLogin || null) === me.login);
+  if (viz) picked = picked.filter(o => o.viz === viz);
+  if (text) picked = picked.filter(o => String(o[kindDef.name] || '').toLowerCase().includes(text));
+  picked = picked.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  return {
+    items: limit ? picked.slice(Math.max(0, offset), Math.max(0, offset) + limit) : picked,
+    found: picked.length,
+    total: all.length,
+  };
 }
 
 /* ---------- Тела объектов по требованию ----------
@@ -1921,6 +2038,19 @@ function dashChartCount(d) {
 
 /** Тела дашборда и всех его блоков: страница рисует их сразу все. */
 async function ensureDashboardBody(dashId) {
+  /* Ссылка на шаблон, которого в состоянии нет вовсе: в сервисе их бывает
+     больше, чем приезжает при запуске, а ссылками люди обмениваются. Спросим
+     поимённо — иначе чужая ссылка открывает «шаблон не найден» при живом
+     шаблоне. Нет такого или нет доступа — страница скажет это сама. */
+  if (storageIsServer() && STATE && STATE.dashboards && !STATE.dashboards[dashId]) {
+    try {
+      const got = await api('/api/dashboards/' + encodeURIComponent(dashId));
+      if (got && got.id) {
+        STATE.dashboards[got.id] = got;
+        serverSeen.set('dashboards:' + got.id, { version: got.version, body: canonical(got) });
+      }
+    } catch (e) { /* не нашли — дальше по обычному пути */ }
+  }
   await ensureBodies('dashboards', [dashId]);
   const d = STATE && STATE.dashboards && STATE.dashboards[dashId];
   if (!d || !d.tabs) return true;
@@ -1941,6 +2071,12 @@ function storageSave(state) {
 let pendingState = null;
 let saveTimer = null;
 let saving = false;
+/** Что разошлось: вид, идентификатор, название и чужая версия с автором. */
+let conflictInfo = null;
+/** Объекты, которые человек решил записать поверх чужой правки — по одному разу. */
+const overwriteOnce = new Set();
+
+const storageConflict = () => conflictInfo;
 
 function serverQueueSave(state) {
   pendingState = state;
@@ -1959,7 +2095,10 @@ async function serverPush() {
     setStorageState(pendingState ? 'pending' : 'saved');
   } catch (e) {
     if (e.kind === 'conflict') {
-      // Чужую правку не затираем: решение за человеком
+      /* Чужую правку не затираем: решение за человеком. Правки остаются в
+         очереди — выбор «записать своё поверх» иначе нечего было бы писать. */
+      conflictInfo = e.conflict || null;
+      pendingState = state;
       setStorageState('conflict', (e.detail && e.detail.message) || 'Объект изменился в другом месте');
     } else if (e.kind === 'auth') {
       setStorageState('error', 'Сессия закончилась: войдите заново');
@@ -1992,9 +2131,27 @@ async function serverSend(state) {
       const seen = serverSeen.get(kind.key + ':' + id);
       const body = canonical(obj);
       if (seen && seen.body === body) continue;
-      const sent = seen
-        ? await api(`${path}/${id}`, { method: 'PUT', body: Object.assign({}, obj, { version: seen.version }) })
-        : await api(path, { method: 'POST', body: obj });
+      const key = kind.key + ':' + id;
+      const over = overwriteOnce.has(key);
+      let sent;
+      try {
+        sent = seen
+          ? await api(`${path}/${id}` + (over ? '?overwrite=1' : ''),
+            { method: 'PUT', body: Object.assign({}, obj, { version: seen.version }) })
+          : await api(path, { method: 'POST', body: obj });
+      } catch (e) {
+        /* Отказ по версии: человеку нужно знать, что именно разошлось и чья
+           это правка, — без этого выбор «перечитать или поверх» вслепую. */
+        if (e.kind === 'conflict') {
+          const cur = (e.detail && e.detail.current) || null;
+          /* Название берём **с сервера**: своё, ещё не сохранённое, назвало бы
+             чужую правку нашим словом — а сохранил коллега свою версию. */
+          e.conflict = { kind: kind.key, id, current: cur,
+            name: (cur && cur[kind.name]) || obj[kind.name] || id };
+        }
+        throw e;
+      }
+      overwriteOnce.delete(key);
       // Сервер вернул объект со своими полями — кладём их обратно в состояние
       Object.assign(obj, { version: sent.version, updated: sent.updated, updatedBy: sent.updatedBy,
         ownerLogin: sent.ownerLogin, team: sent.team, shared: sent.shared });
@@ -2041,10 +2198,24 @@ async function storageFlush() {
 /** Перечитать состояние с сервера — после отказа по версии. */
 async function storageReload() {
   pendingState = null;
+  conflictInfo = null;
+  overwriteOnce.clear();
   if (saveTimer) clearTimeout(saveTimer);
   const fresh = await storageLoad();
   setStorageState('saved');
   return fresh;
+}
+
+/** Записать своё поверх чужой правки. Только по решению человека: сервер
+    принимает такую запись лишь с явным признаком, и она остаётся в его журнале. */
+async function storageOverwrite() {
+  if (!conflictInfo) return false;
+  overwriteOnce.add(conflictInfo.kind + ':' + conflictInfo.id);
+  conflictInfo = null;
+  if (!pendingState) return false;
+  setStorageState('pending');
+  await serverPush();
+  return storageState === 'saved';
 }
 
 /* ---------- Расчёт ----------
@@ -4084,7 +4255,7 @@ function renderShell() {
   paintSave(cur.state, cur.note);
   onStorageState(paintSave);
   saveTag.addEventListener('click', () => {
-    if (storageStateNow().state === 'conflict') reloadFromServer();
+    if (storageStateNow().state === 'conflict') openConflictDialog();
     else storageFlush();
   });
 
@@ -4172,6 +4343,43 @@ function fmtWhen(ts) {
   const same = d.toDateString() === now.toDateString();
   return same ? `сегодня в ${pad2(d.getHours())}:${pad2(d.getMinutes())}` : `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()}`;
 }
+/* «12 минут назад» вместо даты: в общем сервисе важно не когда по календарю, а
+   насколько свежая правка — не правит ли кто-то этот шаблон прямо сейчас.
+   Точная дата остаётся в подсказке. */
+function fmtAgo(ts) {
+  if (!ts) return '';
+  const sec = Math.round((Date.now() - ts) / 1000);
+  if (sec < 90) return 'только что';
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} ${plural(min, 'минуту', 'минуты', 'минут')} назад`;
+  const hour = Math.round(min / 60);
+  if (hour < 24) return `${hour} ${plural(hour, 'час', 'часа', 'часов')} назад`;
+  const day = Math.round(hour / 24);
+  if (day === 1) return 'вчера';
+  if (day < 7) return `${day} ${plural(day, 'день', 'дня', 'дней')} назад`;
+  return fmtWhen(ts);
+}
+function fmtFull(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()} в ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+/* Кто правил последним — одной строкой. Своё имя не пишем: «правил я» занимает
+   место и ничего не сообщает, у своих остаётся только время. Имя печатается
+   без глагола: по имени пол не угадать, а «правил Смирнова» — это брак. */
+function editedLine(obj) {
+  const when = fmtAgo(obj && obj.updated);
+  if (!when) return '';
+  const me = authUser();
+  const by = obj && obj.updatedBy;
+  return by && me && by !== me.login ? `правка: ${authName(by)}, ${when}` : `изменён ${when}`;
+}
+/** Та же подпись элементом, с полной датой в подсказке. */
+function editedTag(obj, cls = 'muted') {
+  const text = editedLine(obj);
+  if (!text) return null;
+  return h('span', { class: cls, title: obj.updated ? 'Последняя правка: ' + fmtFull(obj.updated) : '' }, text);
+}
 /* Три пути: взять готовое, строить самому, принести свои данные. Описаны
    одним списком, потому что показываются в двух местах — на стартовом экране
    и в диалоге «Новый дашборд», и расходиться им нельзя. В диалоге путей два:
@@ -4200,55 +4408,123 @@ function startChoice(ids) {
   const ways = START_WAYS.filter(w => !ids || ids.includes(w.id));
   return h('div', { class: 'start-choice' }, ways.map(w => startCard(w)));
 }
+/* Список шаблонов. Отбор считает сервер (`storageList`), а страница только
+   показывает: роль, видящая чужую работу, иначе качала бы работу всей компании
+   ради десяти карточек. Поэтому и рисуется он не сразу, а по первому ответу —
+   от него зависит даже шапка: без своих шаблонов это экран «с чего начнём». */
 function renderDashboardList(main) {
   const page = h('div', { class: 'page' });
+  const head = h('div');
+  const body = h('div');
+  page.appendChild(head);
+  page.appendChild(body);
   main.appendChild(page);
-  const list = Object.values(STATE.dashboards).filter(d => !d.preview && canView(d)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
-  // Свой шаблон — любой, кроме демо: пока их нет, показываем выбор пути
-  const own = list.filter(d => d.id !== 'd_demo');
-  if (!own.length) {
-    page.appendChild(h('div', { class: 'page-head' },
-      h('div', { class: 'grow' }, h('h1', null, 'С чего начнём')),
-      h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла')));
-    page.appendChild(startChoice());
-    if (list.length) {
-      page.appendChild(h('h2', { style: { fontSize: '17px', margin: '28px 0 10px' } }, 'Демо-шаблон'));
-      page.appendChild(dashGrid(list));
+  let gone = false;
+  let offset = 0;
+  const bar = listBar('dashboards', () => load(true));
+  const grid = h('div', { class: 'dash-grid' });
+  const newCard = h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый шаблон');
+  const more = h('button', { class: 'btn', onclick: () => load(false) }, 'Показать ещё');
+  const moreWrap = h('div', { class: 'list-more', hidden: true }, more);
+  const busy = h('div', { class: 'empty' }, h('b', null, 'Загружаю…'));
+  body.appendChild(busy);
+
+  /** @param {boolean} fresh заново (сменился запрос) или дописать следующую страницу */
+  async function load(fresh) {
+    if (fresh) offset = 0;
+    more.disabled = true;
+    let res;
+    try {
+      res = await storageList('dashboards', { q: bar.state.q, mine: bar.state.mine, offset });
+    } catch (e) {
+      if (gone) return;
+      clear(body).appendChild(h('div', { class: 'empty' }, h('b', null, 'Не удалось получить список'),
+        e.message, h('br'), h('button', { class: 'btn', onclick: () => load(true) }, 'Повторить')));
+      return;
     }
-    return;
+    if (gone) return;
+    more.disabled = false;
+    paint(res, fresh);
+    offset += res.items.length;
   }
-  page.appendChild(h('div', { class: 'page-head' },
-    h('div', { class: 'grow' }, h('h1', null, 'Шаблоны'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. '
-      + (storageIsServer() ? 'Всё сохраняется в сервисе.' : 'Всё сохраняется в этом браузере.'))),
-    h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
-    h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый шаблон')));
-  page.appendChild(dashGrid(list));
+
+  function paint(res, fresh) {
+    const filtered = !!bar.state.q || bar.state.mine;
+    // Свой шаблон — любой, кроме демо: пока их нет, показываем выбор пути
+    const onlyDemo = !filtered && res.total <= (res.items.some(d => d.id === 'd_demo') ? 1 : 0);
+    if (!head.firstChild || head.dataset.mode !== (onlyDemo ? 'start' : 'list')) {
+      head.dataset.mode = onlyDemo ? 'start' : 'list';
+      clear(head).appendChild(onlyDemo
+        ? h('div', { class: 'page-head' },
+          h('div', { class: 'grow' }, h('h1', null, 'С чего начнём')),
+          h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'))
+        : h('div', { class: 'page-head' },
+          h('div', { class: 'grow' }, h('h1', null, 'Шаблоны'), h('p', null, 'Собирайте прототипы из графиков, вкладок, текста и фильтров. '
+            + (storageIsServer() ? 'Всё сохраняется в сервисе.' : 'Всё сохраняется в этом браузере.'))),
+          h('button', { class: 'btn', onclick: openImportDialog }, ic('upload'), 'Импорт из файла'),
+          h('button', { class: 'btn primary', onclick: createDashboard }, ic('plus'), 'Новый шаблон')));
+    }
+    if (onlyDemo) {
+      clear(body);
+      body.appendChild(startChoice());
+      if (res.items.length) {
+        body.appendChild(h('h2', { style: { fontSize: '17px', margin: '28px 0 10px' } }, 'Демо-шаблон'));
+        body.appendChild(dashGrid(res.items));
+      }
+      return;
+    }
+    if (fresh) {
+      clear(body);
+      body.appendChild(bar.el);
+      body.appendChild(grid);
+      body.appendChild(moreWrap);
+      clear(grid);
+    }
+    bar.setCount(res.found, res.total, 'шаблон', 'шаблона', 'шаблонов');
+    if (!res.found) {
+      clear(grid);
+      moreWrap.hidden = true;
+      grid.appendChild(h('div', { class: 'empty list-empty' }, h('b', null, 'Ничего не нашлось'),
+        bar.state.mine && bar.state.q ? 'Среди ваших шаблонов нет такого названия.'
+          : bar.state.mine ? 'Своих шаблонов пока нет.' : 'Попробуйте другое название.',
+        h('br'), h('button', { class: 'btn', onclick: () => bar.reset() }, 'Сбросить поиск')));
+      return;
+    }
+    res.items.forEach(d => grid.appendChild(dashCard(d)));
+    grid.appendChild(newCard);
+    moreWrap.hidden = offset + res.items.length >= res.found;
+  }
+
+  load(true);
+  return () => { gone = true; };
 }
 function dashGrid(list) {
   const grid = h('div', { class: 'dash-grid' });
-  list.forEach(d => {
-    const nCharts = dashChartCount(d);
-    const nTabs = dashTabCount(d);
-    const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с шаблоном' }, ic('dots'));
-    more.addEventListener('click', e => {
-      e.stopPropagation();
-      openMenu(more, [
-        { label: 'Открыть', icon: 'eye', onClick: () => go('#/d/' + d.id) },
-        { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(d.id) },
-        { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(d.id) },
-        canShare(d) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(d, 'шаблону', () => { saveState(); route(); }) } : null,
-        canEdit(d) ? '-' : null,
-        canEdit(d) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteDashboard(d.id) } : null,
-      ]);
-    });
-    grid.appendChild(h('div', { class: 'dash-card', tabindex: 0, role: 'link', onclick: () => go('#/d/' + d.id), onkeydown: e => { if (e.key === 'Enter') go('#/d/' + d.id); } },
-      dashThumb(d),
-      h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
-        h('span', null, `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${nTabs} ${plural(nTabs, 'вкладка', 'вкладки', 'вкладок')} · изменён ${fmtWhen(d.updated)}`),
-        ownerTag(d)), more)));
-  });
+  list.forEach(d => grid.appendChild(dashCard(d)));
   grid.appendChild(h('button', { class: 'dash-card new-card', onclick: createDashboard }, ic('plus'), 'Новый шаблон'));
   return grid;
+}
+function dashCard(d) {
+  const nCharts = dashChartCount(d);
+  const nTabs = dashTabCount(d);
+  const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с шаблоном' }, ic('dots'));
+  more.addEventListener('click', e => {
+    e.stopPropagation();
+    openMenu(more, [
+      { label: 'Открыть', icon: 'eye', onClick: () => go('#/d/' + d.id) },
+      { label: 'Дублировать', icon: 'copy', onClick: () => duplicateDashboard(d.id) },
+      { label: 'Экспортировать в файл…', icon: 'download', onClick: () => openExportDialog(d.id) },
+      canShare(d) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(d, 'шаблону', () => { saveState(); route(); }) } : null,
+      canEdit(d) ? '-' : null,
+      canEdit(d) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteDashboard(d.id) } : null,
+    ]);
+  });
+  return h('div', { class: 'dash-card', tabindex: 0, role: 'link', onclick: () => go('#/d/' + d.id), onkeydown: e => { if (e.key === 'Enter') go('#/d/' + d.id); } },
+    dashThumb(d),
+    h('div', { class: 'meta' }, h('div', { class: 'grow' }, h('b', null, d.title),
+      h('span', { title: d.updated ? 'Последняя правка: ' + fmtFull(d.updated) : '' },
+        `${nCharts} ${plural(nCharts, 'график', 'графика', 'графиков')}, ${nTabs} ${plural(nTabs, 'вкладка', 'вкладки', 'вкладок')} · ${editedLine(d)}`),
+      ownerTag(d)), more));
 }
 // Пустые дашборды, созданные кнопкой «Новый дашборд»: если с такого ушли,
 // ничего не добавив, запись убирается, чтобы в списке не оставался мусор.
@@ -4352,47 +4628,93 @@ function renderChartList(main) {
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('h1', null, 'Графики'), h('p', null, 'Каждый график можно добавить в один или несколько шаблонов.')),
     h('button', { class: 'btn primary', onclick: () => newChartDialog() }, ic('plus'), 'Новый график')));
-  const search = h('input', { class: 'input', type: 'search', placeholder: 'Найти график', 'aria-label': 'Поиск графиков' });
-  const vizF = selectEl([['', 'Все типы'], ...VIZ_ORDER.map(k => [k, VIZ[k].label])], '', () => paint(), { style: { maxWidth: '240px' }, 'aria-label': 'Тип графика' });
-  page.appendChild(h('div', { class: 'toolbar' }, search, vizF));
+  let gone = false;
+  let offset = 0;
+  const bar = listBar('charts', () => load(true));
+  /* Тип графика отбирается там же, где поиск, — на сервере: иначе отбор шёл бы
+     по одной странице списка, и счёт найденного врал. */
+  const vizF = selectEl([['', 'Все типы'], ...VIZ_ORDER.map(k => [k, VIZ[k].label])], '', () => load(true), { style: { maxWidth: '240px' }, 'aria-label': 'Тип графика' });
+  bar.el.appendChild(vizF);
+  page.appendChild(bar.el);
   const wrap = h('div', { class: 'tbl-wrap' });
+  const rows = h('tbody');
+  const table = h('table', { class: 'list' },
+    h('thead', null, h('tr', null, h('th', null, 'Название'), h('th', null, 'Тип'), h('th', null, 'Набор данных'), h('th', null, 'ТЗ'), h('th', null, 'В шаблонах'), h('th', null, 'Изменён'), h('th'))),
+    rows);
+  const more = h('button', { class: 'btn', onclick: () => load(false) }, 'Показать ещё');
+  const moreWrap = h('div', { class: 'list-more', hidden: true }, more);
+  const empty = h('div', { hidden: true });
   page.appendChild(wrap);
-  search.addEventListener('input', debounce(() => paint(), 150));
-  function paint() {
-    const q = search.value.trim().toLowerCase();
-    const list = Object.values(STATE.charts).filter(c => canView(c) && (!q || c.name.toLowerCase().includes(q)) && (!vizF.value || c.viz === vizF.value)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
-    clear(wrap);
-    if (!list.length) { wrap.appendChild(h('div', { class: 'empty' }, h('b', null, Object.keys(STATE.charts).length ? 'Ничего не найдено' : 'Графиков пока нет'), 'Создайте первый график из набора данных.', h('br'), h('button', { class: 'btn primary', onclick: () => newChartDialog() }, ic('plus'), 'Новый график'))); return; }
-    wrap.appendChild(h('table', { class: 'list' },
-      h('thead', null, h('tr', null, h('th', null, 'Название'), h('th', null, 'Тип'), h('th', null, 'Набор данных'), h('th', null, 'ТЗ'), h('th', null, 'В шаблонах'), h('th', null, 'Изменён'), h('th'))),
-      h('tbody', null, list.map(c => {
-        const used = chartUsage(c.id);
-        const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с графиком' }, ic('dots'));
-        more.addEventListener('click', e => { e.stopPropagation(); openMenu(more, [
-          { label: canEdit(c) ? 'Редактировать' : 'Открыть', icon: canEdit(c) ? 'edit' : 'eye', onClick: () => go('#/explore/' + c.id) },
-          { label: 'Дублировать', icon: 'copy', onClick: async () => { await ensureBodies('charts', [c.id]); const n = clone(c); n.id = uid('c_'); n.name += ' (копия)'; n.updated = Date.now(); delete n.ownerLogin; delete n.shared; delete n.brief; STATE.charts[n.id] = n; saveState(); paint(); } },
-          canShare(c) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(c, 'графику', () => { saveState(); paint(); }) } : null,
-          canEdit(c) ? '-' : null,
-          canEdit(c) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteChart(c.id).then(ok => ok && paint()) } : null,
-        ]); });
-        // Тела графика здесь нет: заполненность ТЗ и бизнес-вопрос — из сводки
-        const nSpec = c.brief ? ((c.summary || {}).spec || 0) : specFilledCount(c);
-        const question = c.brief ? (c.summary || {}).question : specValue(c, 'question');
-        return h('tr', { class: 'click', onclick: () => go('#/explore/' + c.id) },
-          h('td', null, h('b', { style: { fontWeight: 500 } }, c.name),
-            question ? h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '2px' } }, question) : null,
-            authIsOwn(c) ? null : h('div', null, ownerTag(c))),
-          h('td', null, h('span', { class: 'vt' }, ic(VIZ[c.viz].icon), VIZ[c.viz].label)),
-          h('td', null, (DS[c.datasetId] || {}).name || h('span', { class: 'pill acc' }, 'нет данных')),
-          h('td', null, nSpec
-            ? h('span', { class: 'pill pri', title: c.brief ? 'Откройте график, чтобы увидеть поля ТЗ' : SPEC_FIELDS.filter(f => specValue(c, f.key)).map(f => f.label + ': ' + (f.key === 'priority' ? specPriorityLabel(specValue(c, f.key)) : specValue(c, f.key))).join('\n') }, nSpec + '/' + SPEC_FIELDS.length)
-            : h('span', { class: 'muted' }, '—')),
-          h('td', null, used.length ? used.map(d => h('a', { href: '#/d/' + d.id, onclick: e => e.stopPropagation(), style: { marginRight: '8px' } }, d.title)) : h('span', { class: 'muted' }, '—')),
-          h('td', { class: 'muted' }, fmtWhen(c.updated)),
-          h('td', { class: 'act' }, more));
-      }))));
+  page.appendChild(empty);
+  page.appendChild(moreWrap);
+  wrap.appendChild(table);
+
+  async function load(fresh) {
+    if (fresh) offset = 0;
+    more.disabled = true;
+    let res;
+    try {
+      res = await storageList('charts', { q: bar.state.q, mine: bar.state.mine, viz: vizF.value, offset });
+    } catch (e) {
+      if (gone) return;
+      wrap.hidden = true; moreWrap.hidden = true; empty.hidden = false;
+      clear(empty).appendChild(h('div', { class: 'empty' }, h('b', null, 'Не удалось получить список'),
+        e.message, h('br'), h('button', { class: 'btn', onclick: () => load(true) }, 'Повторить')));
+      return;
+    }
+    if (gone) return;
+    more.disabled = false;
+    if (fresh) clear(rows);
+    bar.setCount(res.found, res.total, 'график', 'графика', 'графиков');
+    const filtered = !!bar.state.q || bar.state.mine || !!vizF.value;
+    wrap.hidden = !res.found;
+    empty.hidden = !!res.found;
+    if (!res.found) {
+      moreWrap.hidden = true;
+      clear(empty).appendChild(filtered
+        ? h('div', { class: 'empty' }, h('b', null, 'Ничего не нашлось'),
+          bar.state.mine && !bar.state.q && !vizF.value ? 'Своих графиков пока нет.' : 'Попробуйте другое название или тип.',
+          h('br'), h('button', { class: 'btn', onclick: () => { vizF.value = ''; bar.reset(); } }, 'Сбросить поиск'))
+        : h('div', { class: 'empty' }, h('b', null, 'Графиков пока нет'),
+          'Создайте первый график из набора данных.', h('br'),
+          h('button', { class: 'btn primary', onclick: () => newChartDialog() }, ic('plus'), 'Новый график')));
+      return;
+    }
+    res.items.forEach(c => rows.appendChild(chartRow(c, () => load(true))));
+    offset += res.items.length;
+    moreWrap.hidden = offset >= res.found;
   }
-  paint();
+  load(true);
+  return () => { gone = true; };
+}
+/** Строка списка графиков. `repaint` зовут, когда строка себя же меняет. */
+function chartRow(c, repaint) {
+  const paint = repaint;
+  const used = chartUsage(c.id);
+  const more = h('button', { class: 'iconbtn', title: 'Действия', 'aria-label': 'Действия с графиком' }, ic('dots'));
+  more.addEventListener('click', e => { e.stopPropagation(); openMenu(more, [
+    { label: canEdit(c) ? 'Редактировать' : 'Открыть', icon: canEdit(c) ? 'edit' : 'eye', onClick: () => go('#/explore/' + c.id) },
+    { label: 'Дублировать', icon: 'copy', onClick: async () => { await ensureBodies('charts', [c.id]); const n = clone(c); n.id = uid('c_'); n.name += ' (копия)'; n.updated = Date.now(); delete n.ownerLogin; delete n.shared; delete n.brief; STATE.charts[n.id] = n; saveState(); paint(); } },
+    canShare(c) ? { label: 'Поделиться…', icon: 'link', onClick: () => openShareDialog(c, 'графику', () => { saveState(); paint(); }) } : null,
+    canEdit(c) ? '-' : null,
+    canEdit(c) ? { label: 'Удалить', icon: 'trash', danger: true, onClick: () => deleteChart(c.id).then(ok => ok && paint()) } : null,
+  ]); });
+  // Тела графика здесь нет: заполненность ТЗ и бизнес-вопрос — из сводки
+  const nSpec = c.brief ? ((c.summary || {}).spec || 0) : specFilledCount(c);
+  const question = c.brief ? (c.summary || {}).question : specValue(c, 'question');
+  return h('tr', { class: 'click', onclick: () => go('#/explore/' + c.id) },
+    h('td', null, h('b', { style: { fontWeight: 500 } }, c.name),
+      question ? h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '2px' } }, question) : null,
+      authIsOwn(c) ? null : h('div', null, ownerTag(c))),
+    h('td', null, h('span', { class: 'vt' }, ic(VIZ[c.viz].icon), VIZ[c.viz].label)),
+    h('td', null, (DS[c.datasetId] || {}).name || h('span', { class: 'pill acc' }, 'нет данных')),
+    h('td', null, nSpec
+      ? h('span', { class: 'pill pri', title: c.brief ? 'Откройте график, чтобы увидеть поля ТЗ' : SPEC_FIELDS.filter(f => specValue(c, f.key)).map(f => f.label + ': ' + (f.key === 'priority' ? specPriorityLabel(specValue(c, f.key)) : specValue(c, f.key))).join('\n') }, nSpec + '/' + SPEC_FIELDS.length)
+      : h('span', { class: 'muted' }, '—')),
+    h('td', null, used.length ? used.map(d => h('a', { href: '#/d/' + d.id, onclick: e => e.stopPropagation(), style: { marginRight: '8px' } }, d.title)) : h('span', { class: 'muted' }, '—')),
+    // Кто правил: у своих графиков только время, чужое имя — подписью
+    h('td', { class: 'muted' }, editedTag(c, '') || '—'),
+    h('td', { class: 'act' }, more));
 }
 async function deleteChart(id) {
   if (!canEdit(STATE.charts[id])) { toast('График принадлежит другому сотруднику: попросите доступ', true); return false; }
@@ -4434,9 +4756,48 @@ function newChartDialog(opts = {}) {
   });
 }
 
-/* Сервер отказал в записи, потому что объект изменился в другом месте.
-   Навязывать свою версию нельзя — это и есть та самая потерянная чужая правка,
-   поэтому перечитываем состояние и показываем то, что на сервере. */
+/* Сервер отказал в записи: объект изменился в другом месте.
+
+   Раньше здесь была одна кнопка «перечитать», и своя правка пропадала молча.
+   Выбор не должен делаться за человека: он видит, кто и когда записал чужую
+   версию, и решает сам. Слияния тут нет и не будет — шаблон это дерево блоков,
+   и автоматическая смесь не нужна никому; выбирают чью версию оставить. */
+function openConflictDialog() {
+  const c = storageConflict() || {};
+  const cur = c.current || {};
+  const who = cur.updatedBy ? authName(cur.updatedBy) : 'кто-то другой';
+  const when = cur.updated ? fmtAgo(cur.updated) : 'недавно';
+  const what = c.name ? `«${c.name}»` : 'объект';
+  openModal({
+    title: 'Правки разошлись',
+    body: h('div', null,
+      /* Без глагола при имени: по имени пол не угадать, а «сохранил Смирнова» —
+         это брак. Подпись той же формы, что в списках: «правка: Имя, когда». */
+      h('p', { style: { margin: '0 0 10px', maxWidth: '60ch' } },
+        `Пока вы правили, ${what} изменился. Последняя правка: ${who}, ${when}.`),
+      h('p', { class: 'muted', style: { margin: 0, maxWidth: '60ch' } },
+        'Перечитать — ваши несохранённые правки пропадут. Записать своё поверх — пропадёт правка коллеги.'),
+      cur.updated ? h('p', { class: 'muted', style: { margin: '8px 0 0' } },
+        'Чужая правка: ' + fmtFull(cur.updated)) : null),
+    foot: close => [
+      h('button', { class: 'btn', onclick: close }, 'Пока не решил'),
+      h('button', {
+        class: 'btn', style: { background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff' },
+        onclick: async () => {
+          close();
+          try {
+            const ok = await storageOverwrite();
+            toast(ok ? 'Записано поверх: чужая правка заменена вашей'
+              : 'Не удалось записать поверх — попробуйте ещё раз', !ok);
+          } catch (e) { toast('Не удалось записать поверх: ' + e.message, true); }
+        },
+      }, 'Записать моё поверх'),
+      h('button', { class: 'btn primary', onclick: () => { close(); reloadFromServer(); } }, 'Перечитать чужое'),
+    ],
+  });
+}
+
+/* Перечитать состояние с сервера и показать то, что там есть. */
 async function reloadFromServer() {
   try {
     const fresh = await storageReload();
@@ -4528,8 +4889,18 @@ const chartErrors = {};
 const crossMemory = {};
 let fbarOpen = !(window.innerWidth < 760);
 
+/* Ссылки на шаблон живут дольше, чем первая страница списка: в сервисе
+   шаблонов больше, чем приезжает при запуске, и чужая ссылка не должна
+   открывать «шаблон не найден» при живом шаблоне. Спрашиваем поимённо — но
+   один раз на идентификатор, иначе удалённый шаблон закрутил бы перерисовку. */
+const dashAsked = new Set();
+
 function renderDashboard(main, id, q) {
   const saved = STATE.dashboards[id];
+  if (!saved && storageIsServer() && !dashAsked.has(id)) {
+    dashAsked.add(id);
+    return waitForBodies(main, ensureDashboardBody(id));
+  }
   if (!saved) {
     main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Шаблон не найден'), 'Возможно, его удалили.', h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем шаблонам'))));
     return () => { };
@@ -4717,7 +5088,10 @@ function renderDashboard(main, id, q) {
         ? h('span', { class: 'pill acc', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: 'Цифры придуманы: это макет, а не отчёт' }, 'Макет')
         : null,
       mayEdit ? null
-        : h('span', { class: 'pill', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: whyReadOnly(saved) }, 'Только просмотр')));
+        : h('span', { class: 'pill', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: whyReadOnly(saved) }, 'Только просмотр'),
+      /* Кто правил последним — рядом с названием: в общем сервисе это первый
+         вопрос к чужому шаблону, и открывать его ради ответа не нужно. */
+      editedTag(saved, 'head-when')));
     head.appendChild(h('div', { class: 'grow' }));
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
@@ -5938,19 +6312,43 @@ function renderDatasetList(main) {
     h('div', { class: 'grow' }, h('h1', null, 'Данные'), h('p', null, 'Встроенные демо-наборы и ваши файлы. Загруженные данные хранятся ' + (storageIsServer() ? 'на сервере.' : 'только в этом браузере.'))),
     h('button', { class: 'btn', onclick: () => openSchemaDialog() }, ic('schema'), 'Описать набор'),
     h('button', { class: 'btn primary', onclick: openUpload }, ic('upload'), 'Загрузить CSV или Excel')));
-  const list = visibleDatasets().sort((a, b) => (b.builtin ? 1 : 0) - (a.builtin ? 1 : 0) || a.name.localeCompare(b.name, 'ru'));
+  /* Отбор здесь считается на месте, а не на сервере: описания наборов нужны
+     реестру `DS` целиком при запуске (без них графики не нарисовать), и ходить
+     за тем, что уже в памяти, незачем. У шаблонов и графиков наоборот — там
+     список краткий и постраничный. */
   const usage = id => Object.values(STATE.charts).filter(c => c.datasetId === id).length;
-  page.appendChild(h('div', { class: 'tbl-wrap' }, h('table', { class: 'list' },
-    h('thead', null, h('tr', null, h('th', null, 'Набор данных'), h('th', null, 'Источник'), h('th', null, 'Строк'), h('th', null, 'Колонок'), h('th', null, 'Графиков'), h('th'))),
-    h('tbody', null, list.map(d => h('tr', { class: 'click', onclick: () => go('#/data/' + d.id) },
-      h('td', null, h('span', { class: 'vt' }, ic('db'), h('b', { style: { fontWeight: 500 } }, d.name))),
-      h('td', null, d.builtin ? h('span', { class: 'pill pri' }, 'Демо')
-        : isSchemaDs(d) ? h('span', { class: 'pill acc' }, 'Схема, данные вымышленные')
-          : h('span', { class: 'pill' }, d.fileName || 'Файл')),
-      h('td', null, fmtNum(dsRowCount(d), 'int')),
-      h('td', null, d.columns.length),
-      h('td', null, usage(d.id) || h('span', { class: 'muted' }, '—')),
-      h('td', { class: 'act' }, h('button', { class: 'btn sm', onclick: e => { e.stopPropagation(); newChartDialog({ datasetId: d.id }); } }, ic('plus'), 'График'))))))));
+  const bar = listBar('datasets', () => paint());
+  page.appendChild(bar.el);
+  const wrap = h('div');
+  page.appendChild(wrap);
+  function paint() {
+    const me = authUser();
+    const all = visibleDatasets().sort((a, b) => (b.builtin ? 1 : 0) - (a.builtin ? 1 : 0) || a.name.localeCompare(b.name, 'ru'));
+    const text = bar.state.q.toLowerCase();
+    const list = all.filter(d => (!bar.state.mine || (me && d.ownerLogin === me.login))
+      && (!text || d.name.toLowerCase().includes(text)));
+    bar.setCount(list.length, all.length, 'набор', 'набора', 'наборов');
+    clear(wrap);
+    if (!list.length) {
+      wrap.appendChild(h('div', { class: 'empty' }, h('b', null, 'Ничего не нашлось'),
+        bar.state.mine && !text ? 'Своих наборов пока нет: загрузите файл или опишите набор.' : 'Попробуйте другое название.',
+        h('br'), h('button', { class: 'btn', onclick: () => bar.reset() }, 'Сбросить поиск')));
+      return;
+    }
+    wrap.appendChild(h('div', { class: 'tbl-wrap' }, h('table', { class: 'list' },
+      h('thead', null, h('tr', null, h('th', null, 'Набор данных'), h('th', null, 'Источник'), h('th', null, 'Строк'), h('th', null, 'Колонок'), h('th', null, 'Графиков'), h('th', null, 'Изменён'), h('th'))),
+      h('tbody', null, list.map(d => h('tr', { class: 'click', onclick: () => go('#/data/' + d.id) },
+        h('td', null, h('span', { class: 'vt' }, ic('db'), h('b', { style: { fontWeight: 500 } }, d.name))),
+        h('td', null, d.builtin ? h('span', { class: 'pill pri' }, 'Демо')
+          : isSchemaDs(d) ? h('span', { class: 'pill acc' }, 'Схема, данные вымышленные')
+            : h('span', { class: 'pill' }, d.fileName || 'Файл')),
+        h('td', null, fmtNum(dsRowCount(d), 'int')),
+        h('td', null, d.columns.length),
+        h('td', null, usage(d.id) || h('span', { class: 'muted' }, '—')),
+        h('td', { class: 'muted' }, d.builtin ? '—' : (editedTag(d, '') || '—')),
+        h('td', { class: 'act' }, h('button', { class: 'btn sm', onclick: e => { e.stopPropagation(); newChartDialog({ datasetId: d.id }); } }, ic('plus'), 'График'))))))));
+  }
+  paint();
 }
 
 function renderDatasetPage(main, id) {
@@ -5962,7 +6360,9 @@ function renderDatasetPage(main, id) {
   const nameEl = editable ? h('input', { class: 'input', value: d.name, style: { font: '600 22px/1.2 var(--font-display)', height: '44px', maxWidth: '520px' }, 'aria-label': 'Название набора', onchange: e => { d.name = e.target.value.trim() || d.name; persistDs(d); toast('Название сохранено'); } }) : h('h1', null, d.name);
   page.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' }, h('a', { href: '#/data', style: { fontSize: '13px', textDecoration: 'none' } }, '← Все наборы'), h('div', { style: { marginTop: '8px' } }, nameEl),
-      h('p', null, d.description || `Загружен из файла ${d.fileName || ''}. ${fmtNum(dsRowCount(d), 'int')} ${plural(dsRowCount(d), 'строка', 'строки', 'строк')}.`)),
+      h('p', null, d.description || `Загружен из файла ${d.fileName || ''}. ${fmtNum(dsRowCount(d), 'int')} ${plural(dsRowCount(d), 'строка', 'строки', 'строк')}.`,
+        // Кто правил последним: у чужого набора это первый вопрос
+        d.builtin ? null : editedTag(d, 'head-when'))),
     isSchemaDs(d) ? h('button', { class: 'btn', onclick: () => openSchemaDialog(d.id) }, ic('schema'), 'Изменить схему') : null,
     h('button', { class: 'btn', onclick: () => newChartDialog({ datasetId: d.id }) }, ic('plus'), 'Создать график'),
     h('button', { class: 'btn primary', onclick: () => openAutoDashDialog(d.id) }, ic('wand'), 'Собрать черновик шаблона'),

@@ -8,8 +8,18 @@ const chartErrors = {};
 const crossMemory = {};
 let fbarOpen = !(window.innerWidth < 760);
 
+/* Ссылки на шаблон живут дольше, чем первая страница списка: в сервисе
+   шаблонов больше, чем приезжает при запуске, и чужая ссылка не должна
+   открывать «шаблон не найден» при живом шаблоне. Спрашиваем поимённо — но
+   один раз на идентификатор, иначе удалённый шаблон закрутил бы перерисовку. */
+const dashAsked = new Set();
+
 function renderDashboard(main, id, q) {
   const saved = STATE.dashboards[id];
+  if (!saved && storageIsServer() && !dashAsked.has(id)) {
+    dashAsked.add(id);
+    return waitForBodies(main, ensureDashboardBody(id));
+  }
   if (!saved) {
     main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Шаблон не найден'), 'Возможно, его удалили.', h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'Ко всем шаблонам'))));
     return () => { };
@@ -197,7 +207,10 @@ function renderDashboard(main, id, q) {
         ? h('span', { class: 'pill acc', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: 'Цифры придуманы: это макет, а не отчёт' }, 'Макет')
         : null,
       mayEdit ? null
-        : h('span', { class: 'pill', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: whyReadOnly(saved) }, 'Только просмотр')));
+        : h('span', { class: 'pill', style: { marginLeft: '10px', verticalAlign: 'middle' }, title: whyReadOnly(saved) }, 'Только просмотр'),
+      /* Кто правил последним — рядом с названием: в общем сервисе это первый
+         вопрос к чужому шаблону, и открывать его ради ответа не нужно. */
+      editedTag(saved, 'head-when')));
     head.appendChild(h('div', { class: 'grow' }));
     const more = h('button', { class: 'btn', title: 'Ещё', 'aria-label': 'Ещё действия' }, ic('dots'));
     more.addEventListener('click', () => openMenu(more, [
