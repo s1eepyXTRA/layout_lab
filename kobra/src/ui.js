@@ -67,6 +67,7 @@ const ICONS = {
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  users: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3 2.7-5 6-5s6 2 6 5"/><path d="M16.5 5.6a3.2 3.2 0 0 1 0 6.3M17 14.6c2.4.5 4 2.3 4 4.4"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
   download: '<path d="M12 4v10.5M8 11l4 4 4-4"/><path d="M4 18.5h16"/>',

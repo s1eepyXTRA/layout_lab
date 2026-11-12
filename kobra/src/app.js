@@ -131,11 +131,17 @@ function renderShell() {
   const app = document.getElementById('app');
   clear(app);
   const settingsBtn = h('button', { class: 'iconbtn-bar', title: 'Настройки', 'aria-label': 'Настройки' }, ic('settings'));
+  /* Настройки сервиса — все в шестерёнке, включая экраны для админа. Раньше
+     «Сотрудники» и «Вход и роли» висели в меню под именем сотрудника: там их
+     искали последним делом, потому что по имени открывают «кто я и выйти», а
+     не настройку доступа всей компании. */
   settingsBtn.addEventListener('click', () => openMenu(settingsBtn, [
     { label: 'Экспорт в файл…', icon: 'download', onClick: () => openExportDialog() },
     { label: 'Импорт из файла…', icon: 'upload', onClick: openImportDialog },
     '-',
     { label: 'Доступ к модели…', icon: 'wand', onClick: () => openAiSettings() },
+    authIsAdmin() ? { label: 'Сотрудники…', icon: 'users', onClick: openUsersDialog } : null,
+    authIsAdmin() ? { label: 'Доступ: вход и роли…', icon: 'link', onClick: openAuthCfgDialog } : null,
     '-',
     { label: 'Вернуть демо-шаблон', icon: 'reset', onClick: restoreDemo },
     { label: 'Сбросить всё к начальному состоянию', icon: 'trash', danger: true, onClick: resetAll },
@@ -165,9 +171,6 @@ function renderShell() {
     h('span', null, me.name), h('span', { class: 'role' }, me.role));
   whoBtn.addEventListener('click', () => openMenu(whoBtn, [
     { label: `${me.login} · ${me.team}`, icon: 'eye', onClick: () => toast(`${me.name}: роль ${me.role}, команда ${me.team}`) },
-    authIsAdmin() ? '-' : null,
-    authIsAdmin() ? { label: 'Сотрудники', icon: 'settings', onClick: openUsersDialog } : null,
-    authIsAdmin() ? { label: 'Доступ: вход и роли', icon: 'link', onClick: openAuthCfgDialog } : null,
     '-',
     { label: 'Выйти', icon: 'back', onClick: authSignOut },
   ]));
