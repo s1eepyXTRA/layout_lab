@@ -53,6 +53,9 @@ THREADPOOL = threadpool_size(int(os.environ.get("KOBRA_THREADPOOL", "30")),
 # идентификатор вендора: смена модели не требует нового образа.
 AI_URL = os.environ.get("KOBRA_AI_URL", "").strip()
 AI_MODEL = os.environ.get("KOBRA_AI_MODEL", "").strip()
+# Ключ **по умолчанию**: им идут обращения команд, которым администратор не выдал
+# свой. Пока ключей по командам нет, это ровно нынешнее поведение; пустой —
+# значит «только по командным ключам».
 AI_TOKEN = os.environ.get("KOBRA_AI_TOKEN", "").strip()
 # Таймаут нашего запроса к шлюзу. Цепочка сверху вниз: обратный прокси (120) >
 # AI_TIMEOUT_SEC (60) > клиент ждёт 70. Нарушишь порядок — человек получит обрыв
@@ -77,9 +80,13 @@ AI_LOG_TEXT = os.environ.get("KOBRA_AI_LOG_TEXT", "1") != "0"
 
 
 def ai_configured() -> bool:
-    """Настроен ли доступ к модели. Клиент узнаёт об этом из `/api/ping` — и
-    только это: ни адреса шлюза, ни названия модели ему знать незачем."""
-    return bool(AI_URL and AI_MODEL and AI_TOKEN)
+    """Есть ли у сервиса куда обращаться: адрес шлюза и модель по умолчанию.
+
+    Это **не** ответ на вопрос «можно ли мне»: ключ выдаётся на команду, и
+    ответ зависит от того, кто спрашивает. `/api/ping` отвечает без сессии и
+    поэтому говорит только про сервис; «можно ли мне» живёт в `/api/auth/me`.
+    """
+    return bool(AI_URL and AI_MODEL)
 
 
 # Собранный интерфейс: тот же build/, который открывают двойным щелчком.
@@ -218,6 +225,29 @@ class UploadChunk(Base):
     data = Column(LargeBinary, nullable=False)
 
 
+class AiKey(Base):
+    """Ключ к модели на команду.
+
+    Один ключ на всех не делится: команда, собравшая двести черновиков, тратит
+    деньги остальных, а отобрать ключ значит отобрать его у всех. В самом шлюзе
+    (LiteLLM) виртуальные ключи с бюджетом так и выдают — по командам, поэтому
+    Кобра принимает их на том же уровне.
+
+    Ключ лежит зашифрованным (Fernet от `KOBRA_SECRET_KEY`, как строки
+    подключения) и **наружу не отдаётся никогда и никому**, включая того
+    администратора, который его вставил: показать ключ значит дать его
+    скопировать, а скопированный ключ живёт в чужих заметках дольше, чем здесь.
+    """
+
+    __tablename__ = "kobra_ai_keys"
+    team = Column(String(200), primary_key=True)
+    token_enc = Column(Text, nullable=False)
+    # Необязательный алиас: в шлюзе разным ключам разрешены разные модели
+    model = Column(String(200), default="")
+    updated_at = Column(DateTime(timezone=True), default=now, onupdate=now)
+    updated_by = Column(String(120))
+
+
 class AiLog(Base):
     """Обращение к модели: кто, когда, какая модель, сколько токенов и чем
     кончилось — и чем кончилось **для человека**.
@@ -231,6 +261,12 @@ class AiLog(Base):
     __tablename__ = "kobra_ai_log"
     id = Column(Integer, primary_key=True, autoincrement=True)
     login = Column(String(120), index=True)
+    # Команда на момент обращения, а не «сейчас»: человек переходит между
+    # командами, а потраченное остаётся за той, чьим ключом обращались
+    team = Column(String(200), index=True)
+    # Чьим ключом шли: 'team' — своим, 'default' — ключом по умолчанию. Без
+    # этого «расход команды» не сходится с тем, что показывает шлюз
+    key_kind = Column(String(20), default="")
     created_at = Column(DateTime(timezone=True), default=now, index=True)
     model = Column(String(200), default="")
     tokens_in = Column(Integer, default=0)

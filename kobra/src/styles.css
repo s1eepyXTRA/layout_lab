@@ -109,6 +109,27 @@ a { color: var(--primary); }
 .list-more { display: flex; justify-content: center; margin: 18px 0 4px; }
 .list-more[hidden] { display: none; }
 .list-empty { grid-column: 1 / -1; }
+
+/* ---------- Документация ----------
+   Разделы на <details>: разворачивание даёт сам браузер — с клавиатурой,
+   экранными читалками и поиском по странице. Своих классов нужно ровно
+   столько, чтобы это читалось. */
+.doc-page { max-width: 860px; }
+.doc-sec { border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); margin-bottom: 10px; }
+.doc-sec summary { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; padding: 13px 16px; cursor: pointer; list-style: none; border-radius: var(--r-m); }
+.doc-sec summary::-webkit-details-marker { display: none; }
+/* Свой маркер: у встроенного треугольника нет цвета под нашу палитру */
+.doc-sec summary::before { content: '+'; color: var(--ink-2); font-weight: 600; width: 14px; flex: none; }
+.doc-sec[open] summary::before { content: '–'; }
+.doc-sec summary:hover { background: var(--surface-2); }
+.doc-sec summary b { font: 600 15px/1.3 var(--font); }
+.doc-sec summary .muted { font-size: 13px; }
+.doc-body { padding: 0 16px 14px 40px; }
+.doc-body p { margin: 0 0 10px; max-width: 72ch; color: var(--ink); }
+.doc-body ul { margin: 0 0 10px; padding-left: 20px; max-width: 72ch; }
+.doc-body li { margin: 4px 0; }
+.doc-body .ai-note { margin-top: 10px; }
+@media (max-width: 700px) { .doc-body { padding-left: 16px; } }
 .dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 .dash-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-l); overflow: hidden;

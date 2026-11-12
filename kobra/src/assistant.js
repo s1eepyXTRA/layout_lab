@@ -22,12 +22,18 @@ function aiCfg() {
   return { url: c.url || '', token: c.token || '', model: c.model || '' };
 }
 function aiSaveCfg(cfg) { lsSet(AI_LS_CFG, { url: cfg.url || '', token: cfg.token || '', model: cfg.model || '' }); }
-/** Можно ли обратиться к модели. За сервисом это знает сервис. */
+/** Можно ли обратиться к модели.
+
+   За сервисом это знает сервис, и ответ зависит от **команды**: ключ выдаётся
+   на команду, поэтому признак приезжает с сессией (`/api/auth/me`), а не с
+   пробы — проба отвечает до входа и не знает, кто спрашивает. */
 function aiReady() {
-  if (storageIsServer()) return !!storageInfo.ai;
+  if (storageIsServer()) return !!(authUser() && authUser().ai);
   const c = aiCfg();
   return !!(c.url && c.model);
 }
+/** Есть ли доступ к модели в сервисе вообще — хоть у одной команды. */
+const aiAnywhere = () => (storageIsServer() ? !!storageInfo.ai : aiReady());
 /** Предел длины описания: за сервисом его называет сервис. */
 const aiMaxChars = () => (storageIsServer() && storageInfo.aiMaxChars) || 4000;
 
@@ -102,6 +108,112 @@ function showTextModal(title, text) {
   const area = h('textarea', { class: 'textarea', rows: 18, readonly: true, 'aria-label': title });
   area.value = text;
   openModal({ title, wide: true, body: area, foot: close => [h('button', { class: 'btn primary', onclick: close }, 'Закрыть')] });
+}
+
+/* ---------- Ключи команд (только администратор) ----------
+   Ключ к модели выдаётся на команду: один ключ на всех не делится — команда,
+   собравшая двести черновиков, тратит деньги остальных, а отобрать ключ значит
+   отобрать его у всех.
+
+   Экран перечисляет **команды**, а не записи в таблице: администратор думает
+   «выдали ли мы доступ Продажам». Самих ключей здесь нет и быть не может —
+   сервис их не отдаёт никому, включая того, кто вставил: показать ключ значит
+   дать его скопировать. */
+async function openAiKeysDialog() {
+  if (!authIsAdmin()) { toast('Ключи к модели выдаёт администратор', true); return; }
+  const body = h('div');
+  let data = null;
+  const load = async () => {
+    clear(body).appendChild(h('div', { class: 'empty' }, h('b', null, 'Загружаю…')));
+    try { data = await api('/api/ai/keys'); paint(); }
+    catch (e) {
+      clear(body).appendChild(h('div', { class: 'empty' }, h('b', null, 'Не удалось получить список'), e.message));
+    }
+  };
+  const save = async (team, token, model) => {
+    try {
+      await api('/api/ai/keys/' + encodeURIComponent(team), { method: 'PUT', body: { ключ: token, модель: model } });
+      toast('Ключ для команды «' + team + '» сохранён');
+      await load();
+    } catch (e) { toast('Не удалось сохранить: ' + e.message, true); }
+  };
+  const drop = async (team, people) => {
+    const сколько = people ? ' (' + people + ' ' + plural(people, 'сотрудник', 'сотрудника', 'сотрудников') + ')' : '';
+    if (!(await confirmDialog('Отозвать ключ',
+      'Команда «' + team + '»' + сколько + ' больше не сможет собирать шаблоны по описанию. '
+      + 'Перенос запроса вручную у неё останется.', 'Отозвать'))) return;
+    try {
+      await api('/api/ai/keys/' + encodeURIComponent(team), { method: 'DELETE' });
+      toast('Ключ отозван');
+      await load();
+    } catch (e) { toast('Не удалось отозвать: ' + e.message, true); }
+  };
+  /* Ввод ключа — отдельным окном, где названа команда и сколько в ней людей:
+     вставить ключ не той команде легко, а стоит это чужих денег. */
+  const ask = (team, people, model) => {
+    const inp = h('input', { class: 'input', type: 'password', placeholder: 'sk-…', 'aria-label': 'Ключ команды' });
+    const mod = h('input', { class: 'input', value: model || '', placeholder: 'как в сервисе', 'aria-label': 'Алиас модели' });
+    openModal({
+      title: 'Ключ для команды «' + team + '»',
+      body: h('div', null,
+        h('p', { class: 'muted', style: { margin: '0 0 10px', fontSize: '13px' } },
+          'В команде ' + people + ' ' + plural(people, 'сотрудник', 'сотрудника', 'сотрудников')
+          + '. Ключ возьмите у администраторов шлюза — он уйдёт в сервис и обратно не показывается.'),
+        field('Ключ', inp),
+        field('Алиас модели', mod, 'Пусто — модель сервиса. Задайте, если этому ключу разрешена другая.')),
+      foot: close => [
+        h('button', { class: 'btn', onclick: close }, 'Отмена'),
+        h('button', { class: 'btn primary', onclick: () => {
+          const t = inp.value.trim();
+          if (!t) { toast('Вставьте ключ', true); return; }
+          close();
+          save(team, t, mod.value.trim());
+        } }, 'Сохранить ключ')],
+    });
+  };
+  const paint = () => {
+    clear(body);
+    body.appendChild(h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } },
+      'Ключ выдаётся на команду: расход команды виден отдельно и ограничен её бюджетом в шлюзе.'));
+    const tb = h('tbody');
+    (data.команды || []).forEach(c => {
+      const свой = c.ключ;
+      tb.appendChild(h('tr', null,
+        h('td', null, h('b', { style: { fontWeight: 500 } }, c.команда),
+          h('div', { class: 'muted', style: { fontSize: '12px' } },
+            c.сотрудников + ' ' + plural(c.сотрудников, 'сотрудник', 'сотрудника', 'сотрудников'))),
+        h('td', null, свой
+          ? h('span', { class: 'pill pri', title: c.кто ? 'Задал ' + authName(c.кто) : '' }, 'Свой ключ')
+          : data.ключПоУмолчанию
+            ? h('span', { class: 'pill' }, 'На ключе сервиса')
+            : h('span', { class: 'pill acc' }, 'Нет доступа')),
+        h('td', { class: 'muted' }, (свой ? c.модель : '') || data.модельПоУмолчанию || '—'),
+        h('td', { class: 'muted' }, свой && c.когда ? authName(c.кто) + ', ' + fmtAgo(c.когда) : '—'),
+        h('td', { class: 'act' },
+          h('button', { class: 'btn sm', onclick: () => ask(c.команда, c.сотрудников, c.модель) },
+            свой ? 'Заменить' : 'Вставить ключ'),
+          свой ? h('button', { class: 'btn sm', style: { marginLeft: '6px' }, onclick: () => drop(c.команда, c.сотрудников) }, 'Отозвать') : null)));
+    });
+    body.appendChild(h('div', { class: 'tbl-wrap' }, h('table', { class: 'list' },
+      h('thead', null, h('tr', null, h('th', null, 'Команда'), h('th', null, 'Доступ'), h('th', null, 'Модель'), h('th', null, 'Кто выдал'), h('th'))),
+      tb)));
+    /* Команда без сотрудников в списке не появится, а ключ для неё задать надо:
+       договорённость о доступе случается раньше, чем люди заходят в Кобру. */
+    const other = h('input', { class: 'input', placeholder: 'Название команды', 'aria-label': 'Другая команда', style: { maxWidth: '260px' } });
+    body.appendChild(h('div', { class: 'toolbar', style: { marginTop: '14px', marginBottom: 0 } },
+      other,
+      h('button', { class: 'btn', onclick: () => {
+        const t = other.value.trim();
+        if (!t) { toast('Назовите команду', true); return; }
+        ask(t, 0, '');
+      } }, 'Выдать другой команде')));
+    body.appendChild(h('div', { class: 'ai-note', style: { marginTop: '12px' } },
+      data.ключПоУмолчанию
+        ? 'У сервиса есть ключ по умолчанию: команды без своего ключа работают на нём. Уберите его из развёртывания, когда выдадите ключи всем.'
+        : 'Ключа по умолчанию в сервисе нет: команда без своего ключа модель не получит.'));
+  };
+  openModal({ title: 'Ключи к модели по командам', wide: true, body, foot: close => [h('button', { class: 'btn primary', onclick: close }, 'Готово')] });
+  await load();
 }
 
 /* ---------- Настройки доступа ---------- */

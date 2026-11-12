@@ -136,13 +136,18 @@ function renderShell() {
      искали последним делом, потому что по имени открывают «кто я и выйти», а
      не настройку доступа всей компании. */
   settingsBtn.addEventListener('click', () => openMenu(settingsBtn, [
+    { label: 'Документация', icon: 'text', onClick: () => go('#/docs') },
+    '-',
     { label: 'Экспорт в файл…', icon: 'download', onClick: () => openExportDialog() },
     { label: 'Импорт из файла…', icon: 'upload', onClick: openImportDialog },
     '-',
-    /* За сервисом настраивать нечего: адрес, модель и токен живут в сервисе, а
-       два пути настройки означали бы вечный вопрос «а у меня свой ключ, почему
-       не работает». Поэтому пункт не прячется под роль, а уходит совсем. */
-    storageIsServer() ? null : { label: 'Доступ к модели…', icon: 'wand', onClick: () => openAiSettings() },
+    /* Доступ к модели настраивают по-разному. Без сервиса это личная настройка
+       браузера. За сервисом настраивать человеку нечего, а администратору есть
+       что: ключ выдаётся на команду, и вставляет его он. Поэтому за сервисом
+       пункт есть только у админа и ведёт на другой экран. */
+    storageIsServer()
+      ? (authIsAdmin() ? { label: 'Ключи к модели…', icon: 'wand', onClick: () => openAiKeysDialog() } : null)
+      : { label: 'Доступ к модели…', icon: 'wand', onClick: () => openAiSettings() },
     authIsAdmin() ? { label: 'Сотрудники…', icon: 'users', onClick: openUsersDialog } : null,
     authIsAdmin() ? { label: 'Доступ: вход и роли…', icon: 'link', onClick: openAuthCfgDialog } : null,
     '-',

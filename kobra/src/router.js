@@ -41,6 +41,7 @@ function route() {
     else if (sec === 'templates') pageCleanup = renderTemplateList(main, q);
     else if (sec === 'charts') pageCleanup = renderChartList(main);
     else if (sec === 'explore') pageCleanup = renderExplore(main, parts, q);
+    else if (sec === 'docs') pageCleanup = renderDocs(main);
     else if (sec === 'data' && parts[1]) pageCleanup = renderDatasetPage(main, parts[1]);
     else if (sec === 'data') pageCleanup = renderDatasetList(main);
     else pageCleanup = renderDashboardList(main);
@@ -48,5 +49,5 @@ function route() {
     console.error(e);
     main.appendChild(h('div', { class: 'page' }, h('div', { class: 'empty' }, h('b', null, 'Не удалось открыть страницу'), e.message, h('br'), h('a', { class: 'btn', href: '#/dashboards' }, 'К шаблонам'))));
   }
-  document.title = 'Кобра — ' + ({ d: (STATE.dashboards[parts[1]] || {}).title || 'Шаблон', charts: 'Графики', explore: 'Конструктор графика', data: 'Данные', templates: 'Готовые шаблоны' }[sec] || 'Шаблоны');
+  document.title = 'Кобра — ' + ({ d: (STATE.dashboards[parts[1]] || {}).title || 'Шаблон', charts: 'Графики', explore: 'Конструктор графика', data: 'Данные', templates: 'Готовые шаблоны', docs: 'Документация' }[sec] || 'Шаблоны');
 }

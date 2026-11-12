@@ -18,6 +18,13 @@
 некуда, и копий всё равно две при любом решении. Поэтому — прямое дублирование с
 тестом на совпадение, как `app/guess.py` против `datasets.js`.
 
+**Ключ выдаётся на команду.** Один служебный ключ на сервис не делится: команда,
+собравшая двести черновиков, тратит деньги остальных, а отобрать ключ значит
+отобрать его у всех. Поэтому ключи лежат в `kobra_ai_keys` по командам, их
+вставляет администратор в интерфейсе, и порядок выбора такой: ключ команды →
+`KOBRA_AI_TOKEN` → отказ «администратор не выдал вашей команде доступ». Ключ
+наружу не отдаётся никогда и никому, включая того, кто его вставил.
+
 **Маршрут асинхронный, а запись в журнал — через пул потоков.** uvicorn запущен
 одним процессом, сессия SQLAlchemy синхронная, и обычный `commit` внутри
 `async def` встал бы прямо в цикле событий: на время запроса к базе ждали бы все
@@ -29,7 +36,7 @@ import logging
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import case, delete, func, select
 
@@ -37,8 +44,8 @@ from app import metrics
 from app.auth import current_user
 from app.core import (
     AI_LIMIT_ALL, AI_LIMIT_USER, AI_LOG_DAYS, AI_LOG_TEXT, AI_MAX_CHARS, AI_MAX_COLS,
-    AI_MODEL, AI_ROLES, AI_TIMEOUT_SEC, AI_TOKEN, AI_URL, AiLog, SessionLocal, User,
-    ai_configured, now,
+    AI_MODEL, AI_ROLES, AI_TIMEOUT_SEC, AI_TOKEN, AI_URL, AiKey, AiLog, SessionLocal, User,
+    ai_configured, decrypt, encrypt, now,
 )
 from app.sessions import rate_hit
 
@@ -88,6 +95,69 @@ def build_user_message(task: str, draft: Optional[dict] = None,
     return "\n\n".join(parts)
 
 
+class НетКлюча(Exception):
+    """Команде нечем обращаться к модели. Отдельный вид отказа: человеку нужно
+    знать, что идти надо к администратору Кобры, а не к администратору шлюза."""
+
+    def __init__(self, текст: str, outcome: str = "no_key"):
+        super().__init__(текст)
+        self.outcome = outcome
+
+
+def team_key(team: str) -> tuple:
+    """Чем обращаться от имени этой команды: `(токен, модель, вид)`.
+
+    Порядок: ключ команды → ключ по умолчанию из окружения → отказ. Так
+    нынешние развёртывания (одна команда, ключ в переменных) продолжают
+    работать без правок, а там, где ключи разделили, окружение остаётся
+    запасным для команд, которым свой ключ не нужен.
+    """
+    s = SessionLocal()
+    try:
+        row = s.get(AiKey, team or "")
+    finally:
+        s.close()
+    if row is not None:
+        try:
+            return decrypt(row.token_enc), (row.model or AI_MODEL), "team"
+        except Exception:
+            # Сменился KOBRA_SECRET_KEY: ключ остался, прочитать его нельзя.
+            # Это не поломка сервиса, а работа для администратора
+            raise НетКлюча("Ключ модели для вашей команды не читается: скажите администратору",
+                           "key_unreadable")
+    if AI_TOKEN:
+        return AI_TOKEN, AI_MODEL, "default"
+    raise НетКлюча("Администратор не выдал вашей команде доступ к модели — перенесите запрос вручную")
+
+
+def ai_available(team: str) -> bool:
+    """Доступна ли модель этой команде. Отвечает `/api/auth/me`: `/api/ping` без
+    сессии не знает, кто спрашивает, а ответ зависит от команды. Иначе человек
+    из команды без ключа видел бы кнопку «Собрать» и узнавал о правилах доступа
+    методом проб."""
+    if not ai_configured():
+        return False
+    try:
+        team_key(team)
+        return True
+    except НетКлюча:
+        return False
+
+
+def ai_anywhere() -> bool:
+    """Есть ли доступ к модели в сервисе вообще — хоть у одной команды. Это и
+    отвечает `/api/ping`: экрану входа большего знать незачем."""
+    if not ai_configured():
+        return False
+    if AI_TOKEN:
+        return True
+    s = SessionLocal()
+    try:
+        return s.query(AiKey).first() is not None
+    finally:
+        s.close()
+
+
 def _allowed(user: User) -> bool:
     """Роли, которым разрешено тратить служебный ключ. Пусто — всем вошедшим:
     поведение меняется только когда администратор сузит доступ сам."""
@@ -109,7 +179,8 @@ def _check_limits(login: str) -> None:
 
 
 def _write_log(login: str, outcome: str, task: str, answer: str,
-               tokens: tuple = (0, 0)) -> Optional[int]:
+               tokens: tuple = (0, 0), team: str = "", key_kind: str = "",
+               model: str = "") -> Optional[int]:
     """Запись в журнал и чистка старых — одним заходом в базу.
 
     Срок хранения соблюдается тем же запросом, что пишет новую запись:
@@ -121,7 +192,7 @@ def _write_log(login: str, outcome: str, task: str, answer: str,
     s = SessionLocal()
     try:
         row = AiLog(
-            login=login, model=AI_MODEL, outcome=outcome,
+            login=login, team=team or "", key_kind=key_kind, model=model or AI_MODEL, outcome=outcome,
             tokens_in=tokens[0] or 0, tokens_out=tokens[1] or 0,
             # Расход и итог пишем всегда, тексты — по настройке: шлюз обычно
             # пишет их сам, и чужие тексты не нужны в двух местах
@@ -176,9 +247,18 @@ async def draft(payload: dict = Body(...), user: User = Depends(current_user)):
     errors = payload.get("ошибки") or payload.get("errors") or []
 
     _check_limits(user.username)
+    # Чем обращаться — решает команда человека. Отказ «ключа нет» приходит до
+    # запроса: тратить время на сеть, когда нечем идти, незачем
+    try:
+        token, model, key_kind = team_key(user.team or "")
+    except НетКлюча as e:
+        await run_in_threadpool(_write_log, user.username, e.outcome, task, "", (0, 0),
+                                user.team or "", "")
+        metrics.inc("kobra_ai_requests_total", outcome=e.outcome)
+        raise HTTPException(status_code=503, detail=str(e))
     message = build_user_message(task, draft_state, errors)
     body = {
-        "model": AI_MODEL,
+        "model": model,
         "messages": [{"role": "system", "content": AI_SYSTEM}, {"role": "user", "content": message}],
         "temperature": 0.2,
         # Логин человека — чтобы шлюз сам раскладывал расход по людям: иначе
@@ -192,7 +272,7 @@ async def draft(payload: dict = Body(...), user: User = Depends(current_user)):
     outcome, answer, tokens, fail = "ok", "", (0, 0), None
     try:
         async with httpx.AsyncClient(timeout=AI_TIMEOUT_SEC) as client:
-            res = await client.post(url, json=body, headers={"Authorization": "Bearer " + AI_TOKEN})
+            res = await client.post(url, json=body, headers={"Authorization": "Bearer " + token})
         data = res.json() if res.headers.get("content-type", "").startswith("application/json") else None
         tokens = _tokens(data)
         if res.status_code in (401, 403):
@@ -215,7 +295,8 @@ async def draft(payload: dict = Body(...), user: User = Depends(current_user)):
     metrics.inc("kobra_ai_tokens_total", tokens[0] + tokens[1])
     # Записываем и отказы: журнал «только про удачные» не отвечает на «почему у
     # него не работает». Через пул потоков — см. шапку файла
-    log_id = await run_in_threadpool(_write_log, user.username, outcome, task, answer, tokens)
+    log_id = await run_in_threadpool(_write_log, user.username, outcome, task, answer, tokens,
+                                     user.team or "", key_kind, model)
     if fail:
         raise HTTPException(status_code=fail[0], detail=fail[1])
     return {"ответ": answer, "id": log_id}
@@ -242,6 +323,90 @@ def draft_outcome(log_id: int, payload: dict = Body(...), user: User = Depends(c
         s.close()
 
 
+# ---------- Ключи команд: только администратор ----------
+
+def _only_admin(user: User) -> None:
+    if user.role != "Admin":
+        raise HTTPException(status_code=403, detail="Ключи к модели выдаёт администратор")
+
+
+@router.get("/keys")
+def list_keys(user: User = Depends(current_user)):
+    """Кому выдан доступ. Администратор думает про команды («выдали ли мы
+    Продажам»), а не про записи в таблице, поэтому список — по командам
+    сотрудников плюс те команды, у которых ключ есть, а людей ещё нет.
+
+    Самих ключей в ответе нет ни в каком виде — ни целиком, ни хвостом: показать
+    ключ значит дать его скопировать.
+    """
+    _only_admin(user)
+    s = SessionLocal()
+    try:
+        люди = dict(s.execute(
+            select(User.team, func.count(User.id)).where(User.active.is_(True)).group_by(User.team)
+        ).all())
+        ключи = {k.team: k for k in s.query(AiKey).all()}
+        команды = sorted(set(t for t in люди if t) | set(ключи))
+        return {
+            "команды": [{
+                "команда": t,
+                "сотрудников": int(люди.get(t, 0)),
+                "ключ": t in ключи,
+                "модель": (ключи[t].model or "") if t in ключи else "",
+                "кто": ключи[t].updated_by if t in ключи else None,
+                "когда": int(ключи[t].updated_at.timestamp() * 1000) if t in ключи and ключи[t].updated_at else None,
+            } for t in команды],
+            # Чтобы на экране было видно: команда без своего ключа не без доступа,
+            # она работает на ключе по умолчанию — и это другое состояние
+            "ключПоУмолчанию": bool(AI_TOKEN),
+            "модельПоУмолчанию": AI_MODEL,
+        }
+    finally:
+        s.close()
+
+
+@router.put("/keys/{team}")
+def set_key(team: str, payload: dict = Body(...), user: User = Depends(current_user)):
+    """Вставить или заменить ключ команды. Значение уходит в базу зашифрованным
+    и обратно не отдаётся."""
+    _only_admin(user)
+    token = str(payload.get("ключ") or payload.get("token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=422, detail="Нужен ключ: пустое значение ничего не даёт")
+    if not team.strip():
+        raise HTTPException(status_code=422, detail="Нужна команда, которой выдаётся ключ")
+    s = SessionLocal()
+    try:
+        row = s.get(AiKey, team) or AiKey(team=team)
+        row.token_enc = encrypt(token)
+        row.model = str(payload.get("модель") or payload.get("model") or "").strip()
+        row.updated_by = user.username
+        row.updated_at = now()
+        s.add(row)
+        s.commit()
+        log.info("Ключ модели для команды %s задан: %s", team, user.username)
+        return {"команда": team, "ключ": True, "модель": row.model}
+    finally:
+        s.close()
+
+
+@router.delete("/keys/{team}", status_code=204)
+def drop_key(team: str, user: User = Depends(current_user)):
+    """Отозвать ключ команды. Живого ключа для этого не требуется: иначе
+    выданное уволенной команде право нельзя было бы снять."""
+    _only_admin(user)
+    s = SessionLocal()
+    try:
+        row = s.get(AiKey, team)
+        if row is not None:
+            s.delete(row)
+            s.commit()
+            log.info("Ключ модели для команды %s отозван: %s", team, user.username)
+        return Response(status_code=204)
+    finally:
+        s.close()
+
+
 @router.get("/log")
 def read_log(user: User = Depends(current_user), limit: int = 200):
     """Журнал обращений. Только администратору: там чужие тексты запросов."""
@@ -258,9 +423,15 @@ def read_log(user: User = Depends(current_user), limit: int = 200):
                    func.sum(case((AiLog.built == "built", 1), else_=0)))
             .group_by(AiLog.login)
         ).all()
+        по_командам = s.execute(
+            select(AiLog.team, AiLog.key_kind, func.count(AiLog.id),
+                   func.coalesce(func.sum(AiLog.tokens_in + AiLog.tokens_out), 0),
+                   func.sum(case((AiLog.built == "built", 1), else_=0)))
+            .group_by(AiLog.team, AiLog.key_kind)
+        ).all()
         return {
             "записи": [{
-                "id": r.id, "логин": r.login,
+                "id": r.id, "логин": r.login, "команда": r.team, "ключ": r.key_kind,
                 "когда": int(r.created_at.timestamp() * 1000) if r.created_at else None,
                 "модель": r.model, "токенов": (r.tokens_in or 0) + (r.tokens_out or 0),
                 "итог": r.outcome, "собрался": r.built, "пропущено": r.skipped,
@@ -268,6 +439,10 @@ def read_log(user: User = Depends(current_user), limit: int = 200):
             } for r in rows],
             "по_людям": [{"логин": l, "обращений": n, "токенов": int(t), "собралось": int(b or 0)}
                          for l, n, t, b in by],
+            # Расход по командам — главный вопрос, ради которого ключи и разделяют
+            "по_командам": [{"команда": t or "", "ключ": k or "", "обращений": n,
+                             "токенов": int(tok), "собралось": int(b or 0)}
+                            for t, k, n, tok, b in по_командам],
             "хранить_дней": AI_LOG_DAYS,
             "тексты": AI_LOG_TEXT,
         }

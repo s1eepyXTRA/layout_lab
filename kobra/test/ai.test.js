@@ -45,15 +45,25 @@ test('без сервиса модель готова, только если н�
   assert.equal(K.aiMaxChars(), 4000);
 });
 
-test('за сервисом про модель знает сервис, а не браузер', () => {
+test('за сервисом «можно ли мне» зависит от команды, а не от браузера', () => {
+  /* Ключ выдаётся на команду, поэтому признак приезжает с сессией. Проба
+     отвечает до входа и знает только, есть ли доступ в сервисе вообще — иначе
+     человек из команды без ключа видел бы кнопку «Собрать» и узнавал о
+     правилах доступа методом проб. */
   K.localStorage.clear();
-  засервисом({ ai: false });
-  // Свои настройки в браузере за сервисом ничего не решают: ключ там служебный
-  K.aiSaveCfg({ url: 'https://шлюз/v1', model: 'gpt-4o', token: 'личный' });
-  assert.equal(K.aiReady(), false);
   засервисом({ ai: true, aiMaxChars: 1500 });
-  assert.equal(K.aiReady(), true);
+  // Свои настройки в браузере за сервисом ничего не решают: ключи там командные
+  K.aiSaveCfg({ url: 'https://шлюз/v1', model: 'gpt-4o', token: 'личный' });
+  K.AUTH = { cfg: {}, users: [], user: { login: 'd.orlov', team: 'Поддержка', role: 'Gamma', ai: false } };
+  assert.equal(K.aiReady(), false, 'команде ключ не выдан');
+  assert.equal(K.aiAnywhere(), true, 'но в сервисе доступ есть — значит просить есть у кого');
   assert.equal(K.aiMaxChars(), 1500);
+
+  K.AUTH.user.ai = true;
+  assert.equal(K.aiReady(), true);
+
+  засервисом({ ai: false });
+  assert.equal(K.aiAnywhere(), false, 'модели в сервисе нет вовсе');
   локально();
 });
 

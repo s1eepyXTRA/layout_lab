@@ -31,7 +31,16 @@ class LoginIn(BaseModel):
 
 
 def user_out(u: User) -> dict:
-    """Что знает о себе клиент. Пароля здесь нет и быть не может."""
+    """Что знает о себе клиент. Пароля здесь нет и быть не может.
+
+    Признак `ai` — «модель доступна моей команде». Он здесь, а не в `/api/ping`,
+    потому что ключ выдаётся на команду: проба отвечает без сессии и не знает,
+    кто спрашивает. Иначе человек из команды без ключа видел бы кнопку
+    «Собрать», жал её и узнавал о правилах доступа методом проб.
+    """
+    # Внутри функции: app.ai импортирует app.auth (current_user), и импорт
+    # наверху файла замкнул бы круг
+    from app.ai import ai_available
     return {
         "login": u.username,
         "name": u.full_name or u.username,
@@ -40,6 +49,7 @@ def user_out(u: User) -> dict:
         "role": u.role,
         "groups": list(u.groups or []),
         "active": bool(u.active),
+        "ai": ai_available(u.team or ""),
     }
 
 
