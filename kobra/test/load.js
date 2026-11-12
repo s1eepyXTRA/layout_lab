@@ -26,6 +26,7 @@ const BRIDGE = [
   'AGGS', 'FILTER_OPS', 'TIME_PRESETS', 'TIME_GRAINS', 'NUMBER_FORMATS', 'COLOR_SCHEMES',
   'BUILTIN_DATASETS', 'visibleDatasets', 'MAX_UPLOAD_ROWS',
   'QUERY_PARALLEL', 'queryQueued', 'queryDropWaiting', 'LIST_PAGE',
+  'UNDO_MAX', 'canUndo', 'hasUndo',
 ];
 
 /* Заглушки браузера: ядро их не зовёт, но файлы лежат в одном скрипте
